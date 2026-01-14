@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>Record basketball games with score overlay</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Record game audio</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Save game recordings to Photos</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Save game recordings to Photos</string>
+	<key>NSCalendarsUsageDescription</key>
+	<string>Find upcoming games from your calendar</string>
+</dict>
+</plist>
