@@ -12,6 +12,8 @@ struct HomeView: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var calendarManager = GameCalendarManager.shared
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
+    @State private var showStatsSheet = false
+    @State private var selectedGame: Game? = nil
 
     var body: some View {
         ScrollView {
@@ -21,6 +23,11 @@ struct HomeView: View {
 
                 // New Game Button
                 newGameButton
+
+                // Career Stats Card (if we have games)
+                if persistenceManager.careerGames > 0 {
+                    careerStatsCard
+                }
 
                 // Upcoming from Calendar
                 if !calendarManager.upcomingGames.isEmpty {
@@ -38,19 +45,35 @@ struct HomeView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationBarHidden(true)
+        .sheet(isPresented: $showStatsSheet) {
+            CareerStatsSheet(selectedGame: $selectedGame)
+        }
     }
 
     // MARK: - Header
 
     private var headerSection: some View {
-        VStack(spacing: 4) {
-            Text("Sahil Stats")
-                .font(.largeTitle)
-                .fontWeight(.bold)
+        HStack {
+            Spacer()
 
-            Text("Record. Track. Share.")
-                .font(.subheadline)
-                .foregroundColor(.secondary)
+            VStack(spacing: 4) {
+                Text("Sahil Stats")
+                    .font(.largeTitle)
+                    .fontWeight(.bold)
+
+                Text("Record. Track. Share.")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            // Settings button (placeholder for future)
+            Button(action: { /* TODO: Show settings */ }) {
+                Image(systemName: "gearshape.fill")
+                    .font(.title3)
+                    .foregroundColor(.secondary)
+            }
         }
         .padding(.top, 20)
     }
@@ -73,6 +96,55 @@ struct HomeView: View {
             .background(Color.orange)
             .cornerRadius(16)
         }
+    }
+
+    // MARK: - Career Stats Card
+
+    private var careerStatsCard: some View {
+        Button(action: { showStatsSheet = true }) {
+            VStack(spacing: 12) {
+                // Header
+                HStack {
+                    Text("Career Stats")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    Spacer()
+
+                    Text("\(persistenceManager.careerGames) games")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                // Stats row
+                HStack(spacing: 0) {
+                    statItem(value: String(format: "%.1f", persistenceManager.careerPPG), label: "PPG", color: .orange)
+                    statItem(value: String(format: "%.1f", persistenceManager.careerRPG), label: "RPG", color: .blue)
+                    statItem(value: String(format: "%.1f", persistenceManager.careerAPG), label: "APG", color: .green)
+                    statItem(value: persistenceManager.careerRecord, label: "W-L", color: .primary)
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func statItem(value: String, label: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.system(size: 20, weight: .bold, design: .rounded))
+                .foregroundColor(color)
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Upcoming Games
@@ -182,6 +254,331 @@ struct GameRow: View {
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(12)
+    }
+}
+
+// MARK: - Career Stats Sheet
+
+struct CareerStatsSheet: View {
+    @ObservedObject private var persistenceManager = GamePersistenceManager.shared
+    @Binding var selectedGame: Game?
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Career Averages
+                    careerAveragesCard
+
+                    // Shooting Stats
+                    shootingStatsCard
+
+                    // Game Log
+                    gameLogSection
+                }
+                .padding()
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Career Stats")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .sheet(item: $selectedGame) { game in
+                GameDetailSheet(game: game)
+            }
+        }
+    }
+
+    // MARK: - Career Averages Card
+
+    private var careerAveragesCard: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("Career Averages")
+                    .font(.headline)
+                Spacer()
+                Text("\(persistenceManager.careerGames) games")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            HStack(spacing: 0) {
+                careerStat(value: String(format: "%.1f", persistenceManager.careerPPG), label: "PPG", color: .orange)
+                careerStat(value: String(format: "%.1f", persistenceManager.careerRPG), label: "RPG", color: .blue)
+                careerStat(value: String(format: "%.1f", persistenceManager.careerAPG), label: "APG", color: .green)
+                careerStat(value: String(format: "%.1f", persistenceManager.careerSPG), label: "SPG", color: .teal)
+                careerStat(value: String(format: "%.1f", persistenceManager.careerBPG), label: "BPG", color: .purple)
+            }
+
+            // Record
+            HStack(spacing: 20) {
+                Label(persistenceManager.careerRecord, systemImage: "trophy.fill")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+
+                if persistenceManager.careerGames > 0 {
+                    let winPct = Double(persistenceManager.careerWins) / Double(persistenceManager.careerGames) * 100
+                    Text(String(format: "%.0f%% Win Rate", winPct))
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+    }
+
+    private func careerStat(value: String, label: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.system(size: 22, weight: .bold, design: .rounded))
+                .foregroundColor(color)
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Shooting Stats Card
+
+    private var shootingStatsCard: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("Shooting")
+                    .font(.headline)
+                Spacer()
+            }
+
+            HStack(spacing: 20) {
+                shootingCircle(
+                    label: "FG",
+                    made: persistenceManager.careerFGMade,
+                    attempted: persistenceManager.careerFGAttempted,
+                    pct: persistenceManager.careerFGPercentage,
+                    color: .blue
+                )
+                shootingCircle(
+                    label: "3PT",
+                    made: persistenceManager.career3PMade,
+                    attempted: persistenceManager.career3PAttempted,
+                    pct: persistenceManager.career3PPercentage,
+                    color: .purple
+                )
+                shootingCircle(
+                    label: "FT",
+                    made: persistenceManager.careerFTMade,
+                    attempted: persistenceManager.careerFTAttempted,
+                    pct: persistenceManager.careerFTPercentage,
+                    color: .cyan
+                )
+            }
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
+    }
+
+    private func shootingCircle(label: String, made: Int, attempted: Int, pct: Double, color: Color) -> some View {
+        VStack(spacing: 8) {
+            ZStack {
+                Circle()
+                    .stroke(Color.gray.opacity(0.2), lineWidth: 6)
+                    .frame(width: 70, height: 70)
+
+                Circle()
+                    .trim(from: 0, to: min(pct / 100, 1.0))
+                    .stroke(color, style: StrokeStyle(lineWidth: 6, lineCap: .round))
+                    .frame(width: 70, height: 70)
+                    .rotationEffect(.degrees(-90))
+
+                Text(String(format: "%.0f%%", pct))
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(color)
+            }
+
+            Text(label)
+                .font(.caption)
+                .fontWeight(.semibold)
+                .foregroundColor(.secondary)
+
+            Text("\(made)/\(attempted)")
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    // MARK: - Game Log Section
+
+    private var gameLogSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Game Log")
+                .font(.headline)
+
+            if persistenceManager.savedGames.isEmpty {
+                Text("No games recorded yet")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .padding()
+            } else {
+                ForEach(persistenceManager.savedGames) { game in
+                    Button(action: { selectedGame = game }) {
+                        GameLogRow(game: game)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Game Log Row
+
+struct GameLogRow: View {
+    let game: Game
+
+    var body: some View {
+        HStack(spacing: 12) {
+            // Result badge
+            Text(game.resultString)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: 28, height: 28)
+                .background(game.isWin ? Color.green : (game.isLoss ? Color.red : Color.orange))
+                .cornerRadius(6)
+
+            // Game info
+            VStack(alignment: .leading, spacing: 2) {
+                Text("vs \(game.opponent)")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+
+                Text(game.date.formatted(date: .abbreviated, time: .omitted))
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Spacer()
+
+            // Score and points
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(game.scoreString)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+
+                Text("\(game.playerStats.points) pts")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(12)
+    }
+}
+
+// MARK: - Game Detail Sheet
+
+struct GameDetailSheet: View {
+    let game: Game
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            ScrollView {
+                VStack(spacing: 20) {
+                    // Result Header
+                    VStack(spacing: 8) {
+                        Text(game.isWin ? "Victory" : (game.isLoss ? "Defeat" : "Tie"))
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(game.isWin ? .green : (game.isLoss ? .red : .orange))
+
+                        Text(game.scoreString)
+                            .font(.system(size: 48, weight: .bold, design: .rounded))
+
+                        Text("vs \(game.opponent)")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+
+                        Text(game.date.formatted(date: .long, time: .omitted))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding()
+
+                    // Player Stats
+                    VStack(spacing: 16) {
+                        Text("Sahil's Stats")
+                            .font(.headline)
+
+                        HStack(spacing: 0) {
+                            statBox(value: "\(game.playerStats.points)", label: "PTS", color: .orange)
+                            statBox(value: "\(game.playerStats.rebounds)", label: "REB", color: .blue)
+                            statBox(value: "\(game.playerStats.assists)", label: "AST", color: .green)
+                            statBox(value: "\(game.playerStats.steals)", label: "STL", color: .teal)
+                            statBox(value: "\(game.playerStats.blocks)", label: "BLK", color: .purple)
+                        }
+
+                        // Shooting
+                        HStack(spacing: 20) {
+                            shootingStat(label: "2PT", made: game.playerStats.fg2Made, attempted: game.playerStats.fg2Attempted)
+                            shootingStat(label: "3PT", made: game.playerStats.fg3Made, attempted: game.playerStats.fg3Attempted)
+                            shootingStat(label: "FT", made: game.playerStats.ftMade, attempted: game.playerStats.ftAttempted)
+                        }
+                    }
+                    .padding()
+                    .background(Color(.systemBackground))
+                    .cornerRadius(16)
+                }
+                .padding()
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("Game Details")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
+    }
+
+    private func statBox(value: String, label: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(color)
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func shootingStat(label: String, made: Int, attempted: Int) -> some View {
+        VStack(spacing: 4) {
+            Text("\(made)/\(attempted)")
+                .font(.headline)
+                .monospacedDigit()
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 }
 
