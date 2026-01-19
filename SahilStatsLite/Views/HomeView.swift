@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import Charts
 
 struct HomeView: View {
     @EnvironmentObject var appState: AppState
@@ -263,6 +264,72 @@ struct CareerStatsSheet: View {
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
     @Binding var selectedGame: Game?
     @Environment(\.dismiss) private var dismiss
+    @State private var selectedTrendStat: TrendStat = .points
+
+    // Sahil's birthday for age calculation
+    private let birthday = Calendar.current.date(from: DateComponents(year: 2016, month: 11, day: 1))!
+
+    enum TrendStat: String, CaseIterable {
+        case points = "Points"
+        case rebounds = "Rebounds"
+        case defense = "Defense"
+
+        var color: Color {
+            switch self {
+            case .points: return .orange
+            case .rebounds: return .blue
+            case .defense: return .green
+            }
+        }
+
+        var label: String {
+            switch self {
+            case .points: return "PPG"
+            case .rebounds: return "RPG"
+            case .defense: return "STL+BLK"
+            }
+        }
+    }
+
+    // Calculate age at a given date
+    private func ageAtDate(_ date: Date) -> Int {
+        let calendar = Calendar.current
+        let ageComponents = calendar.dateComponents([.year], from: birthday, to: date)
+        return ageComponents.year ?? 0
+    }
+
+    // Group games by age and calculate stat averages
+    private func statsByAge(for stat: TrendStat) -> [(age: Int, value: Double)] {
+        let games = persistenceManager.savedGames
+        guard !games.isEmpty else { return [] }
+
+        // Group games by age
+        var gamesByAge: [Int: [Game]] = [:]
+        for game in games {
+            let age = ageAtDate(game.date)
+            gamesByAge[age, default: []].append(game)
+        }
+
+        // Calculate average for each age
+        return gamesByAge.keys.sorted().compactMap { age in
+            guard let gamesAtAge = gamesByAge[age], !gamesAtAge.isEmpty else { return nil }
+            let total: Int
+            switch stat {
+            case .points:
+                total = gamesAtAge.reduce(0) { $0 + $1.playerStats.points }
+            case .rebounds:
+                total = gamesAtAge.reduce(0) { $0 + $1.playerStats.rebounds }
+            case .defense:
+                total = gamesAtAge.reduce(0) { $0 + $1.playerStats.steals + $1.playerStats.blocks }
+            }
+            let avg = Double(total) / Double(gamesAtAge.count)
+            return (age: age, value: avg)
+        }
+    }
+
+    private var currentTrendData: [(age: Int, value: Double)] {
+        statsByAge(for: selectedTrendStat)
+    }
 
     var body: some View {
         NavigationView {
@@ -270,6 +337,11 @@ struct CareerStatsSheet: View {
                 VStack(spacing: 20) {
                     // Career Averages
                     careerAveragesCard
+
+                    // Trend by Age (only show if we have data from multiple ages)
+                    if currentTrendData.count >= 2 {
+                        trendCard
+                    }
 
                     // Shooting Stats
                     shootingStatsCard
@@ -291,6 +363,90 @@ struct CareerStatsSheet: View {
                 GameDetailSheet(game: game)
             }
         }
+    }
+
+    // MARK: - Trend Card
+
+    private var trendCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Progress by Age")
+                    .font(.headline)
+                Spacer()
+            }
+
+            // Stat picker
+            Picker("Stat", selection: $selectedTrendStat) {
+                ForEach(TrendStat.allCases, id: \.self) { stat in
+                    Text(stat.rawValue).tag(stat)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            // Current value label
+            if let latest = currentTrendData.last {
+                HStack {
+                    Spacer()
+                    Text("Age \(latest.age): \(String(format: "%.1f", latest.value)) \(selectedTrendStat.label)")
+                        .font(.caption)
+                        .foregroundColor(selectedTrendStat.color)
+                }
+            }
+
+            Chart {
+                ForEach(currentTrendData, id: \.age) { dataPoint in
+                    LineMark(
+                        x: .value("Age", "Age \(dataPoint.age)"),
+                        y: .value(selectedTrendStat.label, dataPoint.value)
+                    )
+                    .foregroundStyle(selectedTrendStat.color.gradient)
+                    .interpolationMethod(.catmullRom)
+                    .lineStyle(StrokeStyle(lineWidth: 3))
+
+                    PointMark(
+                        x: .value("Age", "Age \(dataPoint.age)"),
+                        y: .value(selectedTrendStat.label, dataPoint.value)
+                    )
+                    .foregroundStyle(selectedTrendStat.color)
+                    .symbolSize(60)
+
+                    AreaMark(
+                        x: .value("Age", "Age \(dataPoint.age)"),
+                        y: .value(selectedTrendStat.label, dataPoint.value)
+                    )
+                    .foregroundStyle(selectedTrendStat.color.opacity(0.1).gradient)
+                }
+            }
+            .frame(height: 150)
+            .chartYAxis {
+                AxisMarks(position: .leading) { value in
+                    AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
+                        .foregroundStyle(.secondary.opacity(0.3))
+                    AxisValueLabel {
+                        if let doubleValue = value.as(Double.self) {
+                            Text(String(format: "%.1f", doubleValue))
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .chartXAxis {
+                AxisMarks { value in
+                    AxisValueLabel {
+                        if let stringValue = value.as(String.self) {
+                            Text(stringValue)
+                                .font(.caption2)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+            }
+            .animation(.easeInOut(duration: 0.3), value: selectedTrendStat)
+        }
+        .padding()
+        .background(Color(.systemBackground))
+        .cornerRadius(16)
     }
 
     // MARK: - Career Averages Card

@@ -64,6 +64,7 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 
 ## Technical Notes
 
+- **Player Birthday**: November 1, 2016 (used for age-based stat trending)
 - **Swift Concurrency**: Uses `nonisolated(unsafe)` for properties accessed from video processing queue
 - **Lazy Asset Writer Setup**: Writer configured on first frame to capture actual dimensions
 - **Coordinate System**: OverlayRenderer flips CGContext to UIKit coords at start for simpler drawing
@@ -93,6 +94,7 @@ Uses Apple's **DockKit** framework (iOS 18+) for smart gimbal integration:
 - [ ] Team colors (for overlay color bars)
 - [ ] Default half length
 - [ ] Player name (currently hardcoded as "Sahil")
+- [ ] Player birthday (currently hardcoded as Nov 1, 2016)
 
 ### Integrations
 - [ ] **Calendar** - Sync games with calendar, schedule reminders
@@ -101,8 +103,8 @@ Uses Apple's **DockKit** framework (iOS 18+) for smart gimbal integration:
 - [ ] **Zoom** - Live streaming integration
 
 ### Home Screen Enhancements
-- [ ] Quick access to career stats from home
-- [ ] Stats dashboard / charts
+- [x] Quick access to career stats from home (Career Stats card + sheet)
+- [x] Stats dashboard / charts (age-based trend charts for PPG, RPG, Defense)
 - [ ] Season filtering for stats
 
 ### Gimbal / Recording
