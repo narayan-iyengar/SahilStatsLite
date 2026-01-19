@@ -367,8 +367,8 @@ struct CareerStatsSheet: View {
                     // Career Averages
                     careerAveragesCard
 
-                    // Trend by Age (only show if we have data from multiple ages)
-                    if currentTrendData.count >= 2 {
+                    // Trend by Age (show if we have any games)
+                    if !currentTrendData.isEmpty {
                         trendCard
                     }
 

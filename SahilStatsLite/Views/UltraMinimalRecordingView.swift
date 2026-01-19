@@ -45,8 +45,6 @@ struct UltraMinimalRecordingView: View {
 
     // UI state
     @State private var showSahilStats: Bool = false
-    @State private var showStatsDashboard: Bool = false
-    @State private var selectedGame: Game? = nil
     @State private var showEndConfirmation: Bool = false
     @State private var isFinishingRecording: Bool = false
     @State private var isPortrait: Bool = true
@@ -101,11 +99,6 @@ struct UltraMinimalRecordingView: View {
         let fga = fg2Att + fg3Att
         let denominator = 2 * (Double(fga) + 0.44 * Double(ftAtt))
         return denominator > 0 ? Double(sahilPoints) / denominator * 100 : 0
-    }
-
-    // Career stats from persistence
-    private var pastGames: [Game] {
-        persistenceManager.savedGames
     }
 
     var body: some View {
@@ -184,12 +177,6 @@ struct UltraMinimalRecordingView: View {
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
 
-            // Stats dashboard
-            if showStatsDashboard {
-                statsDashboard
-                    .transition(.opacity.combined(with: .scale(scale: 0.95)))
-            }
-
             // End game confirmation
             if showEndConfirmation {
                 endGameConfirmation
@@ -226,8 +213,6 @@ struct UltraMinimalRecordingView: View {
             recordingManager.stopSession()
         }
         .animation(.spring(response: 0.3), value: showSahilStats)
-        .animation(.spring(response: 0.3), value: showStatsDashboard)
-        .animation(.spring(response: 0.3), value: selectedGame?.id)
     }
 
     // MARK: - Initialize Game State
@@ -713,24 +698,6 @@ struct UltraMinimalRecordingView: View {
 
                 // Game Controls
                 HStack(spacing: 10) {
-                    // Dashboard
-                    Button(action: {
-                        showSahilStats = false
-                        showStatsDashboard = true
-                    }) {
-                        VStack(spacing: 4) {
-                            Image(systemName: "chart.bar.fill")
-                                .font(.system(size: 16))
-                            Text("Stats")
-                                .font(.system(size: 10, weight: .medium))
-                        }
-                        .foregroundColor(.orange)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.orange.opacity(0.1))
-                        .cornerRadius(10)
-                    }
-
                     // Next Period
                     Button(action: { advancePeriod() }) {
                         VStack(spacing: 4) {
@@ -891,301 +858,6 @@ struct UltraMinimalRecordingView: View {
         }
     }
 
-    // MARK: - Stats Dashboard
-
-    private var statsDashboard: some View {
-        ZStack {
-            Color.black.opacity(0.4)
-                .ignoresSafeArea()
-                .onTapGesture { showStatsDashboard = false }
-
-            VStack(spacing: 0) {
-                // Header
-                HStack {
-                    Button(action: {
-                        showStatsDashboard = false
-                        showSahilStats = true
-                    }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 16, weight: .semibold))
-                            .foregroundColor(.orange)
-                    }
-
-                    Spacer()
-
-                    Text("Game Stats")
-                        .font(.system(size: 18, weight: .bold))
-
-                    Spacer()
-
-                    Button(action: { showStatsDashboard = false }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 24))
-                            .foregroundColor(.secondary)
-                    }
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-
-                Divider()
-
-                // Content
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 16) {
-                        // Today's points
-                        dashboardCard {
-                            VStack(spacing: 10) {
-                                Text("TODAY")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.secondary)
-
-                                Text("\(sahilPoints)")
-                                    .font(.system(size: 42, weight: .bold, design: .rounded))
-                                    .foregroundColor(.orange)
-
-                                Text("POINTS")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.secondary)
-                            }
-                        }
-
-                        // Today's shooting
-                        dashboardCard {
-                            VStack(spacing: 8) {
-                                Text("SHOOTING")
-                                    .font(.system(size: 10, weight: .bold))
-                                    .foregroundColor(.secondary)
-
-                                HStack(spacing: 10) {
-                                    shootingCircle("FG", pct: fgPct, color: .blue)
-                                    shootingCircle("3PT", pct: fg3Pct, color: .purple)
-                                    shootingCircle("FT", pct: ftPct, color: .cyan)
-                                }
-                            }
-                        }
-
-                        // Career averages
-                        if pastGames.count > 0 {
-                            dashboardCard {
-                                VStack(spacing: 8) {
-                                    HStack {
-                                        Text("CAREER AVG")
-                                            .font(.system(size: 10, weight: .bold))
-                                            .foregroundColor(.secondary)
-                                        Spacer()
-                                        Text("\(persistenceManager.careerGames) games")
-                                            .font(.system(size: 9))
-                                            .foregroundColor(.secondary)
-                                    }
-
-                                    HStack(spacing: 8) {
-                                        careerAvgItem("PPG", value: persistenceManager.careerPPG, color: .orange)
-                                        careerAvgItem("RPG", value: persistenceManager.careerRPG, color: .blue)
-                                        careerAvgItem("APG", value: persistenceManager.careerAPG, color: .green)
-                                    }
-
-                                    Text("W-L: \(persistenceManager.careerRecord)")
-                                        .font(.system(size: 10, weight: .semibold))
-                                }
-                            }
-
-                            // Game log
-                            VStack(spacing: 6) {
-                                HStack {
-                                    Text("GAME LOG")
-                                        .font(.system(size: 10, weight: .bold))
-                                        .foregroundColor(.secondary)
-                                    Spacer()
-                                    Text("\(pastGames.count) games")
-                                        .font(.system(size: 9))
-                                        .foregroundColor(.secondary)
-                                }
-
-                                ScrollView(.vertical, showsIndicators: true) {
-                                    VStack(spacing: 4) {
-                                        ForEach(pastGames) { game in
-                                            Button(action: { selectedGame = game }) {
-                                                gameLogRow(game)
-                                            }
-                                            .buttonStyle(.plain)
-                                        }
-                                    }
-                                }
-                                .frame(maxHeight: 140)
-                            }
-                            .frame(width: 180)
-                            .padding(.vertical, 12)
-                            .padding(.horizontal, 12)
-                            .background(Color.gray.opacity(0.08))
-                            .cornerRadius(14)
-                        }
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 12)
-                }
-
-                // Game detail overlay
-                if let game = selectedGame {
-                    gameDetailOverlay(game)
-                }
-            }
-            .background(.regularMaterial)
-            .cornerRadius(20)
-            .shadow(color: Color.black.opacity(0.2), radius: 20, y: 5)
-            .padding(.horizontal, 30)
-            .padding(.vertical, 20)
-        }
-    }
-
-    private func dashboardCard<Content: View>(@ViewBuilder content: () -> Content) -> some View {
-        content()
-            .frame(width: 180)
-            .padding(.vertical, 14)
-            .padding(.horizontal, 12)
-            .background(Color.gray.opacity(0.08))
-            .cornerRadius(14)
-    }
-
-    private func shootingCircle(_ label: String, pct: Double, color: Color) -> some View {
-        VStack(spacing: 4) {
-            ZStack {
-                Circle()
-                    .stroke(Color.gray.opacity(0.2), lineWidth: 4)
-                    .frame(width: 44, height: 44)
-
-                Circle()
-                    .trim(from: 0, to: min(pct / 100, 1.0))
-                    .stroke(color, style: StrokeStyle(lineWidth: 4, lineCap: .round))
-                    .frame(width: 44, height: 44)
-                    .rotationEffect(.degrees(-90))
-
-                Text(String(format: "%.0f", pct))
-                    .font(.system(size: 12, weight: .bold))
-                    .foregroundColor(color)
-            }
-
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundColor(.secondary)
-        }
-    }
-
-    private func careerAvgItem(_ label: String, value: Double, color: Color) -> some View {
-        VStack(spacing: 2) {
-            Text(String(format: "%.1f", value))
-                .font(.system(size: 18, weight: .bold, design: .rounded))
-                .foregroundColor(color)
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func gameLogRow(_ game: Game) -> some View {
-        HStack(spacing: 8) {
-            Text(game.resultString)
-                .font(.system(size: 10, weight: .bold))
-                .foregroundColor(.white)
-                .frame(width: 20, height: 20)
-                .background(game.isWin ? Color.green : (game.isLoss ? Color.red : Color.orange))
-                .cornerRadius(4)
-
-            Text(game.opponent)
-                .font(.system(size: 11, weight: .medium))
-                .foregroundColor(.primary)
-                .lineLimit(1)
-
-            Spacer()
-
-            Text(game.scoreString)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                .foregroundColor(.secondary)
-
-            Image(systemName: "chevron.right")
-                .font(.system(size: 9))
-                .foregroundColor(.secondary.opacity(0.5))
-        }
-        .padding(.vertical, 6)
-        .padding(.horizontal, 8)
-        .background(Color.gray.opacity(0.05))
-        .cornerRadius(6)
-    }
-
-    private func gameDetailOverlay(_ game: Game) -> some View {
-        ZStack {
-            Color.black.opacity(0.5)
-                .ignoresSafeArea()
-                .onTapGesture { selectedGame = nil }
-
-            VStack(spacing: 12) {
-                HStack {
-                    Button(action: { selectedGame = nil }) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.orange)
-                    }
-
-                    Spacer()
-
-                    VStack(spacing: 2) {
-                        Text("vs \(game.opponent)")
-                            .font(.system(size: 16, weight: .bold))
-                        Text(game.date.formatted(date: .abbreviated, time: .omitted))
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                    }
-
-                    Spacer()
-
-                    Button(action: { selectedGame = nil }) {
-                        Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 22))
-                            .foregroundColor(.secondary)
-                    }
-                }
-
-                HStack(spacing: 16) {
-                    Text(game.resultString)
-                        .font(.system(size: 24, weight: .bold))
-                        .foregroundColor(game.isWin ? .green : (game.isLoss ? .red : .orange))
-
-                    Text(game.scoreString)
-                        .font(.system(size: 28, weight: .bold, design: .rounded))
-                }
-
-                Divider()
-
-                Text("Sahil: \(game.playerStats.points) pts")
-                    .font(.system(size: 14, weight: .semibold))
-                    .foregroundColor(.orange)
-
-                HStack(spacing: 12) {
-                    gameDetailStat("REB", value: game.playerStats.rebounds, color: .blue)
-                    gameDetailStat("AST", value: game.playerStats.assists, color: .green)
-                    gameDetailStat("STL", value: game.playerStats.steals, color: .teal)
-                    gameDetailStat("BLK", value: game.playerStats.blocks, color: .indigo)
-                }
-            }
-            .padding(20)
-            .background(.regularMaterial)
-            .cornerRadius(16)
-            .shadow(color: Color.black.opacity(0.15), radius: 15, y: 5)
-            .frame(width: 320)
-        }
-    }
-
-    private func gameDetailStat(_ label: String, value: Int, color: Color) -> some View {
-        VStack(spacing: 2) {
-            Text("\(value)")
-                .font(.system(size: 18, weight: .bold))
-                .foregroundColor(color)
-            Text(label)
-                .font(.system(size: 9, weight: .semibold))
-                .foregroundColor(.secondary)
-        }
-        .frame(maxWidth: .infinity)
-    }
 }
 
 // MARK: - Camera Preview View
