@@ -74,3 +74,38 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 ## Build Requirements
 - iOS 17.0+
 - Physical device required for camera recording (simulator shows placeholder)
+
+## Gimbal Auto-Tracking
+
+Uses Apple's **DockKit** framework (iOS 18+) for smart gimbal integration:
+
+- **What it tracks**: People/subjects detected by camera
+- **Region of interest**: Court area (90% width, 75% height centered)
+- **Auto-zoom**: Adjusts based on subject count (1-2 people = 2x, 3-4 = 1.5x, 5+ = 1x)
+- **Compatible with**: Insta360 Flow 2 Pro and other DockKit gimbals
+- **File**: `Services/GimbalTrackingManager.swift`
+
+## Future Features (TODO)
+
+### Settings Page (from Home Screen)
+- [ ] Team name and abbreviation
+- [ ] Team logo/image
+- [ ] Team colors (for overlay color bars)
+- [ ] Default half length
+- [ ] Player name (currently hardcoded as "Sahil")
+
+### Integrations
+- [ ] **Calendar** - Sync games with calendar, schedule reminders
+- [ ] **Firebase** - Cloud backup of games and stats
+- [ ] **YouTube** - Direct upload of game videos
+- [ ] **Zoom** - Live streaming integration
+
+### Home Screen Enhancements
+- [ ] Quick access to career stats from home
+- [ ] Stats dashboard / charts
+- [ ] Season filtering for stats
+
+### Gimbal / Recording
+- [ ] Test with actual Insta360 Flow 2 Pro hardware
+- [ ] Manual zoom controls
+- [ ] Audio level monitoring
