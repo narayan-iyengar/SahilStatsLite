@@ -11,6 +11,7 @@ import Combine
 struct HomeView: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var calendarManager = GameCalendarManager.shared
+    @ObservedObject private var persistenceManager = GamePersistenceManager.shared
 
     var body: some View {
         ScrollView {

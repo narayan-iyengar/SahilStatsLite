@@ -35,6 +35,11 @@ struct GameSummaryView: View {
                 // Score Card
                 scoreCard
 
+                // Player Stats (Sahil's performance)
+                if let game = game {
+                    playerStatsSection(stats: game.playerStats)
+                }
+
                 // Video Preview
                 videoPreviewSection
 
@@ -117,6 +122,143 @@ struct GameSummaryView: View {
         .padding(.vertical, 24)
         .background(Color(.systemBackground))
         .cornerRadius(16)
+    }
+
+    // MARK: - Player Stats Section
+
+    private func playerStatsSection(stats: PlayerStats) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("Sahil's Performance")
+                .font(.headline)
+                .foregroundColor(.secondary)
+
+            VStack(spacing: 16) {
+                // Main Stats Row
+                HStack(spacing: 0) {
+                    statBox(value: "\(stats.points)", label: "PTS", color: .orange)
+                    statBox(value: "\(stats.rebounds)", label: "REB", color: .blue)
+                    statBox(value: "\(stats.assists)", label: "AST", color: .green)
+                    statBox(value: "\(stats.steals)", label: "STL", color: .purple)
+                    statBox(value: "\(stats.blocks)", label: "BLK", color: .red)
+                }
+
+                Divider()
+
+                // Shooting Stats
+                VStack(spacing: 12) {
+                    Text("Shooting")
+                        .font(.subheadline)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.secondary)
+
+                    HStack(spacing: 16) {
+                        shootingStat(
+                            label: "2PT",
+                            made: stats.fg2Made,
+                            attempted: stats.fg2Attempted,
+                            percentage: stats.fg2Percentage
+                        )
+                        shootingStat(
+                            label: "3PT",
+                            made: stats.fg3Made,
+                            attempted: stats.fg3Attempted,
+                            percentage: stats.fg3Percentage
+                        )
+                        shootingStat(
+                            label: "FT",
+                            made: stats.ftMade,
+                            attempted: stats.ftAttempted,
+                            percentage: stats.ftPercentage
+                        )
+                    }
+
+                    // Advanced stats row
+                    HStack(spacing: 24) {
+                        VStack(spacing: 2) {
+                            Text(String(format: "%.1f%%", stats.fgPercentage))
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            Text("FG%")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        VStack(spacing: 2) {
+                            Text(String(format: "%.1f%%", stats.efgPercentage))
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            Text("eFG%")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        VStack(spacing: 2) {
+                            Text(String(format: "%.1f%%", stats.tsPercentage))
+                                .font(.headline)
+                                .fontWeight(.semibold)
+                            Text("TS%")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .padding(.top, 4)
+                }
+
+                // Other Stats
+                if stats.turnovers > 0 || stats.fouls > 0 {
+                    Divider()
+                    HStack(spacing: 24) {
+                        if stats.turnovers > 0 {
+                            HStack(spacing: 4) {
+                                Text("\(stats.turnovers)")
+                                    .fontWeight(.semibold)
+                                Text("TO")
+                                    .foregroundColor(.secondary)
+                            }
+                            .font(.subheadline)
+                        }
+                        if stats.fouls > 0 {
+                            HStack(spacing: 4) {
+                                Text("\(stats.fouls)")
+                                    .fontWeight(.semibold)
+                                Text("PF")
+                                    .foregroundColor(.secondary)
+                            }
+                            .font(.subheadline)
+                        }
+                    }
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+        }
+    }
+
+    private func statBox(value: String, label: String, color: Color) -> some View {
+        VStack(spacing: 4) {
+            Text(value)
+                .font(.title2)
+                .fontWeight(.bold)
+                .foregroundColor(color)
+            Text(label)
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private func shootingStat(label: String, made: Int, attempted: Int, percentage: Double) -> some View {
+        VStack(spacing: 4) {
+            Text("\(made)/\(attempted)")
+                .font(.headline)
+                .monospacedDigit()
+            Text(String(format: "%.0f%%", percentage))
+                .font(.caption)
+                .foregroundColor(percentage >= 50 ? .green : percentage >= 33 ? .orange : .secondary)
+            Text(label)
+                .font(.caption2)
+                .foregroundColor(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 
     // MARK: - Video Preview
@@ -287,6 +429,22 @@ struct GameSummaryView: View {
     appState.currentGame = Game(opponent: "Thunder", teamName: "Wildcats")
     appState.currentGame?.myScore = 24
     appState.currentGame?.opponentScore = 18
+
+    // Add sample player stats
+    appState.currentGame?.playerStats = PlayerStats(
+        fg2Made: 4,
+        fg2Attempted: 8,
+        fg3Made: 2,
+        fg3Attempted: 5,
+        ftMade: 3,
+        ftAttempted: 4,
+        assists: 3,
+        rebounds: 5,
+        steals: 2,
+        blocks: 1,
+        turnovers: 2,
+        fouls: 1
+    )
 
     return GameSummaryView()
         .environmentObject(appState)

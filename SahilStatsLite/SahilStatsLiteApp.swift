@@ -47,7 +47,7 @@ struct ContentView: View {
                     .environmentObject(appState)
 
             case .recording:
-                RecordingView()
+                UltraMinimalRecordingView()
                     .environmentObject(appState)
 
             case .summary:
@@ -63,7 +63,11 @@ struct ContentView: View {
 class AppState: ObservableObject {
     @MainActor @Published var currentScreen: Screen = .home
     @MainActor @Published var currentGame: Game?
-    @MainActor @Published var recentGames: [Game] = []
+
+    // Recent games now come from persistence
+    var recentGames: [Game] {
+        GamePersistenceManager.shared.savedGames
+    }
 
     enum Screen {
         case home
@@ -82,7 +86,8 @@ class AppState: ObservableObject {
     func endGame() {
         if var game = currentGame {
             game.completedAt = Date()
-            recentGames.insert(game, at: 0)
+            game.videoURL = RecordingManager.shared.getRecordingURL()
+            // Game is saved by UltraMinimalRecordingView before calling this
             currentScreen = .summary
         }
     }
