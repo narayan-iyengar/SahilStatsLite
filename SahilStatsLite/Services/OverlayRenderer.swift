@@ -3,29 +3,34 @@
 //  SahilStatsLite
 //
 //  Real-time scoreboard overlay renderer
-//  Draws ScoreCam-style bottom bar on each video frame
+//  NBA corner-style scorebug with team colors and logo space
 //
 
 import CoreImage
 import CoreGraphics
 import UIKit
 
-class OverlayRenderer {
+class OverlayRenderer: @unchecked Sendable {
 
     // MARK: - Overlay State (updated from UI)
 
-    var homeTeam: String = "Home"
-    var awayTeam: String = "Away"
-    var homeScore: Int = 0
-    var awayScore: Int = 0
-    var period: String = "1st"
-    var clockTime: String = "20:00"
-    var eventName: String = ""
+    nonisolated(unsafe) var homeTeam: String = "Home"
+    nonisolated(unsafe) var awayTeam: String = "Away"
+    nonisolated(unsafe) var homeScore: Int = 0
+    nonisolated(unsafe) var awayScore: Int = 0
+    nonisolated(unsafe) var period: String = "1st"
+    nonisolated(unsafe) var clockTime: String = "20:00"
+    nonisolated(unsafe) var isClockRunning: Bool = true
+    nonisolated(unsafe) var eventName: String = ""
+
+    // Team colors (can be customized later)
+    nonisolated(unsafe) var homeColor: UIColor = UIColor(red: 1.0, green: 0.5, blue: 0.0, alpha: 1.0)  // Orange
+    nonisolated(unsafe) var awayColor: UIColor = UIColor(red: 0.2, green: 0.5, blue: 0.9, alpha: 1.0)  // Blue
 
     // MARK: - Rendering
 
     /// Composite overlay onto a video frame
-    func render(onto pixelBuffer: CVPixelBuffer) -> CVPixelBuffer? {
+    nonisolated func render(onto pixelBuffer: CVPixelBuffer) -> CVPixelBuffer? {
         let width = CVPixelBufferGetWidth(pixelBuffer)
         let height = CVPixelBufferGetHeight(pixelBuffer)
 
@@ -46,108 +51,181 @@ class OverlayRenderer {
             return pixelBuffer
         }
 
-        // Flip to UIKit coordinates (top-left origin) for easier drawing
-        // CGContext default is bottom-left origin
+        // Flip to UIKit coordinates (top-left origin)
         context.translateBy(x: 0, y: CGFloat(height))
         context.scaleBy(x: 1, y: -1)
 
-        // Now we're in UIKit coordinates - draw the scoreboard at the bottom
-        drawScoreboard(in: context, width: CGFloat(width), height: CGFloat(height))
+        // Draw NBA-style corner scorebug
+        drawNBAStyleScoreboard(in: context, width: CGFloat(width), height: CGFloat(height))
 
         return pixelBuffer
     }
 
-    /// Draw the ScoreCam-style bottom bar scoreboard
-    /// Called with context already in UIKit coordinates (origin top-left)
-    private func drawScoreboard(in context: CGContext, width: CGFloat, height: CGFloat) {
-        // Determine if landscape or portrait based on dimensions
+    /// Draw NBA-style corner scoreboard
+    /// Layout:
+    /// ┌─────────────────────────┐
+    /// │ [▮] WIL    24 │ H1     │
+    /// │ [▮] OPP    18 │ 12:34  │
+    /// └─────────────────────────┘
+    private nonisolated func drawNBAStyleScoreboard(in context: CGContext, width: CGFloat, height: CGFloat) {
         let isLandscape = width > height
-
-        // Scale based on video width for consistent sizing
         let referenceWidth: CGFloat = isLandscape ? 1920.0 : 1080.0
         let scale = width / referenceWidth
 
-        // Bar dimensions - position at BOTTOM of screen in UIKit coordinates
-        let barHeight: CGFloat = 60 * scale
-        let barPadding: CGFloat = 30 * scale
-        let barWidth = width - (barPadding * 2)
-        let barX = barPadding
-        let barY = height - barPadding - barHeight  // Bottom of screen in UIKit coords
+        // Scorebug dimensions
+        let rowHeight: CGFloat = 44 * scale
+        let totalHeight: CGFloat = rowHeight * 2
+        let bugWidth: CGFloat = 290 * scale
+        let cornerRadius: CGFloat = 10 * scale
 
-        // Colors
-        let darkBg = CGColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 0.9)
-        let scoreBg = CGColor(red: 0.2, green: 0.2, blue: 0.2, alpha: 0.95)
+        // Position: bottom-right corner with padding (standard broadcast position)
+        let padding: CGFloat = 24 * scale
+        let bugX = width - padding - bugWidth
+        let bugY = height - padding - totalHeight
 
-        // Draw main bar background with rounded corners
-        let barRect = CGRect(x: barX, y: barY, width: barWidth, height: barHeight)
-        let barPath = CGPath(roundedRect: barRect, cornerWidth: 8 * scale, cornerHeight: 8 * scale, transform: nil)
-        context.setFillColor(darkBg)
-        context.addPath(barPath)
+        // Column widths
+        let colorBarWidth: CGFloat = 7 * scale
+        let teamWidth: CGFloat = 58 * scale
+        let scoreWidth: CGFloat = 54 * scale
+        let dividerWidth: CGFloat = 2 * scale
+        let timeWidth = bugWidth - colorBarWidth - teamWidth - scoreWidth - dividerWidth  // More room for "1st Half"
+
+        // === DRAW BACKGROUND ===
+        let bgRect = CGRect(x: bugX, y: bugY, width: bugWidth, height: totalHeight)
+        let bgPath = CGPath(roundedRect: bgRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+
+        // Dark semi-transparent background
+        context.saveGState()
+        context.addPath(bgPath)
+        context.setFillColor(CGColor(red: 0.08, green: 0.08, blue: 0.1, alpha: 0.88))
         context.fillPath()
+        context.restoreGState()
 
-        // Calculate section widths
-        let totalSections: CGFloat = 7
-        let sectionWidth = barWidth / totalSections
-        var currentX = barX
+        // === HOME TEAM ROW (TOP) ===
+        let homeRowY = bugY
 
-        // === HOME TEAM NAME ===
-        let homeTeamRect = CGRect(x: currentX, y: barY, width: sectionWidth * 2, height: barHeight)
-        drawText(homeTeam.uppercased(), in: homeTeamRect, context: context,
-                 fontSize: 20 * scale, color: .white, bold: true)
-        currentX += sectionWidth * 2
+        // Home color bar (left edge, top half with rounded corner)
+        drawColorBar(in: context, x: bugX, y: homeRowY, width: colorBarWidth, height: rowHeight,
+                     color: homeColor.cgColor, roundTop: true, roundBottom: false, cornerRadius: cornerRadius, scale: scale)
 
-        // === HOME SCORE BOX ===
-        let homeScoreRect = CGRect(x: currentX + 4 * scale, y: barY + 4 * scale,
-                                    width: sectionWidth - 8 * scale, height: barHeight - 8 * scale)
-        let homeScorePath = CGPath(roundedRect: homeScoreRect, cornerWidth: 4 * scale, cornerHeight: 4 * scale, transform: nil)
-        context.setFillColor(scoreBg)
-        context.addPath(homeScorePath)
-        context.fillPath()
-        drawText("\(homeScore)", in: CGRect(x: currentX, y: barY, width: sectionWidth, height: barHeight),
-                 context: context, fontSize: 28 * scale, color: .white, bold: true)
-        currentX += sectionWidth
+        // Home team name
+        let homeNameRect = CGRect(x: bugX + colorBarWidth + 10 * scale, y: homeRowY, width: teamWidth, height: rowHeight)
+        drawText(String(homeTeam.prefix(3)).uppercased(), in: homeNameRect, context: context,
+                 fontSize: 18 * scale, color: .white, bold: true, alignment: .left)
 
-        // === CENTER (Period + Clock) ===
-        // Period at top of center section
-        let periodRect = CGRect(x: currentX, y: barY + barHeight * 0.1, width: sectionWidth, height: barHeight * 0.4)
-        drawText(period, in: periodRect, context: context, fontSize: 14 * scale, color: .orange, bold: true)
+        // Home score
+        let homeScoreRect = CGRect(x: bugX + colorBarWidth + teamWidth + 4 * scale, y: homeRowY, width: scoreWidth, height: rowHeight)
+        drawText("\(homeScore)", in: homeScoreRect, context: context,
+                 fontSize: 28 * scale, color: .white, bold: true, alignment: .right)
 
-        // Clock at bottom of center section
-        let clockRect = CGRect(x: currentX, y: barY + barHeight * 0.45, width: sectionWidth, height: barHeight * 0.45)
-        drawText(clockTime, in: clockRect, context: context, fontSize: 18 * scale, color: .white, bold: false, monospaced: true)
-        currentX += sectionWidth
+        // Vertical divider
+        let dividerX = bugX + colorBarWidth + teamWidth + scoreWidth + 8 * scale
+        context.setFillColor(CGColor(red: 0.3, green: 0.3, blue: 0.35, alpha: 1.0))
+        context.fill(CGRect(x: dividerX, y: bugY + 6 * scale, width: 1 * scale, height: totalHeight - 12 * scale))
 
-        // === AWAY SCORE BOX ===
-        let awayScoreRect = CGRect(x: currentX + 4 * scale, y: barY + 4 * scale,
-                                    width: sectionWidth - 8 * scale, height: barHeight - 8 * scale)
-        let awayScorePath = CGPath(roundedRect: awayScoreRect, cornerWidth: 4 * scale, cornerHeight: 4 * scale, transform: nil)
-        context.setFillColor(scoreBg)
-        context.addPath(awayScorePath)
-        context.fillPath()
-        drawText("\(awayScore)", in: CGRect(x: currentX, y: barY, width: sectionWidth, height: barHeight),
-                 context: context, fontSize: 28 * scale, color: .white, bold: true)
-        currentX += sectionWidth
+        // Period (top right section)
+        let periodRect = CGRect(x: dividerX + 6 * scale, y: homeRowY, width: timeWidth - 12 * scale, height: rowHeight)
+        drawText(period, in: periodRect, context: context,
+                 fontSize: 12 * scale, color: UIColor(white: 0.7, alpha: 1.0), bold: true, alignment: .center)
 
-        // === AWAY TEAM NAME ===
-        let awayTeamRect = CGRect(x: currentX, y: barY, width: sectionWidth * 2, height: barHeight)
-        drawText(awayTeam.uppercased(), in: awayTeamRect, context: context,
-                 fontSize: 20 * scale, color: .white, bold: true)
+        // === AWAY TEAM ROW (BOTTOM) ===
+        let awayRowY = bugY + rowHeight
+
+        // Away color bar (left edge, bottom half with rounded corner)
+        drawColorBar(in: context, x: bugX, y: awayRowY, width: colorBarWidth, height: rowHeight,
+                     color: awayColor.cgColor, roundTop: false, roundBottom: true, cornerRadius: cornerRadius, scale: scale)
+
+        // Away team name
+        let awayNameRect = CGRect(x: bugX + colorBarWidth + 10 * scale, y: awayRowY, width: teamWidth, height: rowHeight)
+        drawText(String(awayTeam.prefix(3)).uppercased(), in: awayNameRect, context: context,
+                 fontSize: 18 * scale, color: .white, bold: true, alignment: .left)
+
+        // Away score
+        let awayScoreRect = CGRect(x: bugX + colorBarWidth + teamWidth + 4 * scale, y: awayRowY, width: scoreWidth, height: rowHeight)
+        drawText("\(awayScore)", in: awayScoreRect, context: context,
+                 fontSize: 28 * scale, color: .white, bold: true, alignment: .right)
+
+        // Clock (bottom right section)
+        let clockColor = isClockRunning ? UIColor.white : UIColor(red: 1.0, green: 0.6, blue: 0.2, alpha: 1.0)
+        let clockRect = CGRect(x: dividerX + 6 * scale, y: awayRowY, width: timeWidth - 12 * scale, height: rowHeight)
+        drawText(clockTime, in: clockRect, context: context,
+                 fontSize: 20 * scale, color: clockColor, bold: true, alignment: .center, monospaced: true)
+
+        // === SUBTLE BORDER ===
+        context.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.1))
+        context.setLineWidth(1 * scale)
+        context.addPath(bgPath)
+        context.strokePath()
+
+        // Row separator line
+        context.setStrokeColor(CGColor(red: 0.3, green: 0.3, blue: 0.35, alpha: 0.5))
+        context.setLineWidth(1 * scale)
+        context.move(to: CGPoint(x: bugX + colorBarWidth, y: bugY + rowHeight))
+        context.addLine(to: CGPoint(x: bugX + bugWidth - cornerRadius, y: bugY + rowHeight))
+        context.strokePath()
     }
 
-    /// Draw text centered in the given rect
-    /// Context is already in UIKit coordinates
-    private func drawText(_ text: String, in rect: CGRect, context: CGContext,
-                          fontSize: CGFloat, color: UIColor, bold: Bool, monospaced: Bool = false) {
+    /// Draw team color bar with optional rounded corners
+    private nonisolated func drawColorBar(in context: CGContext, x: CGFloat, y: CGFloat,
+                                           width: CGFloat, height: CGFloat, color: CGColor,
+                                           roundTop: Bool, roundBottom: Bool, cornerRadius: CGFloat, scale: CGFloat) {
+        context.saveGState()
+
+        let rect = CGRect(x: x, y: y, width: width, height: height)
+
+        if roundTop || roundBottom {
+            // Create path with selective rounded corners
+            let path = CGMutablePath()
+            let r = cornerRadius
+
+            if roundTop && roundBottom {
+                // Both corners rounded (shouldn't happen in our case)
+                path.addRoundedRect(in: rect, cornerWidth: r, cornerHeight: r)
+            } else if roundTop {
+                // Only top-left corner rounded
+                path.move(to: CGPoint(x: x, y: y + height))
+                path.addLine(to: CGPoint(x: x, y: y + r))
+                path.addArc(center: CGPoint(x: x + r, y: y + r), radius: r, startAngle: .pi, endAngle: .pi * 1.5, clockwise: false)
+                path.addLine(to: CGPoint(x: x + width, y: y))
+                path.addLine(to: CGPoint(x: x + width, y: y + height))
+                path.closeSubpath()
+            } else {
+                // Only bottom-left corner rounded
+                path.move(to: CGPoint(x: x, y: y))
+                path.addLine(to: CGPoint(x: x + width, y: y))
+                path.addLine(to: CGPoint(x: x + width, y: y + height))
+                path.addLine(to: CGPoint(x: x + r, y: y + height))
+                path.addArc(center: CGPoint(x: x + r, y: y + height - r), radius: r, startAngle: .pi / 2, endAngle: .pi, clockwise: false)
+                path.closeSubpath()
+            }
+
+            context.addPath(path)
+            context.setFillColor(color)
+            context.fillPath()
+        } else {
+            context.setFillColor(color)
+            context.fill(rect)
+        }
+
+        context.restoreGState()
+    }
+
+    /// Draw text with alignment options
+    private nonisolated func drawText(_ text: String, in rect: CGRect, context: CGContext,
+                                       fontSize: CGFloat, color: UIColor, bold: Bool,
+                                       alignment: NSTextAlignment, monospaced: Bool = false) {
 
         let font: UIFont
         if monospaced {
             font = UIFont.monospacedDigitSystemFont(ofSize: fontSize, weight: bold ? .bold : .medium)
+        } else if bold {
+            font = UIFont.systemFont(ofSize: fontSize, weight: .bold)
         } else {
-            font = bold ? UIFont.boldSystemFont(ofSize: fontSize) : UIFont.systemFont(ofSize: fontSize)
+            font = UIFont.systemFont(ofSize: fontSize, weight: .medium)
         }
 
         let paragraphStyle = NSMutableParagraphStyle()
-        paragraphStyle.alignment = .center
+        paragraphStyle.alignment = alignment
 
         let attributes: [NSAttributedString.Key: Any] = [
             .font: font,
@@ -158,11 +236,18 @@ class OverlayRenderer {
         let attributedString = NSAttributedString(string: text, attributes: attributes)
         let textSize = attributedString.size()
 
-        // Center text in rect
-        let textX = rect.minX + (rect.width - textSize.width) / 2
+        // Calculate position based on alignment
+        var textX: CGFloat
+        switch alignment {
+        case .left:
+            textX = rect.minX
+        case .right:
+            textX = rect.maxX - textSize.width
+        default:
+            textX = rect.minX + (rect.width - textSize.width) / 2
+        }
         let textY = rect.minY + (rect.height - textSize.height) / 2
 
-        // Draw text using UIKit - context is already in UIKit coordinates
         UIGraphicsPushContext(context)
         attributedString.draw(at: CGPoint(x: textX, y: textY))
         UIGraphicsPopContext()

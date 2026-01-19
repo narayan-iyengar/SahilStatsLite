@@ -20,7 +20,7 @@ struct UltraMinimalRecordingView: View {
     @State private var myScore: Int = 0
     @State private var opponentScore: Int = 0
     @State private var remainingSeconds: Int = 0
-    @State private var period: String = "1st"
+    @State private var period: String = "1st Half"
     @State private var isClockRunning: Bool = false
 
     // Player stats (Sahil)
@@ -73,7 +73,7 @@ struct UltraMinimalRecordingView: View {
     }
 
     private var timerInterval: TimeInterval {
-        remainingSeconds < 60 ? 1.0 : 10.0
+        1.0  // Always 1-second updates for smooth video overlay
     }
 
     // Shooting percentages
@@ -145,7 +145,24 @@ struct UltraMinimalRecordingView: View {
                 }
             }
 
-            // Tap feedback overlays
+            // Full-screen tap areas for scoring (left = my team, right = opponent)
+            if !isPortrait || recordingManager.isSimulator {
+                HStack(spacing: 0) {
+                    // Left half - My team tap area
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { handleMyTeamTap() }
+
+                    // Right half - Opponent tap area
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { handleOpponentTap() }
+                }
+                .padding(.top, 60)     // Leave room for top bar (REC + menu)
+                .padding(.bottom, 100) // Leave room for scoreboard
+            }
+
+            // Tap feedback overlays (centered in each half)
             HStack {
                 if myTapCount > 0 {
                     tapFeedback(count: myTapCount, color: .orange)
@@ -157,7 +174,7 @@ struct UltraMinimalRecordingView: View {
                         .transition(.scale.combined(with: .opacity))
                 }
             }
-            .padding(.horizontal, 30)
+            .padding(.horizontal, 60)
             .animation(.spring(response: 0.2), value: myTapCount)
             .animation(.spring(response: 0.2), value: oppTapCount)
 
@@ -195,17 +212,13 @@ struct UltraMinimalRecordingView: View {
             updateOverlayState()
             await recordingManager.requestPermissionsAndSetup()
 
-            if !isPortrait && recordingManager.isSessionReady && !recordingManager.isSimulator {
-                startRecording()
+            // If already in landscape when camera is ready, start recording
+            if !isPortrait && !hasStartedRecording && recordingManager.isSessionReady && !recordingManager.isSimulator {
+                debugPrint("📹 Starting recording (already in landscape)")
                 hasStartedRecording = true
-            }
-        }
-        .onChange(of: isPortrait) { wasPortrait, nowPortrait in
-            if wasPortrait && !nowPortrait && !hasStartedRecording {
-                if recordingManager.isSessionReady && !recordingManager.isSimulator {
-                    startRecording()
-                    hasStartedRecording = true
-                }
+                updateOverlayState()
+                recordingManager.startRecording()
+                gimbalManager.startTracking()
             }
         }
         .onDisappear {
@@ -288,23 +301,19 @@ struct UltraMinimalRecordingView: View {
 
     private var smartScoreboard: some View {
         HStack(spacing: 0) {
-            // LEFT: My team (tap to score)
-            Button(action: { handleMyTeamTap() }) {
-                VStack(spacing: 2) {
-                    Text((appState.currentGame?.teamName ?? "WLD").prefix(3).uppercased())
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.orange)
-                    Text("\(myScore)")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .contentShape(Rectangle())
+            // LEFT: My team (display only - tap on screen to score)
+            VStack(spacing: 2) {
+                Text((appState.currentGame?.teamName ?? "WLD").prefix(3).uppercased())
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.orange)
+                Text("\(myScore)")
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
 
-            // CENTER: Clock (tap to pause)
+            // CENTER: Clock (tap to pause/play)
             Button(action: { toggleClock() }) {
                 VStack(spacing: 2) {
                     Text(period)
@@ -325,21 +334,17 @@ struct UltraMinimalRecordingView: View {
             }
             .buttonStyle(.plain)
 
-            // RIGHT: Opponent (tap to score)
-            Button(action: { handleOpponentTap() }) {
-                VStack(spacing: 2) {
-                    Text((appState.currentGame?.opponent ?? "OPP").prefix(3).uppercased())
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(.blue)
-                    Text("\(opponentScore)")
-                        .font(.system(size: 34, weight: .bold, design: .rounded))
-                        .foregroundColor(.primary)
-                }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 12)
-                .contentShape(Rectangle())
+            // RIGHT: Opponent (display only - tap on screen to score)
+            VStack(spacing: 2) {
+                Text((appState.currentGame?.opponent ?? "OPP").prefix(3).uppercased())
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(.blue)
+                Text("\(opponentScore)")
+                    .font(.system(size: 34, weight: .bold, design: .rounded))
+                    .foregroundColor(.primary)
             }
-            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
         }
         .background(.regularMaterial)
         .cornerRadius(16)
@@ -434,12 +439,16 @@ struct UltraMinimalRecordingView: View {
     // MARK: - Clock
 
     private func toggleClock() {
+        debugPrint("🕐 [toggleClock] called - isClockRunning: \(isClockRunning)")
+
+        // Simple toggle - recording is already started when entering landscape
         isClockRunning.toggle()
         if isClockRunning {
             startTimerIfNeeded()
         } else {
             stopTimer()
         }
+        updateOverlayState()
     }
 
     private func startTimerIfNeeded() {
@@ -458,7 +467,8 @@ struct UltraMinimalRecordingView: View {
             .autoconnect()
             .first()
             .sink { _ in
-                let decrement = self.remainingSeconds < 60 ? 1 : 10
+                // Last minute runs 2x faster (2 seconds per real second)
+                let decrement = self.remainingSeconds <= 60 ? 2 : 1
                 if self.remainingSeconds > decrement {
                     self.remainingSeconds -= decrement
                 } else {
@@ -479,12 +489,6 @@ struct UltraMinimalRecordingView: View {
 
     // MARK: - Recording
 
-    private func startRecording() {
-        updateOverlayState()
-        recordingManager.startRecording()
-        gimbalManager.startTracking()
-    }
-
     private func stopRecording() {
         timer?.cancel()
         gimbalManager.stopTracking()
@@ -501,6 +505,7 @@ struct UltraMinimalRecordingView: View {
             awayScore: opponentScore,
             period: period,
             clockTime: clockTime,
+            isClockRunning: isClockRunning,
             eventName: ""
         )
     }
@@ -509,18 +514,32 @@ struct UltraMinimalRecordingView: View {
 
     private func updateOrientationState() {
         let orientation = UIDevice.current.orientation
+        var newIsPortrait = isPortrait
 
         switch orientation {
         case .landscapeLeft, .landscapeRight:
-            withAnimation { isPortrait = false }
+            newIsPortrait = false
         case .portrait, .portraitUpsideDown:
-            withAnimation { isPortrait = true }
+            newIsPortrait = true
         default:
             if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
                 let interfaceOrientation = windowScene.effectiveGeometry.interfaceOrientation
-                withAnimation { isPortrait = interfaceOrientation.isPortrait }
+                newIsPortrait = interfaceOrientation.isPortrait
             }
         }
+
+        // Start recording when entering landscape (pre-game footage with initial overlay)
+        if !newIsPortrait && isPortrait && !hasStartedRecording {
+            if recordingManager.isSessionReady && !recordingManager.isSimulator {
+                debugPrint("📹 Starting recording on landscape entry")
+                hasStartedRecording = true
+                updateOverlayState()  // Set initial overlay state (paused clock at full time)
+                recordingManager.startRecording()
+                gimbalManager.startTracking()
+            }
+        }
+
+        withAnimation { isPortrait = newIsPortrait }
     }
 
     // MARK: - Rotate Prompt
@@ -771,21 +790,21 @@ struct UltraMinimalRecordingView: View {
 
     private var nextPeriodLabel: String {
         switch period {
-        case "1st": return "2nd Half"
-        case "2nd": return "End"
-        case "OT": return "End"
+        case "1st Half": return "2nd Half"
+        case "2nd Half": return "End Game"
+        case "OT": return "End Game"
         default: return "Next"
         }
     }
 
     private func advancePeriod() {
         switch period {
-        case "1st":
-            period = "2nd"
+        case "1st Half":
+            period = "2nd Half"
             remainingSeconds = halfLength * 60
             isClockRunning = false
             stopTimer()
-        case "2nd", "OT":
+        case "2nd Half", "OT":
             showSahilStats = false
             showEndConfirmation = true
         default:

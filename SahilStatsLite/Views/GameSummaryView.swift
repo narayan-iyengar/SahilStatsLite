@@ -2,8 +2,7 @@
 //  GameSummaryView.swift
 //  SahilStatsLite
 //
-//  Post-game summary with final score and video
-//  Video already has scoreboard overlay burned in (real-time)
+//  Post-game summary with stats - auto-saves video to Photos
 //
 
 import SwiftUI
@@ -14,9 +13,14 @@ struct GameSummaryView: View {
     @ObservedObject private var recordingManager = RecordingManager.shared
 
     // Save state
-    @State private var isSaving = false
-    @State private var saveSuccess = false
-    @State private var saveError: String?
+    @State private var saveStatus: SaveStatus = .idle
+
+    enum SaveStatus {
+        case idle
+        case saving
+        case saved
+        case failed(String)
+    }
 
     var game: Game? {
         appState.currentGame
@@ -40,11 +44,11 @@ struct GameSummaryView: View {
                     playerStatsSection(stats: game.playerStats)
                 }
 
-                // Video Preview
-                videoPreviewSection
+                // Save status (minimal)
+                saveStatusView
 
-                // Actions
-                actionButtons
+                // Done button
+                doneButton
 
                 Spacer(minLength: 40)
             }
@@ -52,6 +56,58 @@ struct GameSummaryView: View {
         }
         .background(Color(.systemGroupedBackground))
         .navigationBarHidden(true)
+        .task {
+            // Auto-save video to Photos when view appears
+            await autoSaveVideo()
+        }
+    }
+
+    // MARK: - Auto Save
+
+    private func autoSaveVideo() async {
+        guard let url = videoURL else {
+            saveStatus = .saved // No video, nothing to save - that's fine
+            return
+        }
+
+        saveStatus = .saving
+
+        let success = await saveVideoToLibrary(url: url)
+        await MainActor.run {
+            if success {
+                saveStatus = .saved
+            } else {
+                saveStatus = .failed("Couldn't save to Photos")
+            }
+        }
+    }
+
+    private func saveVideoToLibrary(url: URL) async -> Bool {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            debugPrint("❌ Video file doesn't exist at: \(url.path)")
+            return false
+        }
+
+        return await withCheckedContinuation { continuation in
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+                guard status == .authorized || status == .limited else {
+                    debugPrint("❌ Photo library access denied: \(status)")
+                    continuation.resume(returning: false)
+                    return
+                }
+
+                PHPhotoLibrary.shared().performChanges {
+                    PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+                } completionHandler: { success, error in
+                    if let error = error {
+                        debugPrint("❌ Failed to save to photos: \(error)")
+                    } else {
+                        debugPrint("✅ Video saved to Photos successfully")
+                    }
+                    continuation.resume(returning: success)
+                }
+            }
+        }
     }
 
     // MARK: - Result Header
@@ -76,9 +132,9 @@ struct GameSummaryView: View {
 
     private var resultEmoji: String {
         guard let game = game else { return "" }
-        if game.isWin { return "" }
-        if game.isLoss { return "" }
-        return ""
+        if game.isWin { return "🏆" }
+        if game.isLoss { return "💪" }
+        return "🤝"
     }
 
     private var resultText: String {
@@ -261,165 +317,47 @@ struct GameSummaryView: View {
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Video Preview
+    // MARK: - Save Status
 
-    private var videoPreviewSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Game Video")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
-
-                Spacer()
-
-                if videoURL != nil {
-                    Image(systemName: "checkmark.circle.fill")
-                        .foregroundColor(.green)
-                    Text("Ready")
-                        .font(.caption)
-                        .foregroundColor(.green)
+    private var saveStatusView: some View {
+        Group {
+            switch saveStatus {
+            case .idle:
+                EmptyView()
+            case .saving:
+                HStack(spacing: 8) {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                    Text("Saving video...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                 }
-            }
-
-            ZStack {
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(Color.black)
-                    .aspectRatio(16/9, contentMode: .fit)
-
-                if videoURL != nil {
-                    Image(systemName: "play.circle.fill")
-                        .font(.system(size: 60))
-                        .foregroundColor(.white.opacity(0.8))
-                } else {
-                    VStack(spacing: 8) {
-                        Image(systemName: "video.slash")
-                            .font(.system(size: 40))
-                            .foregroundColor(.white.opacity(0.5))
-                        Text("No video recorded")
-                            .foregroundColor(.white.opacity(0.5))
-                    }
-                }
-            }
-
-            // Status messages
-            if saveSuccess {
-                Label("Saved to Photos!", systemImage: "checkmark.circle.fill")
+            case .saved:
+                Label("Video saved to Photos", systemImage: "checkmark.circle.fill")
+                    .font(.subheadline)
                     .foregroundColor(.green)
+            case .failed(let message):
+                Label(message, systemImage: "exclamationmark.triangle.fill")
                     .font(.subheadline)
-            }
-
-            if let error = saveError {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .foregroundColor(.red)
-                    .font(.subheadline)
+                    .foregroundColor(.orange)
             }
         }
+        .padding(.top, 8)
     }
 
-    // MARK: - Action Buttons
+    // MARK: - Done Button
 
-    private var actionButtons: some View {
-        VStack(spacing: 12) {
-            // Share
-            if let url = videoURL {
-                ShareLink(item: url) {
-                    HStack {
-                        Image(systemName: "square.and.arrow.up")
-                        Text("Share Video")
-                    }
-                    .font(.headline)
-                    .foregroundColor(.white)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-                    .background(Color.blue)
-                    .cornerRadius(12)
-                }
-            }
-
-            // Save to Photos
-            Button {
-                saveToPhotos()
-            } label: {
-                HStack {
-                    if isSaving {
-                        ProgressView()
-                            .tint(.blue)
-                    } else {
-                        Image(systemName: saveSuccess ? "checkmark.circle.fill" : "photo.on.rectangle")
-                    }
-                    Text(saveSuccess ? "Saved!" : "Save to Photos")
-                }
+    private var doneButton: some View {
+        Button {
+            appState.goHome()
+        } label: {
+            Text("Done")
                 .font(.headline)
-                .foregroundColor(saveSuccess ? .green : .blue)
+                .foregroundColor(.white)
                 .frame(maxWidth: .infinity)
-                .padding(.vertical, 14)
-                .background(saveSuccess ? Color.green.opacity(0.1) : Color.blue.opacity(0.1))
+                .padding(.vertical, 16)
+                .background(Color.orange)
                 .cornerRadius(12)
-            }
-            .disabled(isSaving || saveSuccess || videoURL == nil)
-
-            // Done
-            Button {
-                appState.goHome()
-            } label: {
-                Text("Done")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 14)
-            }
-        }
-    }
-
-    // MARK: - Save to Photos
-
-    private func saveToPhotos() {
-        guard let url = videoURL else {
-            saveError = "No video to save"
-            return
-        }
-
-        isSaving = true
-        saveError = nil
-
-        Task {
-            let success = await saveVideoToLibrary(url: url)
-            await MainActor.run {
-                isSaving = false
-                if success {
-                    saveSuccess = true
-                } else {
-                    saveError = "Failed to save. Check Photos permission in Settings."
-                }
-            }
-        }
-    }
-
-    private func saveVideoToLibrary(url: URL) async -> Bool {
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            debugPrint("❌ Video file doesn't exist at: \(url.path)")
-            return false
-        }
-
-        return await withCheckedContinuation { continuation in
-            PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-                guard status == .authorized || status == .limited else {
-                    debugPrint("❌ Photo library access denied: \(status)")
-                    continuation.resume(returning: false)
-                    return
-                }
-
-                PHPhotoLibrary.shared().performChanges {
-                    PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
-                } completionHandler: { success, error in
-                    if let error = error {
-                        debugPrint("❌ Failed to save to photos: \(error)")
-                    } else {
-                        debugPrint("✅ Video saved to Photos successfully")
-                    }
-                    continuation.resume(returning: success)
-                }
-            }
         }
     }
 }

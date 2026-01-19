@@ -45,6 +45,7 @@ class RecordingManager: NSObject, ObservableObject {
     private nonisolated(unsafe) var currentRecordingURL: URL?
     private nonisolated(unsafe) var isWriterConfigured = false
     private nonisolated(unsafe) var pendingOutputURL: URL?
+    private nonisolated(unsafe) var frameCount: Int = 0
     private var recordingTimer: Timer?
     private let processingQueue = DispatchQueue(label: "com.sahilstats.videoProcessing", qos: .userInitiated)
 
@@ -298,17 +299,19 @@ class RecordingManager: NSObject, ObservableObject {
         // Delete if exists
         try? FileManager.default.removeItem(at: outputURL)
 
-        // Store URL for lazy writer setup
+        // Configure video rotation FIRST (before enabling frame capture)
+        // This ensures buffered frames have correct orientation
+        configureVideoRotationForRecording()
+
+        // Now store URL to enable frame capture
         pendingOutputURL = outputURL
         currentRecordingURL = outputURL
         isWriterConfigured = false
 
-        // Configure video rotation based on current device orientation
-        configureVideoRotationForRecording()
-
         isRecording = true
         isWritingStarted = false
         recordingStartTime = nil
+        frameCount = 0
 
         // Start duration timer
         let startTime = Date()
@@ -322,7 +325,7 @@ class RecordingManager: NSObject, ObservableObject {
     }
 
     /// Setup asset writer with actual frame dimensions (called lazily on first frame)
-    private func setupAssetWriter(outputURL: URL, width: Int, height: Int) throws {
+    private nonisolated func setupAssetWriter(outputURL: URL, width: Int, height: Int) throws {
         let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
 
         debugPrint("📹 Setting up asset writer with dimensions: \(width)x\(height)")
@@ -420,7 +423,7 @@ class RecordingManager: NSObject, ObservableObject {
 
             writer.finishWriting {
                 let url = self.currentRecordingURL
-                debugPrint("📹 Recording finished: \(url?.lastPathComponent ?? "nil")")
+                debugPrint("📹 Recording finished: \(url?.lastPathComponent ?? "nil"), total frames: \(self.frameCount)")
 
                 Task { @MainActor in
                     self.isFileReady = true
@@ -452,13 +455,14 @@ class RecordingManager: NSObject, ObservableObject {
 
     // MARK: - Overlay State Updates
 
-    func updateOverlay(homeTeam: String, awayTeam: String, homeScore: Int, awayScore: Int, period: String, clockTime: String, eventName: String = "") {
+    func updateOverlay(homeTeam: String, awayTeam: String, homeScore: Int, awayScore: Int, period: String, clockTime: String, isClockRunning: Bool = true, eventName: String = "") {
         overlayRenderer.homeTeam = homeTeam
         overlayRenderer.awayTeam = awayTeam
         overlayRenderer.homeScore = homeScore
         overlayRenderer.awayScore = awayScore
         overlayRenderer.period = period
         overlayRenderer.clockTime = clockTime
+        overlayRenderer.isClockRunning = isClockRunning
         overlayRenderer.eventName = eventName
     }
 
@@ -570,13 +574,38 @@ extension RecordingManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCapt
     }
 
     nonisolated private func processVideoFrame(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
-        guard let videoInput = videoWriterInput, videoInput.isReadyForMoreMediaData else { return }
+        guard let videoInput = videoWriterInput else {
+            debugPrint("⚠️ No video input available")
+            return
+        }
+
+        guard videoInput.isReadyForMoreMediaData else {
+            // Writer is busy, skip this frame (normal under load)
+            return
+        }
 
         // Apply overlay to the frame
         _ = overlayRenderer.render(onto: pixelBuffer)
 
         // Write the composited frame
-        pixelBufferAdaptor?.append(pixelBuffer, withPresentationTime: timestamp)
+        guard let adaptor = pixelBufferAdaptor else {
+            debugPrint("⚠️ No pixel buffer adaptor")
+            return
+        }
+
+        let success = adaptor.append(pixelBuffer, withPresentationTime: timestamp)
+        if success {
+            frameCount += 1
+            // Log every 60 frames (~2 seconds at 30fps)
+            if frameCount % 60 == 0 {
+                debugPrint("📹 Processed \(frameCount) frames")
+            }
+        } else {
+            debugPrint("❌ Failed to append frame at \(timestamp.seconds)s, writer status: \(assetWriter?.status.rawValue ?? -1)")
+            if let error = assetWriter?.error {
+                debugPrint("❌ Writer error: \(error)")
+            }
+        }
     }
 
     nonisolated private func processAudioFrame(_ sampleBuffer: CMSampleBuffer) {
