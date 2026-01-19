@@ -2,7 +2,8 @@
 //  RecordingManager.swift
 //  SahilStatsLite
 //
-//  Simplified video recording manager using AVFoundation
+//  Real-time video recording with burned-in scoreboard overlay
+//  Uses AVCaptureVideoDataOutput + AVAssetWriter for frame-by-frame processing
 //
 
 import Foundation
@@ -26,19 +27,33 @@ class RecordingManager: NSObject, ObservableObject {
     // MARK: - Capture Session
 
     @MainActor private(set) var captureSession: AVCaptureSession?
-    private var videoOutput: AVCaptureMovieFileOutput?
+    private nonisolated(unsafe) var videoDataOutput: AVCaptureVideoDataOutput?
+    private nonisolated(unsafe) var audioDataOutput: AVCaptureAudioDataOutput?
     private var currentVideoDevice: AVCaptureDevice?
+
+    // MARK: - Asset Writer (for recording with overlay - accessed from processing queue)
+
+    private nonisolated(unsafe) var assetWriter: AVAssetWriter?
+    private nonisolated(unsafe) var videoWriterInput: AVAssetWriterInput?
+    private nonisolated(unsafe) var audioWriterInput: AVAssetWriterInput?
+    private nonisolated(unsafe) var pixelBufferAdaptor: AVAssetWriterInputPixelBufferAdaptor?
+
+    // MARK: - Recording State (accessed from processing queue - not MainActor)
+
+    private nonisolated(unsafe) var isWritingStarted = false
+    private nonisolated(unsafe) var recordingStartTime: CMTime?
+    private nonisolated(unsafe) var currentRecordingURL: URL?
+    private nonisolated(unsafe) var isWriterConfigured = false
+    private nonisolated(unsafe) var pendingOutputURL: URL?
     private var recordingTimer: Timer?
-    private var recordingStartTime: Date?
+    private let processingQueue = DispatchQueue(label: "com.sahilstats.videoProcessing", qos: .userInitiated)
 
-    // MARK: - Output
+    // MARK: - Overlay Renderer
 
-    private var currentRecordingURL: URL?
+    let overlayRenderer = OverlayRenderer()
 
-    // Score timeline for post-processing overlay
-    var scoreTimeline: [ScoreTimelineTracker.ScoreSnapshot] = []
+    // MARK: - Completion Handler
 
-    // Completion handler for when recording finishes writing to disk
     private var recordingFinishedContinuation: CheckedContinuation<URL?, Never>?
     @MainActor @Published var isFileReady: Bool = false
 
@@ -57,10 +72,13 @@ class RecordingManager: NSObject, ObservableObject {
         error = nil
         isFileReady = false
         currentRecordingURL = nil
-        scoreTimeline = []
         recordingTimer?.invalidate()
         recordingTimer = nil
         recordingFinishedContinuation = nil
+        isWritingStarted = false
+        isWriterConfigured = false
+        recordingStartTime = nil
+        pendingOutputURL = nil
     }
 
     /// Stop the capture session (call when leaving recording)
@@ -71,7 +89,8 @@ class RecordingManager: NSObject, ObservableObject {
 
         // Clear all session-related state for clean restart
         captureSession = nil
-        videoOutput = nil
+        videoDataOutput = nil
+        audioDataOutput = nil
         currentVideoDevice = nil
         isSessionReady = false
     }
@@ -123,7 +142,7 @@ class RecordingManager: NSObject, ObservableObject {
         let session = AVCaptureSession()
         session.beginConfiguration()
 
-        // Set quality
+        // Set quality - prefer 1080p for real-time processing (4K is too heavy)
         if session.canSetSessionPreset(.hd1920x1080) {
             session.sessionPreset = .hd1920x1080
             debugPrint("📹 Using 1080p preset")
@@ -142,70 +161,62 @@ class RecordingManager: NSObject, ObservableObject {
                 if session.canAddInput(videoInput) {
                     session.addInput(videoInput)
                     debugPrint("📹 Added video input")
-                } else {
-                    debugPrint("❌ Cannot add video input to session")
                 }
             } catch {
                 debugPrint("❌ Failed to create video input: \(error)")
                 self.error = "Failed to setup camera: \(error.localizedDescription)"
                 return
             }
-        } else {
-            debugPrint("❌ No back camera found!")
         }
 
         // Add audio input
         if let audioDevice = AVCaptureDevice.default(for: .audio) {
-            debugPrint("📹 Found audio device: \(audioDevice.localizedName)")
             do {
                 let audioInput = try AVCaptureDeviceInput(device: audioDevice)
                 if session.canAddInput(audioInput) {
                     session.addInput(audioInput)
                     debugPrint("📹 Added audio input")
-                } else {
-                    debugPrint("⚠️ Cannot add audio input")
                 }
             } catch {
                 debugPrint("⚠️ Failed to setup audio: \(error.localizedDescription)")
             }
-        } else {
-            debugPrint("⚠️ No audio device found")
         }
 
-        // Add movie output
-        let movieOutput = AVCaptureMovieFileOutput()
-        if session.canAddOutput(movieOutput) {
-            session.addOutput(movieOutput)
-            videoOutput = movieOutput
-            debugPrint("📹 Added movie output")
+        // Add video data output (for frame-by-frame processing)
+        let videoOutput = AVCaptureVideoDataOutput()
+        videoOutput.setSampleBufferDelegate(self, queue: processingQueue)
+        videoOutput.alwaysDiscardsLateVideoFrames = true
+        videoOutput.videoSettings = [
+            kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+        ]
 
-            // Set video stabilization if available
-            if let connection = movieOutput.connection(with: .video) {
-                debugPrint("📹 Movie output has video connection")
-                if connection.isVideoStabilizationSupported {
-                    connection.preferredVideoStabilizationMode = .auto
-                    debugPrint("📹 Enabled video stabilization")
-                }
-            } else {
-                debugPrint("❌ Movie output has NO video connection!")
-            }
-        } else {
-            debugPrint("❌ Cannot add movie output to session!")
+        if session.canAddOutput(videoOutput) {
+            session.addOutput(videoOutput)
+            videoDataOutput = videoOutput
+            debugPrint("📹 Added video data output")
+            // Video rotation is configured when recording starts based on device orientation
+        }
+
+        // Add audio data output
+        let audioOutput = AVCaptureAudioDataOutput()
+        audioOutput.setSampleBufferDelegate(self, queue: processingQueue)
+
+        if session.canAddOutput(audioOutput) {
+            session.addOutput(audioOutput)
+            audioDataOutput = audioOutput
+            debugPrint("📹 Added audio data output")
         }
 
         session.commitConfiguration()
         captureSession = session
-        debugPrint("📹 Session configured, inputs: \(session.inputs.count), outputs: \(session.outputs.count)")
 
-        // Start session on background thread and wait for it
+        // Start session on background thread
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async { [weak self] in
                 session.startRunning()
-                let isRunning = session.isRunning
-                debugPrint("📹 Capture session startRunning() called, isRunning: \(isRunning)")
+                debugPrint("📹 Capture session started, isRunning: \(session.isRunning)")
 
-                // Give the session a moment to stabilize before allowing recording
-                Thread.sleep(forTimeInterval: 0.5)
+                Thread.sleep(forTimeInterval: 0.3)
 
                 DispatchQueue.main.async {
                     self?.isSessionReady = true
@@ -213,8 +224,52 @@ class RecordingManager: NSObject, ObservableObject {
                 }
             }
         }
+    }
 
-        debugPrint("📹 Setup complete, isSessionReady: \(isSessionReady)")
+    /// Configure video rotation based on current device orientation
+    /// Call this when recording starts to capture the correct orientation
+    private func configureVideoRotationForRecording() {
+        guard let videoOutput = videoDataOutput,
+              let connection = videoOutput.connection(with: .video) else {
+            debugPrint("⚠️ No video connection to configure rotation")
+            return
+        }
+
+        let deviceOrientation = UIDevice.current.orientation
+        let rotationAngle: CGFloat
+
+        // Determine rotation based on how device is held
+        // Swapped values to fix upside-down video
+        switch deviceOrientation {
+        case .landscapeLeft:
+            // Device held with volume buttons down, home button on left
+            rotationAngle = 0
+        case .landscapeRight:
+            // Device held with volume buttons up, home button on right
+            rotationAngle = 180
+        default:
+            // Use interface orientation as fallback for landscape detection
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                let interfaceOrientation = windowScene.effectiveGeometry.interfaceOrientation
+                switch interfaceOrientation {
+                case .landscapeLeft:
+                    rotationAngle = 180
+                case .landscapeRight:
+                    rotationAngle = 0
+                default:
+                    rotationAngle = 180  // Default
+                }
+            } else {
+                rotationAngle = 180
+            }
+        }
+
+        if connection.isVideoRotationAngleSupported(rotationAngle) {
+            connection.videoRotationAngle = rotationAngle
+            debugPrint("📹 Set video rotation to \(rotationAngle)° for device orientation: \(deviceOrientation.rawValue)")
+        } else {
+            debugPrint("⚠️ Rotation angle \(rotationAngle)° not supported")
+        }
     }
 
     // MARK: - Recording Control
@@ -223,120 +278,188 @@ class RecordingManager: NSObject, ObservableObject {
     func startRecording() {
         debugPrint("📹 startRecording() called")
 
-        // Check for simulator
         #if targetEnvironment(simulator)
-        debugPrint("⚠️ Cannot record on simulator - no camera")
+        debugPrint("⚠️ Cannot record on simulator")
         return
         #endif
 
-        // Prevent double-start
         guard !isRecording else {
-            debugPrint("⚠️ Recording already in progress, ignoring start request")
+            debugPrint("⚠️ Already recording")
             return
         }
 
-        guard let session = captureSession else {
-            debugPrint("❌ No capture session available")
-            return
-        }
-
-        debugPrint("📹 Capture session running: \(session.isRunning)")
-
-        guard let output = videoOutput else {
-            debugPrint("❌ No video output available")
-            return
-        }
-
-        debugPrint("📹 Video output exists, isRecording: \(output.isRecording)")
-
-        guard !output.isRecording else {
-            debugPrint("⚠️ AVFoundation already recording, ignoring start request")
-            return
-        }
-
-        // Check connections
-        if let connection = output.connection(with: .video) {
-            debugPrint("📹 Video connection active: \(connection.isActive), enabled: \(connection.isEnabled)")
-        } else {
-            debugPrint("❌ No video connection on output!")
-        }
-
-        // Create output URL
+        // Create output URL - but don't setup writer yet (wait for first frame to get dimensions)
         let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
         let fileName = "game_\(dateFormatter.string(from: Date())).mov"
         let outputURL = documentsPath.appendingPathComponent(fileName)
 
-        debugPrint("📹 Output URL: \(outputURL.path)")
-
         // Delete if exists
         try? FileManager.default.removeItem(at: outputURL)
 
+        // Store URL for lazy writer setup
+        pendingOutputURL = outputURL
         currentRecordingURL = outputURL
-        recordingStartTime = Date()
+        isWriterConfigured = false
 
-        // Mark as recording BEFORE starting to prevent race conditions
+        // Configure video rotation based on current device orientation
+        configureVideoRotationForRecording()
+
         isRecording = true
-
-        // Start recording
-        debugPrint("📹 Calling output.startRecording()...")
-        output.startRecording(to: outputURL, recordingDelegate: self)
+        isWritingStarted = false
+        recordingStartTime = nil
 
         // Start duration timer
-        recordingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-            guard let self = self else { return }
-            let startTime = self.recordingStartTime
+        let startTime = Date()
+        recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
             Task { @MainActor [weak self] in
-                if let startTime = startTime {
-                    self?.recordingDuration = Date().timeIntervalSince(startTime)
-                }
+                self?.recordingDuration = Date().timeIntervalSince(startTime)
             }
         }
 
-        debugPrint("📹 Recording setup complete: \(outputURL.lastPathComponent)")
+        debugPrint("📹 Recording started (waiting for first frame): \(outputURL.lastPathComponent)")
+    }
+
+    /// Setup asset writer with actual frame dimensions (called lazily on first frame)
+    private func setupAssetWriter(outputURL: URL, width: Int, height: Int) throws {
+        let writer = try AVAssetWriter(outputURL: outputURL, fileType: .mov)
+
+        debugPrint("📹 Setting up asset writer with dimensions: \(width)x\(height)")
+
+        // Video settings - match actual frame dimensions
+        let videoSettings: [String: Any] = [
+            AVVideoCodecKey: AVVideoCodecType.h264,
+            AVVideoWidthKey: width,
+            AVVideoHeightKey: height,
+            AVVideoCompressionPropertiesKey: [
+                AVVideoAverageBitRateKey: 10_000_000,  // 10 Mbps
+                AVVideoProfileLevelKey: AVVideoProfileLevelH264HighAutoLevel
+            ]
+        ]
+
+        let videoInput = AVAssetWriterInput(mediaType: .video, outputSettings: videoSettings)
+        videoInput.expectsMediaDataInRealTime = true
+
+        // No transform needed - frames come in landscape orientation via videoRotationAngle = 0
+        // The overlay is drawn at the bottom of the landscape frame
+
+        // Pixel buffer adaptor for efficient writing
+        let adaptor = AVAssetWriterInputPixelBufferAdaptor(
+            assetWriterInput: videoInput,
+            sourcePixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: width,
+                kCVPixelBufferHeightKey as String: height
+            ]
+        )
+
+        if writer.canAdd(videoInput) {
+            writer.add(videoInput)
+        }
+
+        // Audio settings
+        let audioSettings: [String: Any] = [
+            AVFormatIDKey: kAudioFormatMPEG4AAC,
+            AVSampleRateKey: 44100,
+            AVNumberOfChannelsKey: 2,
+            AVEncoderBitRateKey: 128000
+        ]
+
+        let audioInput = AVAssetWriterInput(mediaType: .audio, outputSettings: audioSettings)
+        audioInput.expectsMediaDataInRealTime = true
+
+        if writer.canAdd(audioInput) {
+            writer.add(audioInput)
+        }
+
+        assetWriter = writer
+        videoWriterInput = videoInput
+        audioWriterInput = audioInput
+        pixelBufferAdaptor = adaptor
+
+        debugPrint("📹 Asset writer configured for \(width)x\(height)")
     }
 
     @MainActor
     func stopRecording() {
-        guard let output = videoOutput, output.isRecording else { return }
+        guard isRecording else { return }
 
-        output.stopRecording()
+        isRecording = false
         recordingTimer?.invalidate()
         recordingTimer = nil
 
-        isRecording = false
-        isFileReady = false
-        debugPrint("Recording stopped, waiting for file to finish writing...")
+        finishWriting()
     }
 
-    /// Stops recording and waits for the file to be fully written
     @MainActor
     func stopRecordingAndWait() async -> URL? {
-        debugPrint("📹 stopRecordingAndWait() called")
-        debugPrint("📹 videoOutput exists: \(videoOutput != nil)")
-        debugPrint("📹 videoOutput.isRecording: \(videoOutput?.isRecording ?? false)")
-        debugPrint("📹 currentRecordingURL: \(currentRecordingURL?.lastPathComponent ?? "nil")")
-
-        guard let output = videoOutput, output.isRecording else {
-            debugPrint("⚠️ Not actually recording, returning currentRecordingURL")
+        guard isRecording else {
             return currentRecordingURL
         }
 
+        isRecording = false
         recordingTimer?.invalidate()
         recordingTimer = nil
-        isRecording = false
-        isFileReady = false
 
         return await withCheckedContinuation { continuation in
             self.recordingFinishedContinuation = continuation
-            output.stopRecording()
-            debugPrint("📹 Recording stopped, waiting for file to finish writing...")
+            finishWriting()
+        }
+    }
+
+    private func finishWriting() {
+        processingQueue.async { [weak self] in
+            guard let self = self, let writer = self.assetWriter else {
+                self?.resumeFinishedContinuation(with: nil)
+                return
+            }
+
+            self.videoWriterInput?.markAsFinished()
+            self.audioWriterInput?.markAsFinished()
+
+            writer.finishWriting {
+                let url = self.currentRecordingURL
+                debugPrint("📹 Recording finished: \(url?.lastPathComponent ?? "nil")")
+
+                Task { @MainActor in
+                    self.isFileReady = true
+                }
+
+                self.resumeFinishedContinuation(with: url)
+
+                // Cleanup
+                self.assetWriter = nil
+                self.videoWriterInput = nil
+                self.audioWriterInput = nil
+                self.pixelBufferAdaptor = nil
+                self.isWriterConfigured = false
+                self.pendingOutputURL = nil
+            }
+        }
+    }
+
+    private func resumeFinishedContinuation(with url: URL?) {
+        DispatchQueue.main.async { [weak self] in
+            self?.recordingFinishedContinuation?.resume(returning: url)
+            self?.recordingFinishedContinuation = nil
         }
     }
 
     func getRecordingURL() -> URL? {
         return currentRecordingURL
+    }
+
+    // MARK: - Overlay State Updates
+
+    func updateOverlay(homeTeam: String, awayTeam: String, homeScore: Int, awayScore: Int, period: String, clockTime: String, eventName: String = "") {
+        overlayRenderer.homeTeam = homeTeam
+        overlayRenderer.awayTeam = awayTeam
+        overlayRenderer.homeScore = homeScore
+        overlayRenderer.awayScore = awayScore
+        overlayRenderer.period = period
+        overlayRenderer.clockTime = clockTime
+        overlayRenderer.eventName = eventName
     }
 
     // MARK: - Camera Control
@@ -352,7 +475,6 @@ class RecordingManager: NSObject, ObservableObject {
             device.unlockForConfiguration()
             return clampedFactor
         } catch {
-            debugPrint("Failed to set zoom: \(error)")
             return device.videoZoomFactor
         }
     }
@@ -368,7 +490,7 @@ class RecordingManager: NSObject, ObservableObject {
 
         return await withCheckedContinuation { continuation in
             PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-                guard status == .authorized else {
+                guard status == .authorized || status == .limited else {
                     continuation.resume(returning: false)
                     return
                 }
@@ -377,7 +499,7 @@ class RecordingManager: NSObject, ObservableObject {
                     PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
                 } completionHandler: { success, error in
                     if let error = error {
-                        debugPrint("Failed to save to photos: \(error)")
+                        debugPrint("❌ Failed to save to photos: \(error)")
                     }
                     continuation.resume(returning: success)
                 }
@@ -386,38 +508,79 @@ class RecordingManager: NSObject, ObservableObject {
     }
 }
 
-// MARK: - Recording Delegate
+// MARK: - Sample Buffer Delegate
 
-extension RecordingManager: AVCaptureFileOutputRecordingDelegate {
-    nonisolated func fileOutput(_ output: AVCaptureFileOutput, didStartRecordingTo fileURL: URL, from connections: [AVCaptureConnection]) {
-        debugPrint("Recording started to file: \(fileURL.lastPathComponent)")
+extension RecordingManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
+
+    nonisolated func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        // Only process if we're supposed to be recording
+        guard pendingOutputURL != nil || assetWriter != nil else { return }
+
+        // Get presentation timestamp
+        let timestamp = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+
+        // Handle video frames
+        if output === videoDataOutput {
+            guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+
+            // Lazily setup asset writer on first video frame to get actual dimensions
+            if !isWriterConfigured {
+                let width = CVPixelBufferGetWidth(pixelBuffer)
+                let height = CVPixelBufferGetHeight(pixelBuffer)
+
+                guard let outputURL = pendingOutputURL else { return }
+
+                // Log frame info for debugging
+                let isLandscape = width > height
+                debugPrint("📹 First frame received: \(width)x\(height) (landscape: \(isLandscape))")
+
+                do {
+                    try setupAssetWriter(outputURL: outputURL, width: width, height: height)
+                    isWriterConfigured = true
+                    debugPrint("📹 Asset writer configured: \(width)x\(height)")
+                } catch {
+                    debugPrint("❌ Failed to setup asset writer: \(error)")
+                    return
+                }
+            }
+
+            guard let writer = assetWriter else { return }
+
+            // Start writing session on first frame
+            if !isWritingStarted {
+                if writer.status == .unknown {
+                    writer.startWriting()
+                    writer.startSession(atSourceTime: timestamp)
+                    recordingStartTime = timestamp
+                    isWritingStarted = true
+                    debugPrint("📹 Asset writer started at \(timestamp.seconds)s")
+                }
+            }
+
+            guard writer.status == .writing else { return }
+
+            processVideoFrame(pixelBuffer, timestamp: timestamp)
+        }
+
+        // Handle audio frames
+        if output === audioDataOutput {
+            guard let writer = assetWriter, writer.status == .writing else { return }
+            processAudioFrame(sampleBuffer)
+        }
     }
 
-    nonisolated func fileOutput(_ output: AVCaptureFileOutput, didFinishRecordingTo outputFileURL: URL, from connections: [AVCaptureConnection], error: Error?) {
-        if let error = error {
-            debugPrint("❌ Recording error: \(error.localizedDescription)")
-            // Log the full error for debugging
-            debugPrint("❌ Full error: \(error)")
-            Task { @MainActor in
-                self.error = error.localizedDescription
-                self.isFileReady = false
-                self.isRecording = false  // Reset so user can try again
-                // Stop the timer
-                self.recordingTimer?.invalidate()
-                self.recordingTimer = nil
-                // Resume continuation with nil on error
-                self.recordingFinishedContinuation?.resume(returning: nil)
-                self.recordingFinishedContinuation = nil
-            }
-        } else {
-            debugPrint("✅ Recording finished and file ready: \(outputFileURL.lastPathComponent)")
-            Task { @MainActor in
-                self.isFileReady = true
-                self.isRecording = false
-                // Resume continuation with the URL
-                self.recordingFinishedContinuation?.resume(returning: outputFileURL)
-                self.recordingFinishedContinuation = nil
-            }
-        }
+    nonisolated private func processVideoFrame(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
+        guard let videoInput = videoWriterInput, videoInput.isReadyForMoreMediaData else { return }
+
+        // Apply overlay to the frame
+        _ = overlayRenderer.render(onto: pixelBuffer)
+
+        // Write the composited frame
+        pixelBufferAdaptor?.append(pixelBuffer, withPresentationTime: timestamp)
+    }
+
+    nonisolated private func processAudioFrame(_ sampleBuffer: CMSampleBuffer) {
+        guard let audioInput = audioWriterInput, audioInput.isReadyForMoreMediaData else { return }
+        audioInput.append(sampleBuffer)
     }
 }

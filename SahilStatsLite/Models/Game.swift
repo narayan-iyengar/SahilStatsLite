@@ -21,10 +21,17 @@ struct Game: Identifiable, Codable {
     var myScore: Int = 0
     var opponentScore: Int = 0
 
-    // Game structure
-    var quarterLength: Int = 6 // minutes
-    var currentQuarter: Int = 1
-    var totalQuarters: Int = 4
+    // Game structure - AAU uses halves (18 or 20 minutes)
+    var halfLength: Int = 18 // minutes (AAU: 18 or 20)
+    var currentHalf: Int = 1
+    var totalHalves: Int = 2
+
+    // Legacy support (for compatibility)
+    var quarterLength: Int { halfLength }
+    var currentQuarter: Int {
+        get { currentHalf }
+        set { currentHalf = newValue }
+    }
 
     // Video
     var videoURL: URL?

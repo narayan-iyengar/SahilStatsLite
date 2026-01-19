@@ -3,7 +3,7 @@
 //  SahilStatsLite
 //
 //  Full-screen recording view with floating controls
-//  Inspired by Ubiquiti's clean floating UI
+//  Real-time scoreboard overlay burned into video (like ScoreCam)
 //
 
 import SwiftUI
@@ -14,101 +14,95 @@ struct RecordingView: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject private var recordingManager = RecordingManager.shared
     @ObservedObject private var gimbalManager = GimbalTrackingManager.shared
-    @ObservedObject private var timelineTracker = ScoreTimelineTracker.shared
 
     // Game state
     @State private var myScore: Int = 0
     @State private var opponentScore: Int = 0
-    @State private var currentQuarter: Int = 1
+    @State private var currentHalf: Int = 1
     @State private var clockSeconds: Int = 0
     @State private var isClockRunning: Bool = false
     @State private var clockTimer: Timer?
 
     // UI state
     @State private var showEndConfirmation: Bool = false
-    @State private var isControlsExpanded: Bool = true
     @State private var isFinishingRecording: Bool = false
+    @State private var isPortrait: Bool = true
+    @State private var hasStartedRecording: Bool = false
 
-    private var quarterLength: Int {
-        appState.currentGame?.quarterLength ?? 6
+    private var halfLength: Int {
+        appState.currentGame?.halfLength ?? 18
+    }
+
+    private var clockString: String {
+        let totalSeconds = (halfLength * 60) - clockSeconds
+        let minutes = totalSeconds / 60
+        let seconds = totalSeconds % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    private var periodString: String {
+        return currentHalf == 1 ? "1st" : "2nd"
     }
 
     var body: some View {
         ZStack {
             // Camera preview (full screen)
-            if recordingManager.isSimulator {
-                // Simulator - no camera available
-                Color.black
-                    .ignoresSafeArea()
-                    .overlay(
-                        VStack(spacing: 16) {
-                            Image(systemName: "camera.fill")
-                                .font(.system(size: 60))
-                                .foregroundColor(.orange)
-                            Text("Simulator Mode")
-                                .font(.title2)
-                                .fontWeight(.bold)
-                                .foregroundColor(.white)
-                            Text("Camera recording requires a physical device.\nConnect your iPhone and run there.")
-                                .multilineTextAlignment(.center)
-                                .foregroundColor(.white.opacity(0.8))
-                                .padding(.horizontal, 40)
-                        }
-                    )
-            } else if recordingManager.isSessionReady, let session = recordingManager.captureSession {
-                CameraPreviewView(session: session)
-                    .ignoresSafeArea()
-            } else {
-                Color.black
-                    .ignoresSafeArea()
-                    .overlay(
-                        VStack(spacing: 12) {
-                            ProgressView()
-                                .tint(.white)
-                            Text("Starting camera...")
-                                .foregroundColor(.white)
-                            if let error = recordingManager.error {
-                                Text(error)
-                                    .font(.caption)
-                                    .foregroundColor(.orange)
-                                    .padding(.horizontal, 40)
-                                    .multilineTextAlignment(.center)
-                            }
-                        }
-                    )
+            cameraPreview
+
+            // Scoreboard overlay (mirrors what's burned into video)
+            if !isPortrait {
+                VStack {
+                    Spacer()
+                    scoreboardOverlay
+                        .padding(.horizontal, 30)
+                        .padding(.bottom, 30)
+                }
             }
 
-            // Scoreboard overlay (burns into video)
-            VStack {
-                scoreboardOverlay
-                    .padding(.top, 60)
-
-                Spacer()
+            // Floating controls (only in landscape)
+            if !isPortrait {
+                VStack {
+                    Spacer()
+                    floatingControlBar
+                        .padding(.bottom, 110) // Above the scoreboard
+                }
             }
 
-            // Floating controls (not in video)
-            VStack {
-                Spacer()
-                floatingControlBar
-                    .padding(.bottom, 30)
-            }
-
-            // Quarter change overlay
+            // End game confirmation
             if showEndConfirmation {
                 endGameConfirmation
+            }
+
+            // Rotate to landscape prompt (blocking)
+            if isPortrait && !recordingManager.isSimulator {
+                rotatePromptOverlay
             }
         }
         .statusBar(hidden: true)
         .persistentSystemOverlays(.hidden)
+        .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
+            updateOrientationState()
+        }
         .task {
-            // Reset state from any previous recording
+            updateOrientationState()
             recordingManager.reset()
+
+            // Initialize overlay with game info
+            updateOverlayState()
 
             await recordingManager.requestPermissionsAndSetup()
 
-            // Session is now ready, start recording (unless on simulator)
-            if recordingManager.isSessionReady && !recordingManager.isSimulator {
+            if !isPortrait && recordingManager.isSessionReady && !recordingManager.isSimulator {
                 startRecording()
+                hasStartedRecording = true
+            }
+        }
+        .onChange(of: isPortrait) { wasPortrait, nowPortrait in
+            if wasPortrait && !nowPortrait && !hasStartedRecording {
+                if recordingManager.isSessionReady && !recordingManager.isSimulator {
+                    startRecording()
+                    hasStartedRecording = true
+                }
             }
         }
         .onDisappear {
@@ -117,54 +111,53 @@ struct RecordingView: View {
         }
     }
 
-    // MARK: - Scoreboard Overlay (Burns into video)
+    // MARK: - Camera Preview
 
-    private var scoreboardOverlay: some View {
-        HStack(spacing: 0) {
-            // My team
-            HStack(spacing: 8) {
-                Text(appState.currentGame?.teamName ?? "HOME")
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1)
-
-                Text("\(myScore)")
-                    .font(.system(size: 24, weight: .bold, design: .monospaced))
-            }
-            .frame(maxWidth: .infinity)
-
-            // Divider + Clock
-            VStack(spacing: 2) {
-                Text("Q\(currentQuarter)")
-                    .font(.system(size: 12, weight: .medium))
-
-                Text(clockString)
-                    .font(.system(size: 14, weight: .medium, design: .monospaced))
-            }
-            .frame(width: 60)
-
-            // Opponent
-            HStack(spacing: 8) {
-                Text("\(opponentScore)")
-                    .font(.system(size: 24, weight: .bold, design: .monospaced))
-
-                Text(appState.currentGame?.opponent ?? "AWAY")
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(1)
-            }
-            .frame(maxWidth: .infinity)
+    @ViewBuilder
+    private var cameraPreview: some View {
+        if recordingManager.isSimulator {
+            Color.black
+                .ignoresSafeArea()
+                .overlay(
+                    VStack(spacing: 16) {
+                        Image(systemName: "camera.fill")
+                            .font(.system(size: 60))
+                            .foregroundColor(.orange)
+                        Text("Simulator Mode")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                            .foregroundColor(.white)
+                        Text("Camera recording requires a physical device.\nConnect your iPhone and run there.")
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.white.opacity(0.8))
+                            .padding(.horizontal, 40)
+                    }
+                )
+        } else if recordingManager.isSessionReady, let session = recordingManager.captureSession {
+            CameraPreviewView(session: session)
+                .ignoresSafeArea()
+        } else {
+            Color.black
+                .ignoresSafeArea()
+                .overlay(
+                    VStack(spacing: 12) {
+                        ProgressView()
+                            .tint(.white)
+                        Text("Starting camera...")
+                            .foregroundColor(.white)
+                        if let error = recordingManager.error {
+                            Text(error)
+                                .font(.caption)
+                                .foregroundColor(.orange)
+                                .padding(.horizontal, 40)
+                                .multilineTextAlignment(.center)
+                        }
+                    }
+                )
         }
-        .foregroundColor(.white)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.3), radius: 8, y: 4)
-        )
-        .padding(.horizontal, 40)
     }
 
-    // MARK: - Floating Control Bar (Ubiquiti-style)
+    // MARK: - Floating Control Bar
 
     private var floatingControlBar: some View {
         HStack(spacing: 16) {
@@ -209,8 +202,6 @@ struct RecordingView: View {
         .padding(.horizontal, 20)
     }
 
-    // MARK: - Record Indicator
-
     private var recordIndicator: some View {
         HStack(spacing: 6) {
             Circle()
@@ -228,8 +219,6 @@ struct RecordingView: View {
                 .foregroundColor(.red)
         }
     }
-
-    // MARK: - Scoring Buttons
 
     private func scoringButtons(isMyTeam: Bool) -> some View {
         HStack(spacing: 8) {
@@ -254,8 +243,6 @@ struct RecordingView: View {
         }
     }
 
-    // MARK: - Clock Control
-
     private var clockControl: some View {
         Button {
             toggleClock()
@@ -270,16 +257,14 @@ struct RecordingView: View {
                 )
         }
         .contextMenu {
-            Button("Next Quarter") {
-                nextQuarter()
+            Button("Next Half") {
+                nextHalf()
             }
             Button("Reset Clock") {
                 resetClock()
             }
         }
     }
-
-    // MARK: - End Button
 
     private var endButton: some View {
         Button {
@@ -296,6 +281,59 @@ struct RecordingView: View {
         }
     }
 
+    // MARK: - Scoreboard Overlay (mirrors the burned-in overlay)
+
+    private var scoreboardOverlay: some View {
+        HStack(spacing: 0) {
+            // Home team name
+            Text((appState.currentGame?.teamName ?? "Home").uppercased())
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+
+            // Home score
+            Text("\(myScore)")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: 50)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.15))
+                .cornerRadius(4)
+
+            // Period and clock
+            VStack(spacing: 2) {
+                Text(periodString)
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.orange)
+                Text(clockString)
+                    .font(.system(size: 14, weight: .medium, design: .monospaced))
+                    .foregroundColor(.white)
+            }
+            .frame(width: 60)
+
+            // Away score
+            Text("\(opponentScore)")
+                .font(.system(size: 22, weight: .bold))
+                .foregroundColor(.white)
+                .frame(width: 50)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.15))
+                .cornerRadius(4)
+
+            // Away team name
+            Text((appState.currentGame?.opponent ?? "Away").uppercased())
+                .font(.system(size: 16, weight: .bold))
+                .foregroundColor(.white)
+                .frame(maxWidth: .infinity)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(Color.black.opacity(0.85))
+        )
+    }
+
     // MARK: - End Confirmation
 
     private var endGameConfirmation: some View {
@@ -305,7 +343,6 @@ struct RecordingView: View {
 
             VStack(spacing: 20) {
                 if isFinishingRecording {
-                    // Finishing state
                     ProgressView()
                         .scaleEffect(1.5)
                         .tint(.white)
@@ -320,7 +357,6 @@ struct RecordingView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
                 } else {
-                    // Confirmation state
                     Text("End Game?")
                         .font(.title2)
                         .fontWeight(.bold)
@@ -354,41 +390,75 @@ struct RecordingView: View {
         }
     }
 
-    // MARK: - Clock String
+    // MARK: - Rotate Prompt
 
-    private var clockString: String {
-        let totalSeconds = (quarterLength * 60) - clockSeconds
-        let minutes = totalSeconds / 60
-        let seconds = totalSeconds % 60
-        return String(format: "%d:%02d", minutes, seconds)
+    private var rotatePromptOverlay: some View {
+        ZStack {
+            Color.black.opacity(0.7)
+                .ignoresSafeArea()
+
+            VStack(spacing: 20) {
+                Image(systemName: "rotate.right.fill")
+                    .font(.system(size: 60))
+                    .foregroundColor(.orange)
+                    .rotationEffect(.degrees(-90))
+
+                Text("Rotate to Landscape")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+
+                Text("Hold your phone horizontally\nto start recording")
+                    .font(.subheadline)
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+            }
+            .padding(32)
+        }
+        .transition(.opacity)
+    }
+
+    // MARK: - Orientation Detection
+
+    private func updateOrientationState() {
+        let orientation = UIDevice.current.orientation
+
+        switch orientation {
+        case .landscapeLeft, .landscapeRight:
+            withAnimation {
+                isPortrait = false
+            }
+        case .portrait, .portraitUpsideDown:
+            withAnimation {
+                isPortrait = true
+            }
+        default:
+            if let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene {
+                let interfaceOrientation = windowScene.effectiveGeometry.interfaceOrientation
+                withAnimation {
+                    isPortrait = interfaceOrientation.isPortrait
+                }
+            }
+        }
     }
 
     // MARK: - Actions
 
     private func startRecording() {
-        debugPrint("🎬 Starting recording and timeline tracking...")
+        debugPrint("🎬 Starting recording...")
+
+        // Initialize overlay state before recording
+        updateOverlayState()
 
         recordingManager.startRecording()
         gimbalManager.startTracking()
 
-        // Start timeline tracking for post-processing overlay
-        let homeTeam = appState.currentGame?.teamName ?? "Home"
-        let awayTeam = appState.currentGame?.opponent ?? "Away"
-        timelineTracker.startRecording(
-            homeTeam: homeTeam,
-            awayTeam: awayTeam,
-            quarterLength: quarterLength
-        )
-
-        debugPrint("🎬 Recording started for \(homeTeam) vs \(awayTeam)")
+        debugPrint("🎬 Recording started for \(appState.currentGame?.teamName ?? "Home") vs \(appState.currentGame?.opponent ?? "Away")")
     }
 
     private func stopRecording() {
-        // Called from onDisappear as cleanup
         clockTimer?.invalidate()
         gimbalManager.stopTracking()
-        // Don't stop recording here - let endGame handle it properly
-        // This is just for cleanup if view disappears unexpectedly
         if recordingManager.isRecording {
             recordingManager.stopRecording()
         }
@@ -406,15 +476,14 @@ struct RecordingView: View {
             timestamp: recordingManager.recordingDuration,
             team: isMyTeam ? .my : .opponent,
             points: points,
-            quarter: currentQuarter,
+            quarter: currentHalf,
             myScoreAfter: myScore,
             opponentScoreAfter: opponentScore
         )
-
         appState.currentGame?.scoreEvents.append(event)
 
-        // Update timeline tracker for post-processing
-        timelineTracker.updateScore(homeScore: myScore, awayScore: opponentScore)
+        // Update the real-time overlay
+        updateOverlayState()
 
         // Haptic feedback
         let impact = UIImpactFeedbackGenerator(style: .medium)
@@ -427,28 +496,25 @@ struct RecordingView: View {
             isClockRunning = false
         } else {
             isClockRunning = true
-            clockTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [self] _ in
+            clockTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
                 clockSeconds += 1
+                updateOverlayState()
 
-                // Update timeline tracker with current clock
-                timelineTracker.updateClock(clockTime: clockString, quarter: currentQuarter)
-
-                // Check for quarter end
-                if clockSeconds >= quarterLength * 60 {
+                if clockSeconds >= halfLength * 60 {
                     clockTimer?.invalidate()
                     isClockRunning = false
-                    // Auto-advance quarter?
                 }
             }
         }
     }
 
-    private func nextQuarter() {
-        if currentQuarter < 4 {
-            currentQuarter += 1
+    private func nextHalf() {
+        if currentHalf < 2 {
+            currentHalf += 1
             clockSeconds = 0
             isClockRunning = false
             clockTimer?.invalidate()
+            updateOverlayState()
         }
     }
 
@@ -456,28 +522,31 @@ struct RecordingView: View {
         clockSeconds = 0
         isClockRunning = false
         clockTimer?.invalidate()
+        updateOverlayState()
+    }
+
+    private func updateOverlayState() {
+        recordingManager.updateOverlay(
+            homeTeam: appState.currentGame?.teamName ?? "Home",
+            awayTeam: appState.currentGame?.opponent ?? "Away",
+            homeScore: myScore,
+            awayScore: opponentScore,
+            period: periodString,
+            clockTime: clockString,
+            eventName: ""  // Can add tournament name later
+        )
     }
 
     private func endGame() {
-        // Show finishing state
         isFinishingRecording = true
 
-        // Stop timeline tracker and get the timeline
-        let timeline = timelineTracker.stopRecording()
-
-        // Store timeline in RecordingManager for post-processing
-        recordingManager.scoreTimeline = timeline
-
-        // Stop gimbal tracking
         clockTimer?.invalidate()
         gimbalManager.stopTracking()
 
-        // Update game with final scores
         appState.currentGame?.myScore = myScore
         appState.currentGame?.opponentScore = opponentScore
-        appState.currentGame?.currentQuarter = currentQuarter
+        appState.currentGame?.currentHalf = currentHalf
 
-        // Wait for video file to be fully written before navigating
         Task {
             debugPrint("Waiting for video file to finish writing...")
             let _ = await recordingManager.stopRecordingAndWait()
@@ -505,22 +574,64 @@ struct CameraPreviewView: UIViewRepresentable {
         view.previewLayer = previewLayer
         view.layer.addSublayer(previewLayer)
 
+        view.updatePreviewOrientation()
+
         return view
     }
 
     func updateUIView(_ uiView: UIView, context: Context) {
         guard let view = uiView as? CameraPreviewUIView else { return }
         view.previewLayer?.frame = view.bounds
+        view.updatePreviewOrientation()
     }
 }
 
-// Custom UIView that properly handles preview layer resizing
 class CameraPreviewUIView: UIView {
     var previewLayer: AVCaptureVideoPreviewLayer?
 
     override func layoutSubviews() {
         super.layoutSubviews()
         previewLayer?.frame = bounds
+        updatePreviewOrientation()
+    }
+
+    func updatePreviewOrientation() {
+        guard let connection = previewLayer?.connection else { return }
+
+        let deviceOrientation = UIDevice.current.orientation
+        let rotationAngle: CGFloat
+
+        switch deviceOrientation {
+        case .portrait:
+            rotationAngle = 90
+        case .portraitUpsideDown:
+            rotationAngle = 270
+        case .landscapeLeft:
+            rotationAngle = 0
+        case .landscapeRight:
+            rotationAngle = 180
+        default:
+            if let windowScene = window?.windowScene {
+                switch windowScene.effectiveGeometry.interfaceOrientation {
+                case .portrait:
+                    rotationAngle = 90
+                case .portraitUpsideDown:
+                    rotationAngle = 270
+                case .landscapeLeft:
+                    rotationAngle = 0
+                case .landscapeRight:
+                    rotationAngle = 180
+                default:
+                    rotationAngle = 0
+                }
+            } else {
+                rotationAngle = 0
+            }
+        }
+
+        if connection.isVideoRotationAngleSupported(rotationAngle) {
+            connection.videoRotationAngle = rotationAngle
+        }
     }
 }
 

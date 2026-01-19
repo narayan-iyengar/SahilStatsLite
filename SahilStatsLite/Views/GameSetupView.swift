@@ -14,7 +14,7 @@ struct GameSetupView: View {
     @State private var opponent: String = ""
     @State private var teamName: String = "Wildcats"
     @State private var location: String = ""
-    @State private var quarterLength: Int = 6
+    @State private var halfLength: Int = 18  // AAU: 18 or 20 minute halves
 
     @FocusState private var isOpponentFocused: Bool
 
@@ -79,16 +79,15 @@ struct GameSetupView: View {
                             .textFieldStyle(.roundedBorder)
                     }
 
-                    // Quarter Length
+                    // Half Length (AAU games use halves)
                     VStack(alignment: .leading, spacing: 8) {
-                        Text("Quarter Length")
+                        Text("Half Length")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
 
-                        Picker("Quarter Length", selection: $quarterLength) {
-                            Text("5 min").tag(5)
-                            Text("6 min").tag(6)
-                            Text("8 min").tag(8)
+                        Picker("Half Length", selection: $halfLength) {
+                            Text("18 min").tag(18)
+                            Text("20 min").tag(20)
                         }
                         .pickerStyle(.segmented)
                     }
@@ -158,7 +157,7 @@ struct GameSetupView: View {
             teamName: teamName,
             location: location.isEmpty ? nil : location
         )
-        game.quarterLength = quarterLength
+        game.halfLength = halfLength
         appState.currentGame = game
         appState.currentScreen = .recording
     }
