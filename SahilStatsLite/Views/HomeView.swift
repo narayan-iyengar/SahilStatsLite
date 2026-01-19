@@ -272,13 +272,19 @@ struct CareerStatsSheet: View {
     enum TrendStat: String, CaseIterable {
         case points = "Points"
         case rebounds = "Rebounds"
+        case assists = "Assists"
         case defense = "Defense"
+        case shooting = "Shooting"
+        case winRate = "Wins"
 
         var color: Color {
             switch self {
             case .points: return .orange
             case .rebounds: return .blue
+            case .assists: return .purple
             case .defense: return .green
+            case .shooting: return .cyan
+            case .winRate: return .mint
             }
         }
 
@@ -286,7 +292,17 @@ struct CareerStatsSheet: View {
             switch self {
             case .points: return "PPG"
             case .rebounds: return "RPG"
+            case .assists: return "APG"
             case .defense: return "STL+BLK"
+            case .shooting: return "FG%"
+            case .winRate: return "Win%"
+            }
+        }
+
+        var isPercentage: Bool {
+            switch self {
+            case .shooting, .winRate: return true
+            default: return false
             }
         }
     }
@@ -310,20 +326,33 @@ struct CareerStatsSheet: View {
             gamesByAge[age, default: []].append(game)
         }
 
-        // Calculate average for each age
+        // Calculate average/percentage for each age
         return gamesByAge.keys.sorted().compactMap { age in
             guard let gamesAtAge = gamesByAge[age], !gamesAtAge.isEmpty else { return nil }
-            let total: Int
+
+            let value: Double
             switch stat {
             case .points:
-                total = gamesAtAge.reduce(0) { $0 + $1.playerStats.points }
+                let total = gamesAtAge.reduce(0) { $0 + $1.playerStats.points }
+                value = Double(total) / Double(gamesAtAge.count)
             case .rebounds:
-                total = gamesAtAge.reduce(0) { $0 + $1.playerStats.rebounds }
+                let total = gamesAtAge.reduce(0) { $0 + $1.playerStats.rebounds }
+                value = Double(total) / Double(gamesAtAge.count)
+            case .assists:
+                let total = gamesAtAge.reduce(0) { $0 + $1.playerStats.assists }
+                value = Double(total) / Double(gamesAtAge.count)
             case .defense:
-                total = gamesAtAge.reduce(0) { $0 + $1.playerStats.steals + $1.playerStats.blocks }
+                let total = gamesAtAge.reduce(0) { $0 + $1.playerStats.steals + $1.playerStats.blocks }
+                value = Double(total) / Double(gamesAtAge.count)
+            case .shooting:
+                let made = gamesAtAge.reduce(0) { $0 + $1.playerStats.fg2Made + $1.playerStats.fg3Made }
+                let attempted = gamesAtAge.reduce(0) { $0 + $1.playerStats.fg2Attempted + $1.playerStats.fg3Attempted }
+                value = attempted > 0 ? (Double(made) / Double(attempted)) * 100 : 0
+            case .winRate:
+                let wins = gamesAtAge.filter { $0.isWin }.count
+                value = (Double(wins) / Double(gamesAtAge.count)) * 100
             }
-            let avg = Double(total) / Double(gamesAtAge.count)
-            return (age: age, value: avg)
+            return (age: age, value: value)
         }
     }
 
@@ -376,18 +405,45 @@ struct CareerStatsSheet: View {
             }
 
             // Stat picker
-            Picker("Stat", selection: $selectedTrendStat) {
-                ForEach(TrendStat.allCases, id: \.self) { stat in
-                    Text(stat.rawValue).tag(stat)
+            HStack {
+                Text("Stat:")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+
+                Menu {
+                    ForEach(TrendStat.allCases, id: \.self) { stat in
+                        Button {
+                            selectedTrendStat = stat
+                        } label: {
+                            HStack {
+                                Text(stat.rawValue)
+                                if stat == selectedTrendStat {
+                                    Image(systemName: "checkmark")
+                                }
+                            }
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Text(selectedTrendStat.rawValue)
+                            .fontWeight(.medium)
+                        Image(systemName: "chevron.down")
+                            .font(.caption)
+                    }
+                    .foregroundColor(selectedTrendStat.color)
                 }
+
+                Spacer()
             }
-            .pickerStyle(.segmented)
 
             // Current value label
             if let latest = currentTrendData.last {
                 HStack {
                     Spacer()
-                    Text("Age \(latest.age): \(String(format: "%.1f", latest.value)) \(selectedTrendStat.label)")
+                    let formattedValue = selectedTrendStat.isPercentage
+                        ? String(format: "%.0f%%", latest.value)
+                        : String(format: "%.1f", latest.value)
+                    Text("Age \(latest.age): \(formattedValue) \(selectedTrendStat.isPercentage ? "" : selectedTrendStat.label)")
                         .font(.caption)
                         .foregroundColor(selectedTrendStat.color)
                 }
