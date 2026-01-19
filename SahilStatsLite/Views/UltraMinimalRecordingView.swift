@@ -1188,6 +1188,81 @@ struct UltraMinimalRecordingView: View {
     }
 }
 
+// MARK: - Camera Preview View
+
+struct CameraPreviewView: UIViewRepresentable {
+    let session: AVCaptureSession
+
+    func makeUIView(context: Context) -> UIView {
+        let view = CameraPreviewUIView()
+        view.backgroundColor = .black
+
+        let previewLayer = AVCaptureVideoPreviewLayer(session: session)
+        previewLayer.videoGravity = .resizeAspectFill
+        view.previewLayer = previewLayer
+        view.layer.addSublayer(previewLayer)
+
+        view.updatePreviewOrientation()
+
+        return view
+    }
+
+    func updateUIView(_ uiView: UIView, context: Context) {
+        guard let view = uiView as? CameraPreviewUIView else { return }
+        view.previewLayer?.frame = view.bounds
+        view.updatePreviewOrientation()
+    }
+}
+
+class CameraPreviewUIView: UIView {
+    var previewLayer: AVCaptureVideoPreviewLayer?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        previewLayer?.frame = bounds
+        updatePreviewOrientation()
+    }
+
+    func updatePreviewOrientation() {
+        guard let connection = previewLayer?.connection else { return }
+
+        let deviceOrientation = UIDevice.current.orientation
+        let rotationAngle: CGFloat
+
+        switch deviceOrientation {
+        case .portrait:
+            rotationAngle = 90
+        case .portraitUpsideDown:
+            rotationAngle = 270
+        case .landscapeLeft:
+            rotationAngle = 0
+        case .landscapeRight:
+            rotationAngle = 180
+        default:
+            if let windowScene = window?.windowScene {
+                switch windowScene.effectiveGeometry.interfaceOrientation {
+                case .portrait:
+                    rotationAngle = 90
+                case .portraitUpsideDown:
+                    rotationAngle = 270
+                case .landscapeLeft:
+                    rotationAngle = 0
+                case .landscapeRight:
+                    rotationAngle = 180
+                default:
+                    rotationAngle = 0
+                }
+            } else {
+                rotationAngle = 0
+            }
+        }
+
+        if connection.isVideoRotationAngleSupported(rotationAngle) {
+            connection.videoRotationAngle = rotationAngle
+        }
+    }
+}
+
 #Preview {
     UltraMinimalRecordingView()
         .environmentObject(AppState())
