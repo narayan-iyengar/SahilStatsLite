@@ -113,7 +113,7 @@ struct FirebaseGame: Codable {
         createdAt = Self.decodeTimestamp(from: container, forKey: .createdAt)
     }
 
-    /// Decode a timestamp field that might be a Firestore Timestamp, Date, or missing
+    /// Decode a timestamp field that might be a Firestore Timestamp, Date, ISO8601 string, or missing
     private static func decodeTimestamp(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Date? {
         // Try decoding as Firestore Timestamp first (has _seconds and _nanoseconds)
         if let firestoreTimestamp = try? container.decode(Timestamp.self, forKey: key) {
@@ -128,6 +128,45 @@ struct FirebaseGame: Codable {
         // Try decoding as Double (seconds since epoch)
         if let seconds = try? container.decode(Double.self, forKey: key) {
             return Date(timeIntervalSince1970: seconds)
+        }
+
+        // Try decoding as ISO8601 string (various formats)
+        if let timestampString = try? container.decode(String.self, forKey: key) {
+            // ISO8601 with fractional seconds
+            let iso8601Formatter = ISO8601DateFormatter()
+            iso8601Formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+            if let parsedDate = iso8601Formatter.date(from: timestampString) {
+                return parsedDate
+            }
+
+            // ISO8601 without fractional seconds
+            let iso8601FormatterNoFraction = ISO8601DateFormatter()
+            iso8601FormatterNoFraction.formatOptions = [.withInternetDateTime]
+            if let parsedDate = iso8601FormatterNoFraction.date(from: timestampString) {
+                return parsedDate
+            }
+
+            // Custom date format fallbacks
+            let dateFormatter = DateFormatter()
+            dateFormatter.locale = Locale(identifier: "en_US_POSIX")
+
+            // Try "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+            if let parsedDate = dateFormatter.date(from: timestampString) {
+                return parsedDate
+            }
+
+            // Try "yyyy-MM-dd'T'HH:mm:ssZ"
+            dateFormatter.dateFormat = "yyyy-MM-dd'T'HH:mm:ssZ"
+            if let parsedDate = dateFormatter.date(from: timestampString) {
+                return parsedDate
+            }
+
+            // Try simple date format "yyyy-MM-dd"
+            dateFormatter.dateFormat = "yyyy-MM-dd"
+            if let parsedDate = dateFormatter.date(from: timestampString) {
+                return parsedDate
+            }
         }
 
         return nil

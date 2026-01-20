@@ -34,8 +34,9 @@ The app uses a "what you see is what you get" approach where the scoreboard over
    - Multi-tap detection: 1 tap = +1, 2 taps = +2, 3 taps = +3
    - Visual feedback shows +1/+2/+3 that fades away
    - Bottom scoreboard is display-only (clock tap for pause/play)
-   - Stats overlay accessible via person icon (top-right)
-   - Requires landscape orientation for recording
+   - Stats overlay accessible via person icon (top-right, frosted glass button)
+   - **Recording mode**: Requires landscape orientation, shows camera preview
+   - **Stats-only mode**: Works in any orientation, dark background with "LIVE" indicator
 
 4. **GamePersistenceManager** (`Services/GamePersistenceManager.swift`)
    - Saves/loads games as JSON to Documents/games.json
@@ -59,16 +60,18 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 
 ### Home Screen Layout
 - **Settings gear** (top-left) - Opens SettingsView with teams, calendars, account/sync
-- **Pencil icon** (top-right) - Log game manually (stats only, no video)
 - **Plus icon** (top-right) - Record new game with video
 - **Calendar month view** (primary) - Full month calendar with game days highlighted
 - **Career Stats card** - Quick stats overview, tap for detailed career stats
-- **Game Log card** - Opens AllGamesView with filters and pagination
+- **Game Log card** - Opens AllGamesView with filters, search, pagination, long-press delete
+  - **Add button** - Manual game entry (stats only, no video)
 
 ### Game Flow
-1. **GameSetupView** - Enter team names, opponent, half length
-2. **UltraMinimalRecordingView** - Record game with tap-to-score (recording starts on landscape)
-3. **GameSummaryView** - Auto-saves video to Photos, shows player stats summary
+1. **GameSetupView** - Enter team names, opponent, half length, toggle video recording
+2. **UltraMinimalRecordingView** - Record game with tap-to-score
+   - **Recording mode**: Requires landscape, records video with scoreboard overlay
+   - **Stats-only mode**: Works in any orientation, no video, just live stat tracking
+3. **GameSummaryView** - Auto-saves video to Photos (if recorded), shows player stats summary
 
 ### Player Stats Tracking
 - Shooting: 2PT, 3PT, FT (made/attempted with percentages)
@@ -114,7 +117,7 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 - **Half-based Timing**: Uses halves (not quarters) for AAU basketball games
 - **Clock Speed**: Normal = 1 second intervals, last minute = 2x speed (decrements by 2)
 - **Pre-game Footage**: Recording starts when entering landscape, overlay shows initial state (18:00 paused)
-- **Firebase Backward Compat**: `FirebaseGame` custom decoder handles missing fields and various timestamp formats
+- **Firebase Backward Compat**: `FirebaseGame` custom decoder handles missing fields and various timestamp formats (Firestore Timestamp, Date, Double epoch, ISO8601 strings with/without fractional seconds)
 
 ## Build Requirements
 - iOS 17.0+
@@ -176,8 +179,13 @@ DockKit framework (iOS 18+) support in `Services/GimbalTrackingManager.swift` fo
 - [x] Calendar integration with month view and selectable calendars
 - [x] Multi-team support (add/remove teams in Settings, picker in GameSetupView)
 - [x] Manual game logging (enter stats without video when you forget to record)
+- [x] Stats-only mode (live stats tracking without video - for when you forget gimbal)
+- [x] Long-press delete for games with confirmation (syncs to Firebase)
 
 ### Future Enhancements (if needed)
 - [ ] Season filtering for stats
 - [ ] Team colors/logo customization
 - [ ] Player profile settings (name, birthday)
+- [ ] Fix "saved video to Photos" message showing when no video recorded (stats-only mode)
+- [ ] Remove share video button from GameSummaryView
+- [ ] YouTube integration - auto-upload videos, show YouTube link in game log

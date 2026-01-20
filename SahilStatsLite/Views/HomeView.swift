@@ -111,16 +111,6 @@ struct HomeView: View {
 
             Spacer()
 
-            // Log Game button (manual entry)
-            Button {
-                appState.isLogOnly = true
-                appState.currentScreen = .setup
-            } label: {
-                Image(systemName: "pencil.circle.fill")
-                    .font(.title2)
-                    .foregroundColor(.secondary)
-            }
-
             // New Game button (+ icon for recording)
             Button {
                 appState.isLogOnly = false
@@ -186,36 +176,59 @@ struct HomeView: View {
     // MARK: - Game Log Card
 
     private var gameLogCard: some View {
-        Button(action: { showAllGames = true }) {
-            HStack {
-                Image(systemName: "list.bullet.clipboard")
-                    .font(.title2)
-                    .foregroundColor(.orange)
-                    .frame(width: 44, height: 44)
-                    .background(Color.orange.opacity(0.15))
-                    .cornerRadius(10)
+        HStack(spacing: 12) {
+            // Main card - tap to view all games
+            Button(action: { showAllGames = true }) {
+                HStack {
+                    Image(systemName: "list.bullet.clipboard")
+                        .font(.title2)
+                        .foregroundColor(.orange)
+                        .frame(width: 44, height: 44)
+                        .background(Color.orange.opacity(0.15))
+                        .cornerRadius(10)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("Game Log")
-                        .font(.headline)
-                        .foregroundColor(.primary)
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Game Log")
+                            .font(.headline)
+                            .foregroundColor(.primary)
 
-                    Text("\(persistenceManager.careerGames) games recorded")
+                        Text("\(persistenceManager.careerGames) games recorded")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+
+                    Spacer()
+
+                    Image(systemName: "chevron.right")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
-
-                Spacer()
-
-                Image(systemName: "chevron.right")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                .padding()
+                .background(Color(.systemBackground))
+                .cornerRadius(16)
             }
-            .padding()
-            .background(Color(.systemBackground))
-            .cornerRadius(16)
+            .buttonStyle(.plain)
+
+            // Add game button (manual entry)
+            Button {
+                appState.isLogOnly = true
+                appState.currentScreen = .setup
+            } label: {
+                VStack(spacing: 6) {
+                    Image(systemName: "plus")
+                        .font(.title2)
+                        .foregroundColor(.orange)
+                    Text("Add")
+                        .font(.caption2)
+                        .foregroundColor(.secondary)
+                }
+                .frame(width: 56)
+                .padding(.vertical, 16)
+                .background(Color(.systemBackground))
+                .cornerRadius(16)
+            }
+            .buttonStyle(.plain)
         }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Calendar Section
@@ -1035,6 +1048,10 @@ struct AllGamesView: View {
     // Game detail state (local, not binding to avoid double-sheet bug)
     @State private var selectedGameForDetail: Game? = nil
 
+    // Delete confirmation state
+    @State private var gameToDelete: Game? = nil
+    @State private var showDeleteConfirmation = false
+
     // Filter state
     @State private var selectedFilter: GameFilter = .all
     @State private var searchText = ""
@@ -1133,6 +1150,20 @@ struct AllGamesView: View {
                                 GameRow(game: game)
                             }
                             .buttonStyle(.plain)
+                            .contextMenu {
+                                Button {
+                                    selectedGameForDetail = game
+                                } label: {
+                                    Label("View Details", systemImage: "info.circle")
+                                }
+
+                                Button(role: .destructive) {
+                                    gameToDelete = game
+                                    showDeleteConfirmation = true
+                                } label: {
+                                    Label("Delete Game", systemImage: "trash")
+                                }
+                            }
                         }
 
                         // Load more button
@@ -1185,6 +1216,21 @@ struct AllGamesView: View {
             }
             .sheet(item: $selectedGameForDetail) { game in
                 GameDetailSheet(game: game)
+            }
+            .alert("Delete Game?", isPresented: $showDeleteConfirmation) {
+                Button("Cancel", role: .cancel) {
+                    gameToDelete = nil
+                }
+                Button("Delete", role: .destructive) {
+                    if let game = gameToDelete {
+                        persistenceManager.deleteGame(game)
+                        gameToDelete = nil
+                    }
+                }
+            } message: {
+                if let game = gameToDelete {
+                    Text("Delete the game vs \(game.opponent) on \(game.date.formatted(date: .abbreviated, time: .omitted))? This cannot be undone.")
+                }
             }
         }
     }

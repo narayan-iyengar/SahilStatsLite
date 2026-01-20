@@ -114,22 +114,26 @@ struct UltraMinimalRecordingView: View {
 
                     Spacer()
 
-                    // Menu button
+                    // Stats button - frosted glass style for visibility against any background
                     Button(action: { showSahilStats = true }) {
                         Image(systemName: "person.fill")
-                            .font(.system(size: 16))
-                            .foregroundColor(.orange.opacity(0.7))
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                            .font(.system(size: 18, weight: .semibold))
+                            .foregroundColor(.white)
+                            .frame(width: 40, height: 40)
+                            .background(
+                                Circle()
+                                    .fill(.ultraThinMaterial)
+                                    .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                            )
                     }
-                    .padding(.trailing, 12)
+                    .padding(.trailing, 16)
                 }
                 .padding(.top, 12)
                 Spacer()
             }
 
-            // Smart Scoreboard at bottom (only in landscape)
-            if !isPortrait || recordingManager.isSimulator {
+            // Smart Scoreboard at bottom (only in landscape, or always in stats-only/simulator)
+            if !isPortrait || recordingManager.isSimulator || appState.isStatsOnly {
                 VStack {
                     Spacer()
                     smartScoreboard
@@ -139,7 +143,7 @@ struct UltraMinimalRecordingView: View {
             }
 
             // Full-screen tap areas for scoring (left = my team, right = opponent)
-            if !isPortrait || recordingManager.isSimulator {
+            if !isPortrait || recordingManager.isSimulator || appState.isStatsOnly {
                 HStack(spacing: 0) {
                     // Left half - My team tap area
                     Color.clear
@@ -182,8 +186,8 @@ struct UltraMinimalRecordingView: View {
                 endGameConfirmation
             }
 
-            // Rotate to landscape prompt
-            if isPortrait && !recordingManager.isSimulator {
+            // Rotate to landscape prompt (not needed for stats-only mode)
+            if isPortrait && !recordingManager.isSimulator && !appState.isStatsOnly {
                 rotatePromptOverlay
             }
         }
@@ -195,22 +199,28 @@ struct UltraMinimalRecordingView: View {
         .task {
             initializeGameState()
             updateOrientationState()
-            recordingManager.reset()
-            updateOverlayState()
-            await recordingManager.requestPermissionsAndSetup()
 
-            // If already in landscape when camera is ready, start recording
-            if !isPortrait && !hasStartedRecording && recordingManager.isSessionReady && !recordingManager.isSimulator {
-                debugPrint("📹 Starting recording (already in landscape)")
-                hasStartedRecording = true
+            // Only setup camera if recording video
+            if !appState.isStatsOnly {
+                recordingManager.reset()
                 updateOverlayState()
-                recordingManager.startRecording()
-                gimbalManager.startTracking()
+                await recordingManager.requestPermissionsAndSetup()
+
+                // If already in landscape when camera is ready, start recording
+                if !isPortrait && !hasStartedRecording && recordingManager.isSessionReady && !recordingManager.isSimulator {
+                    debugPrint("📹 Starting recording (already in landscape)")
+                    hasStartedRecording = true
+                    updateOverlayState()
+                    recordingManager.startRecording()
+                    gimbalManager.startTracking()
+                }
             }
         }
         .onDisappear {
-            stopRecording()
-            recordingManager.stopSession()
+            if !appState.isStatsOnly {
+                stopRecording()
+                recordingManager.stopSession()
+            }
         }
         .animation(.spring(response: 0.3), value: showSahilStats)
     }
@@ -225,7 +235,25 @@ struct UltraMinimalRecordingView: View {
 
     @ViewBuilder
     private var cameraPreview: some View {
-        if recordingManager.isSimulator {
+        if appState.isStatsOnly {
+            // Stats-only mode - no camera, just a nice background
+            LinearGradient(
+                colors: [Color(white: 0.15), Color(white: 0.08)],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .ignoresSafeArea()
+            .overlay(
+                VStack(spacing: 12) {
+                    Image(systemName: "sportscourt.fill")
+                        .font(.system(size: 50))
+                        .foregroundColor(.orange.opacity(0.3))
+                    Text("Live Stats")
+                        .font(.headline)
+                        .foregroundColor(.white.opacity(0.3))
+                }
+            )
+        } else if recordingManager.isSimulator {
             LinearGradient(
                 colors: [Color(white: 0.92), Color(white: 0.85)],
                 startPoint: .top,
@@ -264,7 +292,17 @@ struct UltraMinimalRecordingView: View {
 
     private var recIndicator: some View {
         Group {
-            if isClockRunning {
+            if appState.isStatsOnly {
+                // Stats-only mode indicator
+                HStack(spacing: 4) {
+                    Circle()
+                        .fill(isClockRunning ? Color.green : Color.orange)
+                        .frame(width: 8, height: 8)
+                    Text("LIVE")
+                        .font(.system(size: 10, weight: .bold))
+                        .foregroundColor(isClockRunning ? .green : .orange)
+                }
+            } else if isClockRunning {
                 Circle()
                     .fill(Color.red)
                     .frame(width: 12, height: 12)
@@ -514,7 +552,8 @@ struct UltraMinimalRecordingView: View {
         }
 
         // Start recording when entering landscape (pre-game footage with initial overlay)
-        if !newIsPortrait && isPortrait && !hasStartedRecording {
+        // Skip if in stats-only mode
+        if !newIsPortrait && isPortrait && !hasStartedRecording && !appState.isStatsOnly {
             if recordingManager.isSessionReady && !recordingManager.isSimulator {
                 debugPrint("📹 Starting recording on landscape entry")
                 hasStartedRecording = true
@@ -566,7 +605,7 @@ struct UltraMinimalRecordingView: View {
                         .scaleEffect(1.5)
                         .tint(.white)
 
-                    Text("Finishing recording...")
+                    Text(appState.isStatsOnly ? "Saving stats..." : "Finishing recording...")
                         .font(.title2)
                         .fontWeight(.bold)
                         .foregroundColor(.white)
@@ -588,7 +627,7 @@ struct UltraMinimalRecordingView: View {
                         .buttonStyle(.bordered)
                         .tint(.white)
 
-                        Button("End & Save") {
+                        Button(appState.isStatsOnly ? "Save Stats" : "End & Save") {
                             endGame()
                         }
                         .buttonStyle(.borderedProminent)
@@ -607,7 +646,6 @@ struct UltraMinimalRecordingView: View {
     private func endGame() {
         isFinishingRecording = true
         timer?.cancel()
-        gimbalManager.stopTracking()
 
         // Sync player stats
         syncPlayerStats()
@@ -618,17 +656,30 @@ struct UltraMinimalRecordingView: View {
         appState.currentGame?.playerStats = playerStats
         appState.currentGame?.completedAt = Date()
 
-        Task {
-            let _ = await recordingManager.stopRecordingAndWait()
+        if appState.isStatsOnly {
+            // Stats-only mode: just save the game, no video to process
+            if let game = appState.currentGame {
+                persistenceManager.saveGame(game)
+            }
+            isFinishingRecording = false
+            appState.isStatsOnly = false  // Reset for next game
+            appState.endGame()
+        } else {
+            // Recording mode: stop recording and save
+            gimbalManager.stopTracking()
 
-            await MainActor.run {
-                // Save to persistence
-                if let game = appState.currentGame {
-                    persistenceManager.saveGame(game)
+            Task {
+                let _ = await recordingManager.stopRecordingAndWait()
+
+                await MainActor.run {
+                    // Save to persistence
+                    if let game = appState.currentGame {
+                        persistenceManager.saveGame(game)
+                    }
+
+                    isFinishingRecording = false
+                    appState.endGame()
                 }
-
-                isFinishingRecording = false
-                appState.endGame()
             }
         }
     }

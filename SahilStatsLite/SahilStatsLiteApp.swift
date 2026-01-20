@@ -72,8 +72,11 @@ class AppState: ObservableObject {
     @MainActor @Published var currentScreen: Screen = .home
     @MainActor @Published var currentGame: Game?
 
-    // Log-only mode (no video recording)
+    // Log-only mode (no video recording, enter stats after game)
     @MainActor @Published var isLogOnly: Bool = false
+
+    // Stats-only mode (live stats without video recording)
+    @MainActor @Published var isStatsOnly: Bool = false
 
     // Pre-fill data from calendar (cleared after use)
     @MainActor @Published var pendingCalendarGame: (opponent: String, location: String)?

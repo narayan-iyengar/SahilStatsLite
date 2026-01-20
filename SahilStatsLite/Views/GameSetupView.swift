@@ -18,6 +18,7 @@ struct GameSetupView: View {
     @State private var opponent: String = ""
     @State private var location: String = ""
     @State private var halfLength: Int = 18  // AAU: 18 or 20 minute halves
+    @State private var recordVideo: Bool = true  // Toggle for video recording
 
     @FocusState private var isOpponentFocused: Bool
 
@@ -110,8 +111,32 @@ struct GameSetupView: View {
                         .pickerStyle(.segmented)
                     }
 
-                    // Gimbal Status
-                    gimbalStatusCard
+                    // Record Video Toggle (only show when not in log-only mode)
+                    if !appState.isLogOnly {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Record Video")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Text(recordVideo ? "Game will be recorded" : "Stats only, no video")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+
+                            Spacer()
+
+                            Toggle("", isOn: $recordVideo)
+                                .tint(.orange)
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                    }
+
+                    // Gimbal Status (only show if recording video)
+                    if recordVideo && !appState.isLogOnly {
+                        gimbalStatusCard
+                    }
 
                     Spacer(minLength: 40)
                 }
@@ -123,8 +148,8 @@ struct GameSetupView: View {
                 startGame()
             } label: {
                 HStack {
-                    Image(systemName: appState.isLogOnly ? "pencil.line" : "video.fill")
-                    Text(appState.isLogOnly ? "Enter Stats" : "Start Recording")
+                    Image(systemName: appState.isLogOnly ? "pencil.line" : (recordVideo ? "video.fill" : "sportscourt.fill"))
+                    Text(appState.isLogOnly ? "Enter Stats" : (recordVideo ? "Start Recording" : "Start Live Stats"))
                 }
                 .font(.headline)
                 .foregroundColor(.white)
@@ -213,6 +238,7 @@ struct GameSetupView: View {
         if appState.isLogOnly {
             appState.currentScreen = .statsEntry
         } else {
+            appState.isStatsOnly = !recordVideo
             appState.currentScreen = .recording
         }
     }
