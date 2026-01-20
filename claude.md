@@ -42,7 +42,7 @@ The app uses a "what you see is what you get" approach where the scoreboard over
    - Uses `FirebaseGame` model for field name translation
 
 6. **AuthService** (`Services/AuthService.swift`)
-   - Firebase Authentication with Sign in with Apple
+   - Firebase Authentication with Google Sign-In (matching main app)
    - Auth state listener for automatic sync setup
 
 ### Video Orientation
@@ -68,7 +68,7 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 | `Services/OverlayRenderer.swift` | NBA-style corner scorebug rendering |
 | `Services/GamePersistenceManager.swift` | Game save/load, career stats, Firebase sync |
 | `Services/FirebaseService.swift` | Firestore CRUD with real-time listener |
-| `Services/AuthService.swift` | Firebase Auth with Sign in with Apple |
+| `Services/AuthService.swift` | Firebase Auth with Google Sign-In |
 | `Models/FirebaseGame.swift` | Field mapping between Lite and main app |
 | `Views/UltraMinimalRecordingView.swift` | Recording UI with tap-to-score |
 | `Views/GameSummaryView.swift` | Post-game summary with auto-save to Photos |
@@ -95,7 +95,7 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 Syncs games with the main SahilStats app's Firebase database (`sahil-stats-tracker`).
 
 ### Authentication
-- Sign in with Apple (preferred for iOS)
+- Google Sign-In (matches main SahilStats app)
 - Profile button in HomeView header shows auth status
 - Cloud sync icon shows sync status (green = synced, orange = syncing, red = error)
 

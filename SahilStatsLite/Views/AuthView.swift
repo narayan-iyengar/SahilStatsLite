@@ -6,7 +6,6 @@
 //
 
 import SwiftUI
-import AuthenticationServices
 
 struct AuthView: View {
     @ObservedObject private var authService = AuthService.shared
@@ -44,21 +43,26 @@ struct AuthView: View {
                         // Already signed in
                         signedInView
                     } else {
-                        // Sign in with Apple
-                        SignInWithAppleButton(
-                            onRequest: { request in
-                                authService.handleSignInWithAppleRequest(request)
-                            },
-                            onCompletion: { result in
-                                Task {
-                                    await authService.handleSignInWithAppleCompletion(result)
-                                }
+                        // Sign in with Google
+                        Button {
+                            Task {
+                                await authService.signInWithGoogle()
                             }
-                        )
-                        .signInWithAppleButtonStyle(colorScheme == .dark ? .white : .black)
-                        .frame(height: 50)
-                        .cornerRadius(10)
+                        } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: "g.circle.fill")
+                                    .font(.title2)
+                                Text("Sign in with Google")
+                                    .fontWeight(.medium)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 50)
+                            .background(colorScheme == .dark ? Color.white : Color.black)
+                            .foregroundColor(colorScheme == .dark ? .black : .white)
+                            .cornerRadius(10)
+                        }
                         .padding(.horizontal, 32)
+                        .disabled(authService.isLoading)
 
                         // Continue without signing in
                         Button {
