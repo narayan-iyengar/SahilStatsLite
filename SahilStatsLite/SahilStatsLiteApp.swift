@@ -54,6 +54,10 @@ struct ContentView: View {
                 UltraMinimalRecordingView()
                     .environmentObject(appState)
 
+            case .statsEntry:
+                ManualGameEntryView()
+                    .environmentObject(appState)
+
             case .summary:
                 GameSummaryView()
                     .environmentObject(appState)
@@ -68,6 +72,9 @@ class AppState: ObservableObject {
     @MainActor @Published var currentScreen: Screen = .home
     @MainActor @Published var currentGame: Game?
 
+    // Log-only mode (no video recording)
+    @MainActor @Published var isLogOnly: Bool = false
+
     // Pre-fill data from calendar (cleared after use)
     @MainActor @Published var pendingCalendarGame: (opponent: String, location: String)?
 
@@ -80,6 +87,7 @@ class AppState: ObservableObject {
         case home
         case setup
         case recording
+        case statsEntry  // Manual stats entry (no video)
         case summary
     }
 

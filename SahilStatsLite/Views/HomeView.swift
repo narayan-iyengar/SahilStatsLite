@@ -111,8 +111,19 @@ struct HomeView: View {
 
             Spacer()
 
-            // New Game button (+ icon)
+            // Log Game button (manual entry)
             Button {
+                appState.isLogOnly = true
+                appState.currentScreen = .setup
+            } label: {
+                Image(systemName: "pencil.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.secondary)
+            }
+
+            // New Game button (+ icon for recording)
+            Button {
+                appState.isLogOnly = false
                 appState.currentScreen = .setup
             } label: {
                 Image(systemName: "plus.circle.fill")

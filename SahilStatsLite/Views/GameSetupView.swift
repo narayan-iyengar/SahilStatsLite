@@ -37,7 +37,7 @@ struct GameSetupView: View {
 
                 Spacer()
 
-                Text("New Game")
+                Text(appState.isLogOnly ? "Log Game" : "New Game")
                     .font(.headline)
 
                 Spacer()
@@ -123,8 +123,8 @@ struct GameSetupView: View {
                 startGame()
             } label: {
                 HStack {
-                    Image(systemName: "video.fill")
-                    Text("Start Recording")
+                    Image(systemName: appState.isLogOnly ? "pencil.line" : "video.fill")
+                    Text(appState.isLogOnly ? "Enter Stats" : "Start Recording")
                 }
                 .font(.headline)
                 .foregroundColor(.white)
@@ -208,7 +208,13 @@ struct GameSetupView: View {
         )
         game.halfLength = halfLength
         appState.currentGame = game
-        appState.currentScreen = .recording
+
+        // Navigate based on mode
+        if appState.isLogOnly {
+            appState.currentScreen = .statsEntry
+        } else {
+            appState.currentScreen = .recording
+        }
     }
 }
 
