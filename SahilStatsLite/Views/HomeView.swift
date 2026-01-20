@@ -8,6 +8,7 @@
 import SwiftUI
 import Combine
 import Charts
+import EventKit
 
 struct HomeView: View {
     @EnvironmentObject var appState: AppState
@@ -16,6 +17,8 @@ struct HomeView: View {
     @State private var showStatsSheet = false
     @State private var showAllGames = false
     @State private var showSettings = false
+    @State private var selectedDate: Date = Date()
+    @State private var showDayGames = false
 
     var body: some View {
         ScrollView {
@@ -34,9 +37,11 @@ struct HomeView: View {
                 // Game Log Card
                 gameLogCard
 
-                // Upcoming from Calendar
-                if !calendarManager.upcomingGames.isEmpty {
-                    upcomingGamesSection
+                // Calendar
+                if calendarManager.hasCalendarAccess {
+                    calendarSection
+                } else {
+                    calendarAccessCard
                 }
 
                 Spacer(minLength: 40)
@@ -53,6 +58,10 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
+        }
+        .sheet(isPresented: $showDayGames) {
+            DayGamesSheet(date: selectedDate, calendarManager: calendarManager)
+                .environmentObject(appState)
         }
     }
 
@@ -217,65 +226,309 @@ struct HomeView: View {
         .buttonStyle(.plain)
     }
 
-    // MARK: - Upcoming Games
+    // MARK: - Calendar Section
 
-    private var upcomingGamesSection: some View {
+    private var calendarSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Upcoming")
-                .font(.headline)
-                .foregroundColor(.secondary)
-
-            ForEach(calendarManager.upcomingGames.prefix(3)) { game in
-                CalendarGameRow(game: game) {
-                    appState.startNewGame(
-                        opponent: game.opponent,
-                        teamName: "Wildcats", // TODO: Get from settings
-                        location: game.location
-                    )
+            HStack {
+                Text("Schedule")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+                Spacer()
+                Button {
+                    showSettings = true
+                } label: {
+                    Text("Calendars")
+                        .font(.caption)
+                        .foregroundColor(.orange)
                 }
             }
+
+            CalendarMonthView(
+                selectedDate: $selectedDate,
+                calendarManager: calendarManager,
+                onDateTap: { date in
+                    selectedDate = date
+                    let games = calendarManager.games(for: date)
+                    if !games.isEmpty {
+                        showDayGames = true
+                    }
+                }
+            )
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
         }
     }
 
-}
+    private var calendarAccessCard: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "calendar.badge.plus")
+                .font(.largeTitle)
+                .foregroundColor(.orange)
 
-// MARK: - Calendar Game Row
+            Text("Connect Calendar")
+                .font(.headline)
 
-struct CalendarGameRow: View {
-    let game: GameCalendarManager.CalendarGame
-    let onStart: () -> Void
-
-    var body: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 4) {
-                Text("vs \(game.opponent)")
-                    .font(.headline)
-
-                HStack(spacing: 8) {
-                    Label(game.dateString, systemImage: "calendar")
-                    Label(game.timeString, systemImage: "clock")
-                }
+            Text("See upcoming games from your calendar")
                 .font(.caption)
                 .foregroundColor(.secondary)
+                .multilineTextAlignment(.center)
 
-                if !game.location.isEmpty {
-                    Label(game.location, systemImage: "location")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+            Button {
+                Task {
+                    await calendarManager.requestCalendarAccess()
                 }
-            }
-
-            Spacer()
-
-            Button("Start") {
-                onStart()
+            } label: {
+                Text("Allow Access")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
             }
             .buttonStyle(.borderedProminent)
             .tint(.orange)
         }
+        .frame(maxWidth: .infinity)
         .padding()
         .background(Color(.systemBackground))
-        .cornerRadius(12)
+        .cornerRadius(16)
+    }
+}
+
+// MARK: - Calendar Month View
+
+struct CalendarMonthView: View {
+    @Binding var selectedDate: Date
+    @ObservedObject var calendarManager: GameCalendarManager
+    var onDateTap: (Date) -> Void
+
+    @State private var displayedMonth: Date = Date()
+
+    private let calendar = Calendar.current
+    private let weekdaySymbols = Calendar.current.veryShortWeekdaySymbols
+
+    private var monthTitle: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMMM yyyy"
+        return formatter.string(from: displayedMonth)
+    }
+
+    private var daysInMonth: [Date?] {
+        guard let monthInterval = calendar.dateInterval(of: .month, for: displayedMonth),
+              let monthFirstWeek = calendar.dateInterval(of: .weekOfMonth, for: monthInterval.start) else {
+            return []
+        }
+
+        var days: [Date?] = []
+        var currentDate = monthFirstWeek.start
+
+        // Add days for 6 weeks (covers all possible month layouts)
+        for _ in 0..<42 {
+            if calendar.isDate(currentDate, equalTo: displayedMonth, toGranularity: .month) {
+                days.append(currentDate)
+            } else if days.isEmpty || days.last != nil {
+                days.append(nil)
+            }
+            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
+        }
+
+        // Trim trailing nils
+        while days.last == nil && days.count > 0 {
+            days.removeLast()
+        }
+
+        return days
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            // Month navigation
+            HStack {
+                Button {
+                    withAnimation {
+                        displayedMonth = calendar.date(byAdding: .month, value: -1, to: displayedMonth) ?? displayedMonth
+                    }
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(.orange)
+                }
+
+                Spacer()
+
+                Text(monthTitle)
+                    .font(.headline)
+
+                Spacer()
+
+                Button {
+                    withAnimation {
+                        displayedMonth = calendar.date(byAdding: .month, value: 1, to: displayedMonth) ?? displayedMonth
+                    }
+                } label: {
+                    Image(systemName: "chevron.right")
+                        .font(.body.weight(.semibold))
+                        .foregroundColor(.orange)
+                }
+            }
+
+            // Weekday headers
+            HStack(spacing: 0) {
+                ForEach(weekdaySymbols, id: \.self) { symbol in
+                    Text(symbol)
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                }
+            }
+
+            // Days grid
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 8) {
+                ForEach(Array(daysInMonth.enumerated()), id: \.offset) { _, date in
+                    if let date = date {
+                        DayCell(
+                            date: date,
+                            isToday: calendar.isDateInToday(date),
+                            isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
+                            hasGames: !calendarManager.games(for: date).isEmpty,
+                            onTap: { onDateTap(date) }
+                        )
+                    } else {
+                        Color.clear
+                            .frame(height: 36)
+                    }
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Day Cell
+
+struct DayCell: View {
+    let date: Date
+    let isToday: Bool
+    let isSelected: Bool
+    let hasGames: Bool
+    let onTap: () -> Void
+
+    private var dayNumber: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter.string(from: date)
+    }
+
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 2) {
+                Text(dayNumber)
+                    .font(.system(.callout, design: .rounded))
+                    .fontWeight(hasGames ? .bold : .regular)
+                    .foregroundColor(foregroundColor)
+
+                // Game indicator dot
+                Circle()
+                    .fill(hasGames ? Color.orange : Color.clear)
+                    .frame(width: 6, height: 6)
+            }
+            .frame(height: 36)
+            .frame(maxWidth: .infinity)
+            .background(backgroundColor)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var foregroundColor: Color {
+        if isSelected {
+            return .white
+        } else if isToday {
+            return .orange
+        } else {
+            return .primary
+        }
+    }
+
+    private var backgroundColor: Color {
+        if isSelected {
+            return .orange
+        } else {
+            return .clear
+        }
+    }
+}
+
+// MARK: - Day Games Sheet
+
+struct DayGamesSheet: View {
+    let date: Date
+    @ObservedObject var calendarManager: GameCalendarManager
+    @EnvironmentObject var appState: AppState
+    @Environment(\.dismiss) private var dismiss
+
+    private var games: [GameCalendarManager.CalendarGame] {
+        calendarManager.games(for: date)
+    }
+
+    private var dateTitle: String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .full
+        return formatter.string(from: date)
+    }
+
+    var body: some View {
+        NavigationView {
+            List {
+                if games.isEmpty {
+                    ContentUnavailableView(
+                        "No Games",
+                        systemImage: "calendar.badge.exclamationmark",
+                        description: Text("No games scheduled for this day")
+                    )
+                } else {
+                    ForEach(games) { game in
+                        Button {
+                            dismiss()
+                            // Navigate to setup with pre-filled data
+                            appState.pendingCalendarGame = (opponent: game.opponent, location: game.location)
+                            appState.currentScreen = .setup
+                        } label: {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("vs \(game.opponent)")
+                                        .font(.headline)
+                                        .foregroundColor(.primary)
+
+                                    Text(game.timeString)
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+
+                                    if !game.location.isEmpty {
+                                        Label(game.location, systemImage: "location")
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
+                                    }
+                                }
+
+                                Spacer()
+
+                                Image(systemName: "chevron.right")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding(.vertical, 4)
+                        }
+                    }
+                }
+            }
+            .navigationTitle(dateTitle)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+        }
     }
 }
 
@@ -1002,11 +1255,66 @@ struct AllGamesView: View {
 struct SettingsView: View {
     @ObservedObject private var authService = AuthService.shared
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
+    @ObservedObject private var calendarManager = GameCalendarManager.shared
     @Environment(\.dismiss) private var dismiss
+
+    // Team name stored in UserDefaults
+    @AppStorage("myTeamName") private var myTeamName: String = "Wildcats"
 
     var body: some View {
         NavigationView {
             List {
+                // My Team Section
+                Section {
+                    HStack {
+                        Text("Team Name")
+                        Spacer()
+                        TextField("Team name", text: $myTeamName)
+                            .multilineTextAlignment(.trailing)
+                            .foregroundColor(.secondary)
+                    }
+                } header: {
+                    Text("My Team")
+                } footer: {
+                    Text("This will be pre-filled when starting new games")
+                }
+
+                // Calendar Section
+                if calendarManager.hasCalendarAccess {
+                    Section {
+                        let availableCalendars = calendarManager.getAvailableCalendars()
+                        if availableCalendars.isEmpty {
+                            Text("No calendars found")
+                                .foregroundColor(.secondary)
+                        } else {
+                            ForEach(availableCalendars, id: \.calendarIdentifier) { calendar in
+                                HStack {
+                                    Circle()
+                                        .fill(Color(cgColor: calendar.cgColor))
+                                        .frame(width: 12, height: 12)
+
+                                    Text(calendar.title)
+
+                                    Spacer()
+
+                                    if isCalendarSelected(calendar) {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.orange)
+                                    }
+                                }
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    toggleCalendar(calendar)
+                                }
+                            }
+                        }
+                    } header: {
+                        Text("Calendars")
+                    } footer: {
+                        Text("Select calendars to show games from. Leave all unchecked to show all calendars.")
+                    }
+                }
+
                 // Account Section
                 Section {
                     if authService.isSignedIn {
@@ -1125,6 +1433,29 @@ struct SettingsView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Calendar Selection Helpers
+
+    private func isCalendarSelected(_ calendar: EKCalendar) -> Bool {
+        // If no calendars are selected, all are effectively "selected"
+        if calendarManager.selectedCalendars.isEmpty {
+            return false // Show no checkmarks when "show all" is active
+        }
+        return calendarManager.selectedCalendars.contains(calendar.calendarIdentifier)
+    }
+
+    private func toggleCalendar(_ calendar: EKCalendar) {
+        var selected = calendarManager.selectedCalendars
+
+        if selected.contains(calendar.calendarIdentifier) {
+            selected.removeAll { $0 == calendar.calendarIdentifier }
+        } else {
+            // If this is the first selection and we had none, just add this one
+            selected.append(calendar.calendarIdentifier)
+        }
+
+        calendarManager.saveSelectedCalendars(selected)
     }
 }
 

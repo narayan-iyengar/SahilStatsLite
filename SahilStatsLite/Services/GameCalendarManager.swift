@@ -199,4 +199,19 @@ class GameCalendarManager: ObservableObject {
     func refresh() {
         loadUpcomingGames()
     }
+
+    // MARK: - Games for Date
+
+    func games(for date: Date) -> [CalendarGame] {
+        upcomingGames.filter { game in
+            Calendar.current.isDate(game.startTime, inSameDayAs: date)
+        }
+    }
+
+    // MARK: - Dates with Games
+
+    func datesWithGames() -> Set<Date> {
+        let calendar = Calendar.current
+        return Set(upcomingGames.map { calendar.startOfDay(for: $0.startTime) })
+    }
 }

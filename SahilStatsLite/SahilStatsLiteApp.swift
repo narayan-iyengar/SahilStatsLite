@@ -68,6 +68,9 @@ class AppState: ObservableObject {
     @MainActor @Published var currentScreen: Screen = .home
     @MainActor @Published var currentGame: Game?
 
+    // Pre-fill data from calendar (cleared after use)
+    @MainActor @Published var pendingCalendarGame: (opponent: String, location: String)?
+
     // Recent games now come from persistence
     var recentGames: [Game] {
         GamePersistenceManager.shared.savedGames

@@ -62,7 +62,7 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 - **New Game button** - Start recording a new game
 - **Career Stats card** - Quick stats overview, tap for detailed career stats
 - **Game Log card** - Opens AllGamesView with filters and pagination
-- **Upcoming games** - Calendar integration for scheduled games
+- **Calendar month view** - Full month calendar with game days highlighted, tap day to see games
 
 ### Game Flow
 1. **GameSetupView** - Enter team names, opponent, half length
@@ -93,11 +93,13 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 | Component | Purpose |
 |-----------|---------|
 | `HomeView` | Main screen with cards for stats, game log, calendar |
-| `SettingsView` | Account, sync status, sign in/out (single settings entry) |
+| `SettingsView` | Team name, calendar selection, account/sync status, sign in/out |
 | `CareerStatsSheet` | Stats only: averages, trends, shooting charts |
 | `AllGamesView` | Game browsing with filters, search, pagination |
 | `GameDetailSheet` | Single game stats detail view |
 | `GameRow` | Reusable game list row (used everywhere) |
+| `CalendarMonthView` | iOS-native month calendar with game day indicators |
+| `DayGamesSheet` | Sheet showing games on selected calendar day |
 | `UltraMinimalRecordingView` | Recording UI with tap-to-score |
 | `GameSummaryView` | Post-game summary with auto-save to Photos |
 
@@ -155,7 +157,11 @@ DockKit framework (iOS 18+) support in `Services/GimbalTrackingManager.swift` fo
 ## Future Features (TODO)
 
 ### Integrations
-- [x] **Calendar** - Reads iOS Calendar for games (parses "vs Team" or "@ Team" titles)
+- [x] **Calendar** - iOS Calendar integration with full month view
+  - Parses "vs Team" or "@ Team" from event titles
+  - Select which calendars to integrate (filter work calendars in Settings)
+  - Days with games shown bold with orange dot
+  - Tap day → shows list of games → tap game → pre-fills GameSetupView
 - [x] **Firebase** - Cloud backup of games and stats (two-way sync with main app)
 
 ### Completed Features
@@ -163,9 +169,10 @@ DockKit framework (iOS 18+) support in `Services/GimbalTrackingManager.swift` fo
 - [x] Game Log with filtering (All/Wins/Losses), search, and pagination
 - [x] Game detail view with full stats
 - [x] Unified Settings (account + sync in one place)
-- [x] Calendar integration for upcoming games
+- [x] Calendar integration with month view and selectable calendars
+- [x] Team name setting (stored in UserDefaults, pre-fills GameSetupView)
 
 ### Future Enhancements (if needed)
 - [ ] Season filtering for stats
-- [ ] Team customization (name, colors, logo)
+- [ ] Team colors/logo customization
 - [ ] Player profile settings (name, birthday)

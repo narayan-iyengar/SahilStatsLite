@@ -11,8 +11,11 @@ struct GameSetupView: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var gimbalManager = GimbalTrackingManager.shared
 
+    // Get saved team name from UserDefaults
+    @AppStorage("myTeamName") private var savedTeamName: String = "Wildcats"
+
     @State private var opponent: String = ""
-    @State private var teamName: String = "Wildcats"
+    @State private var teamName: String = ""
     @State private var location: String = ""
     @State private var halfLength: Int = 18  // AAU: 18 or 20 minute halves
 
@@ -121,7 +124,22 @@ struct GameSetupView: View {
         }
         .background(Color(.systemGroupedBackground))
         .onAppear {
-            isOpponentFocused = true
+            // Pre-fill team name from settings
+            if teamName.isEmpty {
+                teamName = savedTeamName
+            }
+
+            // Pre-fill from calendar if available
+            if let pending = appState.pendingCalendarGame {
+                opponent = pending.opponent
+                location = pending.location
+                // Clear after use
+                appState.pendingCalendarGame = nil
+            }
+            // Focus opponent field if empty
+            if opponent.isEmpty {
+                isOpponentFocused = true
+            }
         }
     }
 
