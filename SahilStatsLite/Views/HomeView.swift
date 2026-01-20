@@ -14,7 +14,6 @@ struct HomeView: View {
     @StateObject private var calendarManager = GameCalendarManager.shared
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
     @State private var showStatsSheet = false
-    @State private var selectedGameForDetail: Game? = nil
     @State private var showAllGames = false
     @State private var showSettings = false
 
@@ -49,11 +48,8 @@ struct HomeView: View {
         .sheet(isPresented: $showStatsSheet) {
             CareerStatsSheet()
         }
-        .sheet(item: $selectedGameForDetail) { game in
-            GameDetailSheet(game: game)
-        }
         .sheet(isPresented: $showAllGames) {
-            AllGamesView(selectedGame: $selectedGameForDetail)
+            AllGamesView()
         }
         .sheet(isPresented: $showSettings) {
             SettingsView()
@@ -789,8 +785,10 @@ struct GameDetailSheet: View {
 
 struct AllGamesView: View {
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
-    @Binding var selectedGame: Game?
     @Environment(\.dismiss) private var dismiss
+
+    // Game detail state (local, not binding to avoid double-sheet bug)
+    @State private var selectedGameForDetail: Game? = nil
 
     // Filter state
     @State private var selectedFilter: GameFilter = .all
@@ -885,7 +883,7 @@ struct AllGamesView: View {
                     LazyVStack(spacing: 8) {
                         ForEach(displayedGames) { game in
                             Button {
-                                selectedGame = game
+                                selectedGameForDetail = game
                             } label: {
                                 GameRow(game: game)
                             }
@@ -940,7 +938,7 @@ struct AllGamesView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .sheet(item: $selectedGame) { game in
+            .sheet(item: $selectedGameForDetail) { game in
                 GameDetailSheet(game: game)
             }
         }
