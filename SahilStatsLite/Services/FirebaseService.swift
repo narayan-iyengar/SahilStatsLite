@@ -83,6 +83,16 @@ class FirebaseService: ObservableObject {
             do {
                 var firebaseGame = try document.data(as: FirebaseGame.self)
                 firebaseGame.id = document.documentID
+
+                // Manually extract timestamp since custom decoder doesn't handle @ServerTimestamp
+                let data = document.data()
+                if let timestamp = data["timestamp"] as? Timestamp {
+                    firebaseGame.timestamp = timestamp.dateValue()
+                }
+                if let createdAt = data["createdAt"] as? Timestamp {
+                    firebaseGame.createdAt = createdAt.dateValue()
+                }
+
                 return firebaseGame.toGame()
             } catch {
                 debugPrint("[FirebaseService] Error decoding game \(document.documentID): \(error)")
@@ -152,6 +162,16 @@ class FirebaseService: ObservableObject {
             do {
                 var firebaseGame = try document.data(as: FirebaseGame.self)
                 firebaseGame.id = document.documentID
+
+                // Manually extract timestamp since custom decoder doesn't handle @ServerTimestamp
+                let data = document.data()
+                if let timestamp = data["timestamp"] as? Timestamp {
+                    firebaseGame.timestamp = timestamp.dateValue()
+                }
+                if let createdAt = data["createdAt"] as? Timestamp {
+                    firebaseGame.createdAt = createdAt.dateValue()
+                }
+
                 return firebaseGame.toGame()
             } catch {
                 debugPrint("[FirebaseService] Error decoding game \(document.documentID): \(error)")
