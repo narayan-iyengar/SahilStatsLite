@@ -59,7 +59,8 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 
 ### Home Screen Layout
 - **Settings gear** (top-left) - Opens SettingsView with teams, calendars, account/sync
-- **Plus icon** (top-right) - Quick access to start new game
+- **Pencil icon** (top-right) - Log game manually (stats only, no video)
+- **Plus icon** (top-right) - Record new game with video
 - **Calendar month view** (primary) - Full month calendar with game days highlighted
 - **Career Stats card** - Quick stats overview, tap for detailed career stats
 - **Game Log card** - Opens AllGamesView with filters and pagination
@@ -100,6 +101,7 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 | `GameRow` | Reusable game list row (used everywhere) |
 | `CalendarMonthView` | iOS-native month calendar with game day indicators |
 | `DayGamesSheet` | Sheet showing games on selected calendar day |
+| `ManualGameEntryView` | Manual stats entry without video recording |
 | `UltraMinimalRecordingView` | Recording UI with tap-to-score |
 | `GameSummaryView` | Post-game summary with auto-save to Photos |
 
@@ -173,6 +175,7 @@ DockKit framework (iOS 18+) support in `Services/GimbalTrackingManager.swift` fo
 - [x] Unified Settings (account + sync in one place)
 - [x] Calendar integration with month view and selectable calendars
 - [x] Multi-team support (add/remove teams in Settings, picker in GameSetupView)
+- [x] Manual game logging (enter stats without video when you forget to record)
 
 ### Future Enhancements (if needed)
 - [ ] Season filtering for stats
