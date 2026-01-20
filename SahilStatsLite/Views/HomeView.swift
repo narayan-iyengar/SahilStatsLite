@@ -17,6 +17,7 @@ struct HomeView: View {
     @State private var selectedGame: Game? = nil
     @State private var selectedGameForDetail: Game? = nil
     @State private var showAllGames = false
+    @State private var showSettings = false
 
     var body: some View {
         ScrollView {
@@ -32,14 +33,12 @@ struct HomeView: View {
                     careerStatsCard
                 }
 
+                // Game Log Card
+                gameLogCard
+
                 // Upcoming from Calendar
                 if !calendarManager.upcomingGames.isEmpty {
                     upcomingGamesSection
-                }
-
-                // Recent Games
-                if !appState.recentGames.isEmpty {
-                    recentGamesSection
                 }
 
                 Spacer(minLength: 40)
@@ -57,14 +56,45 @@ struct HomeView: View {
         .sheet(isPresented: $showAllGames) {
             AllGamesView(selectedGame: $selectedGameForDetail)
         }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
+        }
     }
 
     // MARK: - Header
 
     private var headerSection: some View {
         HStack {
-            // Profile/Auth button
-            ProfileButton()
+            // Settings button (combines profile + settings)
+            Button {
+                showSettings = true
+            } label: {
+                ZStack(alignment: .bottomTrailing) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.title2)
+                        .foregroundColor(.secondary)
+
+                    // Sync/auth status indicator
+                    if AuthService.shared.isSignedIn {
+                        if persistenceManager.isSyncing {
+                            Circle()
+                                .fill(.orange)
+                                .frame(width: 10, height: 10)
+                                .offset(x: 2, y: 2)
+                        } else if persistenceManager.syncError != nil {
+                            Circle()
+                                .fill(.red)
+                                .frame(width: 10, height: 10)
+                                .offset(x: 2, y: 2)
+                        } else {
+                            Circle()
+                                .fill(.green)
+                                .frame(width: 10, height: 10)
+                                .offset(x: 2, y: 2)
+                        }
+                    }
+                }
+            }
 
             Spacer()
 
@@ -80,40 +110,12 @@ struct HomeView: View {
 
             Spacer()
 
-            // Sync status indicator
-            syncStatusView
+            // Placeholder for symmetry
+            Image(systemName: "gearshape.fill")
+                .font(.title2)
+                .foregroundColor(.clear)
         }
         .padding(.top, 20)
-    }
-
-    // MARK: - Sync Status
-
-    private var syncStatusView: some View {
-        Group {
-            if AuthService.shared.isSignedIn {
-                if persistenceManager.isSyncing {
-                    ProgressView()
-                        .scaleEffect(0.8)
-                } else if persistenceManager.syncError != nil {
-                    Image(systemName: "exclamationmark.icloud.fill")
-                        .foregroundColor(.red)
-                } else {
-                    // Synced - just show gear for settings
-                    Button(action: { /* TODO: Show settings */ }) {
-                        Image(systemName: "gearshape.fill")
-                            .font(.title3)
-                            .foregroundColor(.secondary)
-                    }
-                }
-            } else {
-                // Not signed in - show gear for settings
-                Button(action: { /* TODO: Show settings */ }) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.title3)
-                        .foregroundColor(.secondary)
-                }
-            }
-        }
     }
 
     // MARK: - New Game Button
@@ -185,6 +187,41 @@ struct HomeView: View {
         .frame(maxWidth: .infinity)
     }
 
+    // MARK: - Game Log Card
+
+    private var gameLogCard: some View {
+        Button(action: { showAllGames = true }) {
+            HStack {
+                Image(systemName: "list.bullet.clipboard")
+                    .font(.title2)
+                    .foregroundColor(.orange)
+                    .frame(width: 44, height: 44)
+                    .background(Color.orange.opacity(0.15))
+                    .cornerRadius(10)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Game Log")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    Text("\(persistenceManager.careerGames) games recorded")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Spacer()
+
+                Image(systemName: "chevron.right")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+        }
+        .buttonStyle(.plain)
+    }
+
     // MARK: - Upcoming Games
 
     private var upcomingGamesSection: some View {
@@ -205,59 +242,6 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Recent Games
-
-    private var recentGamesSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Recent Games")
-                    .font(.headline)
-                    .foregroundColor(.secondary)
-
-                Spacer()
-
-                if appState.recentGames.count > 5 {
-                    Button {
-                        showAllGames = true
-                    } label: {
-                        Text("View All")
-                            .font(.subheadline)
-                            .foregroundColor(.orange)
-                    }
-                }
-            }
-
-            ForEach(appState.recentGames.prefix(5)) { game in
-                Button {
-                    selectedGameForDetail = game
-                } label: {
-                    GameRow(game: game)
-                }
-                .buttonStyle(.plain)
-            }
-
-            // Show "View All" button at bottom if we have more games
-            if appState.recentGames.count > 5 {
-                Button {
-                    showAllGames = true
-                } label: {
-                    HStack {
-                        Spacer()
-                        Text("View All \(appState.recentGames.count) Games")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                        Image(systemName: "chevron.right")
-                            .font(.caption)
-                        Spacer()
-                    }
-                    .foregroundColor(.orange)
-                    .padding(.vertical, 12)
-                    .background(Color(.systemBackground))
-                    .cornerRadius(12)
-                }
-            }
-        }
-    }
 }
 
 // MARK: - Calendar Game Row
@@ -1092,6 +1076,137 @@ struct AllGamesView: View {
                         .foregroundColor(.red)
                 }
                 .font(.caption)
+            }
+        }
+    }
+}
+
+// MARK: - Settings View
+
+struct SettingsView: View {
+    @ObservedObject private var authService = AuthService.shared
+    @ObservedObject private var persistenceManager = GamePersistenceManager.shared
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        NavigationView {
+            List {
+                // Account Section
+                Section {
+                    if authService.isSignedIn {
+                        // Signed in state
+                        HStack(spacing: 12) {
+                            Image(systemName: "person.circle.fill")
+                                .font(.system(size: 40))
+                                .foregroundColor(.green)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(authService.displayName ?? "Signed In")
+                                    .font(.headline)
+                                if let email = authService.userEmail {
+                                    Text(email)
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                }
+                            }
+
+                            Spacer()
+
+                            // Sync status
+                            if persistenceManager.isSyncing {
+                                ProgressView()
+                                    .scaleEffect(0.8)
+                            } else if persistenceManager.syncError != nil {
+                                Image(systemName: "exclamationmark.icloud.fill")
+                                    .foregroundColor(.red)
+                            } else {
+                                Image(systemName: "checkmark.icloud.fill")
+                                    .foregroundColor(.green)
+                            }
+                        }
+                        .padding(.vertical, 8)
+
+                        // Sync button
+                        Button {
+                            Task {
+                                await persistenceManager.forceSyncFromFirebase()
+                            }
+                        } label: {
+                            Label("Sync Now", systemImage: "arrow.triangle.2.circlepath")
+                        }
+                        .disabled(persistenceManager.isSyncing)
+
+                        // Sign out button
+                        Button(role: .destructive) {
+                            authService.signOut()
+                        } label: {
+                            Label("Sign Out", systemImage: "rectangle.portrait.and.arrow.right")
+                        }
+                    } else {
+                        // Not signed in
+                        HStack(spacing: 12) {
+                            Image(systemName: "person.circle")
+                                .font(.system(size: 40))
+                                .foregroundColor(.secondary)
+
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Not Signed In")
+                                    .font(.headline)
+                                Text("Sign in to sync games across devices")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                        .padding(.vertical, 8)
+
+                        Button {
+                            Task {
+                                await authService.signInWithGoogle()
+                            }
+                        } label: {
+                            Label("Sign in with Google", systemImage: "g.circle.fill")
+                        }
+                        .disabled(authService.isLoading)
+                    }
+                } header: {
+                    Text("Account")
+                } footer: {
+                    if let error = authService.error {
+                        Text(error)
+                            .foregroundColor(.red)
+                    } else if let syncError = persistenceManager.syncError {
+                        Text(syncError)
+                            .foregroundColor(.red)
+                    } else if authService.isSignedIn {
+                        if let lastSync = persistenceManager.lastSyncTime {
+                            Text("Last synced: \(lastSync.formatted(date: .abbreviated, time: .shortened))")
+                        }
+                    }
+                }
+
+                // App Info Section
+                Section("About") {
+                    HStack {
+                        Text("Version")
+                        Spacer()
+                        Text(Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "1.0")
+                            .foregroundColor(.secondary)
+                    }
+
+                    HStack {
+                        Text("Games Recorded")
+                        Spacer()
+                        Text("\(persistenceManager.careerGames)")
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .navigationTitle("Settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
             }
         }
     }

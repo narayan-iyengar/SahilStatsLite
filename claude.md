@@ -50,6 +50,13 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 - Rotation configured BEFORE enabling frame capture (fixes pre-game footage orientation)
 - landscapeLeft (volume down) → 0°, landscapeRight (volume up) → 180°
 
+### Home Screen Layout
+- **Settings gear** (top-left) - Opens SettingsView with account/sync status
+- **New Game button** - Start recording a new game
+- **Career Stats card** - Quick stats overview, tap for detailed career stats
+- **Game Log card** - Opens AllGamesView with filters and pagination
+- **Upcoming games** - Calendar integration for scheduled games
+
 ### Game Flow
 1. **GameSetupView** - Enter team names, opponent, half length
 2. **UltraMinimalRecordingView** - Record game with tap-to-score (recording starts on landscape)
@@ -72,7 +79,7 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 | `Models/FirebaseGame.swift` | Field mapping between Lite and main app |
 | `Views/UltraMinimalRecordingView.swift` | Recording UI with tap-to-score |
 | `Views/GameSummaryView.swift` | Post-game summary with auto-save to Photos |
-| `Views/AuthView.swift` | Sign-in screen and profile management |
+| `Views/AuthView.swift` | Sign-in screen for authentication |
 | `Models/Game.swift` | Game data model with PlayerStats |
 | `Models/AppState.swift` | App navigation and state management |
 

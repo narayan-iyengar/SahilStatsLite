@@ -184,42 +184,6 @@ struct AuthView: View {
     }
 }
 
-// MARK: - Profile Button (for HomeView)
-
-struct ProfileButton: View {
-    @ObservedObject private var authService = AuthService.shared
-    @ObservedObject private var persistenceManager = GamePersistenceManager.shared
-    @State private var showAuthView = false
-
-    var body: some View {
-        Button {
-            showAuthView = true
-        } label: {
-            ZStack(alignment: .bottomTrailing) {
-                Image(systemName: authService.isSignedIn ? "person.circle.fill" : "person.circle")
-                    .font(.title2)
-                    .foregroundStyle(authService.isSignedIn ? .green : .secondary)
-
-                // Sync indicator
-                if authService.isSignedIn {
-                    if persistenceManager.isSyncing {
-                        Circle()
-                            .fill(.orange)
-                            .frame(width: 8, height: 8)
-                    } else if persistenceManager.syncError != nil {
-                        Circle()
-                            .fill(.red)
-                            .frame(width: 8, height: 8)
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $showAuthView) {
-            AuthView()
-        }
-    }
-}
-
 #Preview {
     AuthView()
 }
