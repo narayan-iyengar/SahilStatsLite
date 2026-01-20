@@ -83,6 +83,7 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 | `Services/GamePersistenceManager.swift` | Game save/load, career stats, Firebase sync |
 | `Services/FirebaseService.swift` | Firestore CRUD with real-time listener |
 | `Services/AuthService.swift` | Firebase Auth with Google Sign-In |
+| `Services/GameCalendarManager.swift` | iOS Calendar integration for upcoming games |
 | `Models/FirebaseGame.swift` | Field mapping between Lite and main app |
 | `Models/Game.swift` | Game data model with PlayerStats |
 | `Models/AppState.swift` | App navigation and state management |
@@ -154,7 +155,7 @@ DockKit framework (iOS 18+) support in `Services/GimbalTrackingManager.swift` fo
 ## Future Features (TODO)
 
 ### Integrations
-- [x] **Calendar** - Shows upcoming games from calendar with one-tap start
+- [x] **Calendar** - Reads iOS Calendar for games (parses "vs Team" or "@ Team" titles)
 - [x] **Firebase** - Cloud backup of games and stats (two-way sync with main app)
 
 ### Completed Features
