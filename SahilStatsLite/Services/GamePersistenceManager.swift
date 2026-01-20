@@ -2,7 +2,7 @@
 //  GamePersistenceManager.swift
 //  SahilStatsLite
 //
-//  Handles saving and loading games to/from disk
+//  Handles saving and loading games to/from disk with Firebase sync
 //
 
 import Foundation
@@ -14,8 +14,13 @@ class GamePersistenceManager: ObservableObject {
     static let shared = GamePersistenceManager()
 
     @Published private(set) var savedGames: [Game] = []
+    @Published private(set) var isSyncing: Bool = false
+    @Published private(set) var lastSyncTime: Date?
+    @Published var syncError: String?
 
     private let fileManager = FileManager.default
+    private var authCancellable: AnyCancellable?
+    private var firebaseCancellable: AnyCancellable?
 
     private var gamesFileURL: URL {
         fileManager.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -24,9 +29,61 @@ class GamePersistenceManager: ObservableObject {
 
     private init() {
         loadGames()
+        setupFirebaseSync()
     }
 
-    // MARK: - Load
+    // MARK: - Firebase Sync Setup
+
+    private func setupFirebaseSync() {
+        // Listen to auth changes
+        authCancellable = AuthService.shared.$isSignedIn
+            .removeDuplicates()
+            .sink { [weak self] isSignedIn in
+                Task { @MainActor in
+                    if isSignedIn {
+                        self?.startFirebaseSync()
+                    } else {
+                        self?.stopFirebaseSync()
+                    }
+                }
+            }
+
+        // Listen to Firebase game updates
+        FirebaseService.shared.onGamesUpdated = { [weak self] firebaseGames in
+            Task { @MainActor in
+                self?.mergeFirebaseGames(firebaseGames)
+            }
+        }
+    }
+
+    private func startFirebaseSync() {
+        debugPrint("[GamePersistence] Starting Firebase sync...")
+        isSyncing = true
+        FirebaseService.shared.startListening()
+    }
+
+    private func stopFirebaseSync() {
+        debugPrint("[GamePersistence] Stopping Firebase sync...")
+        FirebaseService.shared.stopListening()
+        isSyncing = false
+    }
+
+    /// Merge games from Firebase into local storage
+    private func mergeFirebaseGames(_ firebaseGames: [Game]) {
+        debugPrint("[GamePersistence] Merging \(firebaseGames.count) Firebase games")
+
+        // Replace local games with Firebase games (Firebase is source of truth)
+        savedGames = firebaseGames.sorted { $0.date > $1.date }
+        saveAllGamesToFile(savedGames)
+
+        lastSyncTime = Date()
+        isSyncing = false
+        syncError = nil
+
+        debugPrint("[GamePersistence] Merged - now have \(savedGames.count) games")
+    }
+
+    // MARK: - Local File Operations
 
     func loadGames() {
         guard fileManager.fileExists(atPath: gamesFileURL.path) else {
@@ -39,7 +96,7 @@ class GamePersistenceManager: ObservableObject {
             let decoder = JSONDecoder()
             savedGames = try decoder.decode([Game].self, from: data)
             savedGames.sort { $0.date > $1.date } // Most recent first
-            debugPrint("[GamePersistence] Loaded \(savedGames.count) games")
+            debugPrint("[GamePersistence] Loaded \(savedGames.count) local games")
         } catch {
             debugPrint("[GamePersistence] Failed to load games: \(error)")
             savedGames = []
@@ -58,17 +115,31 @@ class GamePersistenceManager: ObservableObject {
             games.insert(game, at: 0)
         }
 
-        saveAllGames(games)
+        // Save locally
+        saveAllGamesToFile(games)
+        savedGames = games
+
+        // Sync to Firebase if signed in
+        if AuthService.shared.isSignedIn {
+            Task {
+                do {
+                    try await FirebaseService.shared.saveGame(game)
+                    debugPrint("[GamePersistence] Synced game to Firebase")
+                } catch {
+                    debugPrint("[GamePersistence] Failed to sync to Firebase: \(error)")
+                    self.syncError = error.localizedDescription
+                }
+            }
+        }
     }
 
-    private func saveAllGames(_ games: [Game]) {
+    private func saveAllGamesToFile(_ games: [Game]) {
         do {
             let encoder = JSONEncoder()
             encoder.outputFormatting = .prettyPrinted
             let data = try encoder.encode(games)
             try data.write(to: gamesFileURL)
-            savedGames = games
-            debugPrint("[GamePersistence] Saved \(games.count) games")
+            debugPrint("[GamePersistence] Saved \(games.count) games to file")
         } catch {
             debugPrint("[GamePersistence] Failed to save games: \(error)")
         }
@@ -78,13 +149,72 @@ class GamePersistenceManager: ObservableObject {
 
     func deleteGame(_ game: Game) {
         savedGames.removeAll { $0.id == game.id }
-        saveAllGames(savedGames)
+        saveAllGamesToFile(savedGames)
+
+        // Sync deletion to Firebase if signed in
+        if AuthService.shared.isSignedIn {
+            Task {
+                do {
+                    try await FirebaseService.shared.deleteGame(game.id)
+                    debugPrint("[GamePersistence] Deleted game from Firebase")
+                } catch {
+                    debugPrint("[GamePersistence] Failed to delete from Firebase: \(error)")
+                    self.syncError = error.localizedDescription
+                }
+            }
+        }
     }
 
     func deleteGame(at offsets: IndexSet) {
+        let gamesToDelete = offsets.map { savedGames[$0] }
         var games = savedGames
         games.remove(atOffsets: offsets)
-        saveAllGames(games)
+        saveAllGamesToFile(games)
+        savedGames = games
+
+        // Sync deletions to Firebase if signed in
+        if AuthService.shared.isSignedIn {
+            for game in gamesToDelete {
+                Task {
+                    do {
+                        try await FirebaseService.shared.deleteGame(game.id)
+                    } catch {
+                        debugPrint("[GamePersistence] Failed to delete from Firebase: \(error)")
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Migration / Clear
+
+    /// Clear all local games (for migration from test data)
+    func clearAllLocalGames() {
+        savedGames = []
+        saveAllGamesToFile([])
+        debugPrint("[GamePersistence] Cleared all local games")
+    }
+
+    /// Force sync from Firebase (useful for migration)
+    func forceSyncFromFirebase() async {
+        guard AuthService.shared.isSignedIn else {
+            debugPrint("[GamePersistence] Cannot sync - not signed in")
+            return
+        }
+
+        isSyncing = true
+        syncError = nil
+
+        do {
+            let firebaseGames = try await FirebaseService.shared.fetchAllGames()
+            mergeFirebaseGames(firebaseGames)
+            debugPrint("[GamePersistence] Force sync complete - \(firebaseGames.count) games")
+        } catch {
+            syncError = error.localizedDescription
+            debugPrint("[GamePersistence] Force sync failed: \(error)")
+        }
+
+        isSyncing = false
     }
 
     // MARK: - Career Stats

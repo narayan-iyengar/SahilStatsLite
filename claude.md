@@ -34,6 +34,16 @@ The app uses a "what you see is what you get" approach where the scoreboard over
    - Saves/loads games as JSON to Documents/games.json
    - Tracks career stats (PPG, RPG, APG, shooting percentages)
    - Win/loss record tracking
+   - Firebase sync: auto-syncs when signed in
+
+5. **FirebaseService** (`Services/FirebaseService.swift`)
+   - Real-time Firestore listener for games collection
+   - CRUD operations with field mapping to main app schema
+   - Uses `FirebaseGame` model for field name translation
+
+6. **AuthService** (`Services/AuthService.swift`)
+   - Firebase Authentication with Sign in with Apple
+   - Auth state listener for automatic sync setup
 
 ### Video Orientation
 - Video rotation configured via `AVCaptureConnection.videoRotationAngle`
@@ -56,9 +66,13 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 |------|---------|
 | `Services/RecordingManager.swift` | Video capture, frame processing, AVAssetWriter |
 | `Services/OverlayRenderer.swift` | NBA-style corner scorebug rendering |
-| `Services/GamePersistenceManager.swift` | Game save/load, career stats |
+| `Services/GamePersistenceManager.swift` | Game save/load, career stats, Firebase sync |
+| `Services/FirebaseService.swift` | Firestore CRUD with real-time listener |
+| `Services/AuthService.swift` | Firebase Auth with Sign in with Apple |
+| `Models/FirebaseGame.swift` | Field mapping between Lite and main app |
 | `Views/UltraMinimalRecordingView.swift` | Recording UI with tap-to-score |
 | `Views/GameSummaryView.swift` | Post-game summary with auto-save to Photos |
+| `Views/AuthView.swift` | Sign-in screen and profile management |
 | `Models/Game.swift` | Game data model with PlayerStats |
 | `Models/AppState.swift` | App navigation and state management |
 
@@ -75,6 +89,34 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 ## Build Requirements
 - iOS 17.0+
 - Physical device required for camera recording (simulator shows placeholder)
+
+## Firebase Integration
+
+Syncs games with the main SahilStats app's Firebase database (`sahil-stats-tracker`).
+
+### Authentication
+- Sign in with Apple (preferred for iOS)
+- Profile button in HomeView header shows auth status
+- Cloud sync icon shows sync status (green = synced, orange = syncing, red = error)
+
+### Data Sync
+- **Two-way sync**: Games created in Lite appear in main app and vice versa
+- **Real-time listener**: Changes sync automatically when signed in
+- **Offline support**: Local JSON storage works without sign-in
+- **Field mapping**: `FirebaseGame` model translates between schemas
+
+### Field Name Mapping (Lite ↔ Firebase/Main)
+| Lite Field | Firebase Field |
+|------------|----------------|
+| `myScore` | `myTeamScore` |
+| `opponentScore` | `opponentScore` |
+| `fg2Made` | `fg2m` |
+| `fg2Attempted` | `fg2a` |
+| `fg3Made` | `fg3m` |
+| `fg3Attempted` | `fg3a` |
+| `ftMade` | `ftm` |
+| `ftAttempted` | `fta` |
+| `date` | `timestamp` |
 
 ## Gimbal Auto-Tracking
 
@@ -98,13 +140,15 @@ Uses Apple's **DockKit** framework (iOS 18+) for smart gimbal integration:
 
 ### Integrations
 - [ ] **Calendar** - Sync games with calendar, schedule reminders
-- [ ] **Firebase** - Cloud backup of games and stats
+- [x] **Firebase** - Cloud backup of games and stats (two-way sync with main app)
 - [ ] **YouTube** - Direct upload of game videos
 - [ ] **Zoom** - Live streaming integration
 
 ### Home Screen Enhancements
 - [x] Quick access to career stats from home (Career Stats card + sheet)
 - [x] Stats dashboard / charts (age-based trend charts for PPG, RPG, Defense)
+- [x] Clickable games with detail view (tap any game to see full stats)
+- [x] View All Games with pagination and filtering (All/Wins/Losses + search)
 - [ ] Season filtering for stats
 
 ### Gimbal / Recording

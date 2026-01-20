@@ -15,6 +15,8 @@ struct HomeView: View {
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
     @State private var showStatsSheet = false
     @State private var selectedGame: Game? = nil
+    @State private var selectedGameForDetail: Game? = nil
+    @State private var showAllGames = false
 
     var body: some View {
         ScrollView {
@@ -49,12 +51,21 @@ struct HomeView: View {
         .sheet(isPresented: $showStatsSheet) {
             CareerStatsSheet(selectedGame: $selectedGame)
         }
+        .sheet(item: $selectedGameForDetail) { game in
+            GameDetailSheet(game: game)
+        }
+        .sheet(isPresented: $showAllGames) {
+            AllGamesView(selectedGame: $selectedGameForDetail)
+        }
     }
 
     // MARK: - Header
 
     private var headerSection: some View {
         HStack {
+            // Profile/Auth button
+            ProfileButton()
+
             Spacer()
 
             VStack(spacing: 4) {
@@ -69,14 +80,40 @@ struct HomeView: View {
 
             Spacer()
 
-            // Settings button (placeholder for future)
-            Button(action: { /* TODO: Show settings */ }) {
-                Image(systemName: "gearshape.fill")
-                    .font(.title3)
-                    .foregroundColor(.secondary)
-            }
+            // Sync status indicator
+            syncStatusView
         }
         .padding(.top, 20)
+    }
+
+    // MARK: - Sync Status
+
+    private var syncStatusView: some View {
+        Group {
+            if AuthService.shared.isSignedIn {
+                if persistenceManager.isSyncing {
+                    ProgressView()
+                        .scaleEffect(0.8)
+                } else if persistenceManager.syncError != nil {
+                    Image(systemName: "exclamationmark.icloud.fill")
+                        .foregroundColor(.red)
+                } else {
+                    // Synced - just show gear for settings
+                    Button(action: { /* TODO: Show settings */ }) {
+                        Image(systemName: "gearshape.fill")
+                            .font(.title3)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            } else {
+                // Not signed in - show gear for settings
+                Button(action: { /* TODO: Show settings */ }) {
+                    Image(systemName: "gearshape.fill")
+                        .font(.title3)
+                        .foregroundColor(.secondary)
+                }
+            }
+        }
     }
 
     // MARK: - New Game Button
@@ -172,12 +209,52 @@ struct HomeView: View {
 
     private var recentGamesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Recent Games")
-                .font(.headline)
-                .foregroundColor(.secondary)
+            HStack {
+                Text("Recent Games")
+                    .font(.headline)
+                    .foregroundColor(.secondary)
+
+                Spacer()
+
+                if appState.recentGames.count > 5 {
+                    Button {
+                        showAllGames = true
+                    } label: {
+                        Text("View All")
+                            .font(.subheadline)
+                            .foregroundColor(.orange)
+                    }
+                }
+            }
 
             ForEach(appState.recentGames.prefix(5)) { game in
-                GameRow(game: game)
+                Button {
+                    selectedGameForDetail = game
+                } label: {
+                    GameRow(game: game)
+                }
+                .buttonStyle(.plain)
+            }
+
+            // Show "View All" button at bottom if we have more games
+            if appState.recentGames.count > 5 {
+                Button {
+                    showAllGames = true
+                } label: {
+                    HStack {
+                        Spacer()
+                        Text("View All \(appState.recentGames.count) Games")
+                            .font(.subheadline)
+                            .fontWeight(.medium)
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                        Spacer()
+                    }
+                    .foregroundColor(.orange)
+                    .padding(.vertical, 12)
+                    .background(Color(.systemBackground))
+                    .cornerRadius(12)
+                }
             }
         }
     }
@@ -239,6 +316,7 @@ struct GameRow: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text("vs \(game.opponent)")
                     .font(.headline)
+                    .foregroundColor(.primary)
 
                 Text(game.date, style: .date)
                     .font(.caption)
@@ -247,10 +325,21 @@ struct GameRow: View {
 
             Spacer()
 
-            Text(game.scoreString)
-                .font(.title3)
-                .fontWeight(.semibold)
-                .monospacedDigit()
+            // Score and points
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(game.scoreString)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .monospacedDigit()
+
+                Text("\(game.playerStats.points) pts")
+                    .font(.caption)
+                    .foregroundColor(.orange)
+            }
+
+            Image(systemName: "chevron.right")
+                .font(.caption)
+                .foregroundColor(.secondary)
         }
         .padding()
         .background(Color(.systemBackground))
@@ -791,6 +880,220 @@ struct GameDetailSheet: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - All Games View
+
+struct AllGamesView: View {
+    @ObservedObject private var persistenceManager = GamePersistenceManager.shared
+    @Binding var selectedGame: Game?
+    @Environment(\.dismiss) private var dismiss
+
+    // Filter state
+    @State private var selectedFilter: GameFilter = .all
+    @State private var searchText = ""
+
+    // Pagination
+    @State private var displayedCount = 20
+    private let pageSize = 20
+
+    enum GameFilter: String, CaseIterable {
+        case all = "All"
+        case wins = "Wins"
+        case losses = "Losses"
+
+        var icon: String {
+            switch self {
+            case .all: return "list.bullet"
+            case .wins: return "trophy.fill"
+            case .losses: return "xmark.circle"
+            }
+        }
+    }
+
+    private var filteredGames: [Game] {
+        var games = persistenceManager.savedGames
+
+        // Apply filter
+        switch selectedFilter {
+        case .all:
+            break
+        case .wins:
+            games = games.filter { $0.isWin }
+        case .losses:
+            games = games.filter { $0.isLoss }
+        }
+
+        // Apply search
+        if !searchText.isEmpty {
+            games = games.filter { game in
+                game.opponent.localizedCaseInsensitiveContains(searchText) ||
+                game.teamName.localizedCaseInsensitiveContains(searchText)
+            }
+        }
+
+        return games
+    }
+
+    private var displayedGames: [Game] {
+        Array(filteredGames.prefix(displayedCount))
+    }
+
+    private var hasMoreGames: Bool {
+        displayedCount < filteredGames.count
+    }
+
+    var body: some View {
+        NavigationView {
+            VStack(spacing: 0) {
+                // Filter bar
+                filterBar
+                    .padding(.horizontal)
+                    .padding(.vertical, 8)
+
+                // Search bar
+                HStack {
+                    Image(systemName: "magnifyingglass")
+                        .foregroundColor(.secondary)
+                    TextField("Search opponent...", text: $searchText)
+                        .textFieldStyle(.plain)
+                    if !searchText.isEmpty {
+                        Button {
+                            searchText = ""
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                }
+                .padding(10)
+                .background(Color(.systemGray6))
+                .cornerRadius(10)
+                .padding(.horizontal)
+                .padding(.bottom, 8)
+
+                // Stats summary for current filter
+                filterSummary
+                    .padding(.horizontal)
+                    .padding(.bottom, 8)
+
+                // Games list
+                ScrollView {
+                    LazyVStack(spacing: 8) {
+                        ForEach(displayedGames) { game in
+                            Button {
+                                selectedGame = game
+                            } label: {
+                                GameRow(game: game)
+                            }
+                            .buttonStyle(.plain)
+                        }
+
+                        // Load more button
+                        if hasMoreGames {
+                            Button {
+                                displayedCount += pageSize
+                            } label: {
+                                HStack {
+                                    Text("Load More")
+                                    Text("(\(filteredGames.count - displayedCount) remaining)")
+                                        .foregroundColor(.secondary)
+                                }
+                                .font(.subheadline)
+                                .frame(maxWidth: .infinity)
+                                .padding(.vertical, 12)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(10)
+                            }
+                        }
+
+                        // Empty state
+                        if filteredGames.isEmpty {
+                            VStack(spacing: 12) {
+                                Image(systemName: "basketball")
+                                    .font(.largeTitle)
+                                    .foregroundColor(.secondary)
+                                Text("No games found")
+                                    .font(.headline)
+                                    .foregroundColor(.secondary)
+                                if !searchText.isEmpty {
+                                    Text("Try a different search term")
+                                        .font(.subheadline)
+                                        .foregroundStyle(.tertiary)
+                                }
+                            }
+                            .padding(.vertical, 40)
+                        }
+                    }
+                    .padding(.horizontal)
+                    .padding(.bottom, 20)
+                }
+            }
+            .background(Color(.systemGroupedBackground))
+            .navigationTitle("All Games")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .navigationBarTrailing) {
+                    Button("Done") { dismiss() }
+                }
+            }
+            .sheet(item: $selectedGame) { game in
+                GameDetailSheet(game: game)
+            }
+        }
+    }
+
+    // MARK: - Filter Bar
+
+    private var filterBar: some View {
+        HStack(spacing: 8) {
+            ForEach(GameFilter.allCases, id: \.self) { filter in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedFilter = filter
+                        displayedCount = pageSize // Reset pagination on filter change
+                    }
+                } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: filter.icon)
+                            .font(.caption)
+                        Text(filter.rawValue)
+                            .font(.subheadline)
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(selectedFilter == filter ? Color.orange : Color(.systemGray6))
+                    .foregroundColor(selectedFilter == filter ? .white : .primary)
+                    .cornerRadius(20)
+                }
+            }
+            Spacer()
+        }
+    }
+
+    // MARK: - Filter Summary
+
+    private var filterSummary: some View {
+        HStack {
+            Text("\(filteredGames.count) games")
+                .font(.subheadline)
+                .foregroundColor(.secondary)
+
+            Spacer()
+
+            if selectedFilter == .all && filteredGames.count > 0 {
+                let wins = filteredGames.filter { $0.isWin }.count
+                let losses = filteredGames.filter { $0.isLoss }.count
+                HStack(spacing: 12) {
+                    Label("\(wins)W", systemImage: "trophy.fill")
+                        .foregroundColor(.green)
+                    Label("\(losses)L", systemImage: "xmark.circle")
+                        .foregroundColor(.red)
+                }
+                .font(.caption)
+            }
+        }
     }
 }
 

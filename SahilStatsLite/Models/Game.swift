@@ -11,7 +11,7 @@ import SwiftUI
 // MARK: - Game Model
 
 struct Game: Identifiable, Codable {
-    let id: String
+    var id: String
     var opponent: String
     var teamName: String
     var location: String?
@@ -53,6 +53,24 @@ struct Game: Identifiable, Codable {
         self.teamName = teamName
         self.location = location
         self.date = Date()
+    }
+
+    /// Full initializer for Firebase sync
+    init(id: String, opponent: String, teamName: String, location: String?, date: Date,
+         myScore: Int, opponentScore: Int, halfLength: Int, currentHalf: Int, totalHalves: Int,
+         playerStats: PlayerStats, createdAt: Date) {
+        self.id = id
+        self.opponent = opponent
+        self.teamName = teamName
+        self.location = location
+        self.date = date
+        self.myScore = myScore
+        self.opponentScore = opponentScore
+        self.halfLength = halfLength
+        self.currentHalf = currentHalf
+        self.totalHalves = totalHalves
+        self.playerStats = playerStats
+        self.createdAt = createdAt
     }
 
     // MARK: - Computed Properties
