@@ -1,6 +1,13 @@
 # SahilStatsLite
 
-A basketball game recording app with real-time scoreboard overlay, similar to ScoreCam.
+A focused basketball game recording app with real-time scoreboard overlay.
+
+## Design Principles
+
+- **Keep it Lite** - Simpler than main app, faster to start recording
+- **No duplicate code** - One component for each purpose (e.g., GameRow used everywhere)
+- **Single entry points** - One place for settings, one place for game browsing
+- **Resist scope creep** - If main app does it better, don't add it here
 
 ## Architecture
 
@@ -77,11 +84,21 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 | `Services/FirebaseService.swift` | Firestore CRUD with real-time listener |
 | `Services/AuthService.swift` | Firebase Auth with Google Sign-In |
 | `Models/FirebaseGame.swift` | Field mapping between Lite and main app |
-| `Views/UltraMinimalRecordingView.swift` | Recording UI with tap-to-score |
-| `Views/GameSummaryView.swift` | Post-game summary with auto-save to Photos |
-| `Views/AuthView.swift` | Sign-in screen for authentication |
 | `Models/Game.swift` | Game data model with PlayerStats |
 | `Models/AppState.swift` | App navigation and state management |
+
+### Views (HomeView.swift contains most UI)
+
+| Component | Purpose |
+|-----------|---------|
+| `HomeView` | Main screen with cards for stats, game log, calendar |
+| `SettingsView` | Account, sync status, sign in/out (single settings entry) |
+| `CareerStatsSheet` | Stats only: averages, trends, shooting charts |
+| `AllGamesView` | Game browsing with filters, search, pagination |
+| `GameDetailSheet` | Single game stats detail view |
+| `GameRow` | Reusable game list row (used everywhere) |
+| `UltraMinimalRecordingView` | Recording UI with tap-to-score |
+| `GameSummaryView` | Post-game summary with auto-save to Photos |
 
 ## Technical Notes
 
@@ -108,8 +125,8 @@ Syncs games with the main SahilStats app's Firebase database (`sahil-stats-track
 
 ### Authentication
 - Google Sign-In (matches main SahilStats app)
-- Profile button in HomeView header shows auth status
-- Cloud sync icon shows sync status (green = synced, orange = syncing, red = error)
+- Settings gear (top-left) opens SettingsView with account management
+- Gear icon badge shows sync status (green = synced, orange = syncing, red = error)
 
 ### Data Sync
 - **Two-way sync**: Games created in Lite appear in main app and vice versa
@@ -130,40 +147,24 @@ Syncs games with the main SahilStats app's Firebase database (`sahil-stats-track
 | `ftAttempted` | `fta` |
 | `date` | `timestamp` |
 
-## Gimbal Auto-Tracking
+## Gimbal Auto-Tracking (Optional)
 
-Uses Apple's **DockKit** framework (iOS 18+) for smart gimbal integration:
-
-- **What it tracks**: People/subjects detected by camera
-- **Region of interest**: Court area (90% width, 75% height centered)
-- **Auto-zoom**: Adjusts based on subject count (1-2 people = 2x, 3-4 = 1.5x, 5+ = 1x)
-- **Compatible with**: Insta360 Flow 2 Pro and other DockKit gimbals
-- **File**: `Services/GimbalTrackingManager.swift`
+DockKit framework (iOS 18+) support in `Services/GimbalTrackingManager.swift` for smart gimbals like Insta360 Flow 2 Pro. Auto-tracks subjects and adjusts zoom.
 
 ## Future Features (TODO)
 
-### Settings Page (from Home Screen)
-- [ ] Team name and abbreviation
-- [ ] Team logo/image
-- [ ] Team colors (for overlay color bars)
-- [ ] Default half length
-- [ ] Player name (currently hardcoded as "Sahil")
-- [ ] Player birthday (currently hardcoded as Nov 1, 2016)
-
 ### Integrations
-- [ ] **Calendar** - Sync games with calendar, schedule reminders
+- [x] **Calendar** - Shows upcoming games from calendar with one-tap start
 - [x] **Firebase** - Cloud backup of games and stats (two-way sync with main app)
-- [ ] **YouTube** - Direct upload of game videos
-- [ ] **Zoom** - Live streaming integration
 
-### Home Screen Enhancements
-- [x] Quick access to career stats from home (Career Stats card + sheet)
-- [x] Stats dashboard / charts (age-based trend charts for PPG, RPG, Defense)
-- [x] Clickable games with detail view (tap any game to see full stats)
-- [x] View All Games with pagination and filtering (All/Wins/Losses + search)
+### Completed Features
+- [x] Career Stats card with trend charts (age-based PPG, RPG, shooting, etc.)
+- [x] Game Log with filtering (All/Wins/Losses), search, and pagination
+- [x] Game detail view with full stats
+- [x] Unified Settings (account + sync in one place)
+- [x] Calendar integration for upcoming games
+
+### Future Enhancements (if needed)
 - [ ] Season filtering for stats
-
-### Gimbal / Recording
-- [ ] Test with actual Insta360 Flow 2 Pro hardware
-- [ ] Manual zoom controls
-- [ ] Audio level monitoring
+- [ ] Team customization (name, colors, logo)
+- [ ] Player profile settings (name, birthday)
