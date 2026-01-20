@@ -14,7 +14,6 @@ struct HomeView: View {
     @StateObject private var calendarManager = GameCalendarManager.shared
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
     @State private var showStatsSheet = false
-    @State private var selectedGame: Game? = nil
     @State private var selectedGameForDetail: Game? = nil
     @State private var showAllGames = false
     @State private var showSettings = false
@@ -48,7 +47,7 @@ struct HomeView: View {
         .background(Color(.systemGroupedBackground))
         .navigationBarHidden(true)
         .sheet(isPresented: $showStatsSheet) {
-            CareerStatsSheet(selectedGame: $selectedGame)
+            CareerStatsSheet()
         }
         .sheet(item: $selectedGameForDetail) { game in
             GameDetailSheet(game: game)
@@ -335,7 +334,6 @@ struct GameRow: View {
 
 struct CareerStatsSheet: View {
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
-    @Binding var selectedGame: Game?
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTrendStat: TrendStat = .points
 
@@ -447,9 +445,6 @@ struct CareerStatsSheet: View {
 
                     // Shooting Stats
                     shootingStatsCard
-
-                    // Game Log
-                    gameLogSection
                 }
                 .padding()
             }
@@ -460,9 +455,6 @@ struct CareerStatsSheet: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
                 }
-            }
-            .sheet(item: $selectedGame) { game in
-                GameDetailSheet(game: game)
             }
         }
     }
@@ -697,80 +689,6 @@ struct CareerStatsSheet: View {
                 .foregroundColor(.secondary)
         }
         .frame(maxWidth: .infinity)
-    }
-
-    // MARK: - Game Log Section
-
-    private var gameLogSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Game Log")
-                .font(.headline)
-
-            if persistenceManager.savedGames.isEmpty {
-                Text("No games recorded yet")
-                    .font(.subheadline)
-                    .foregroundColor(.secondary)
-                    .padding()
-            } else {
-                ForEach(persistenceManager.savedGames) { game in
-                    Button(action: { selectedGame = game }) {
-                        GameLogRow(game: game)
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Game Log Row
-
-struct GameLogRow: View {
-    let game: Game
-
-    var body: some View {
-        HStack(spacing: 12) {
-            // Result badge
-            Text(game.resultString)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundColor(.white)
-                .frame(width: 28, height: 28)
-                .background(game.isWin ? Color.green : (game.isLoss ? Color.red : Color.orange))
-                .cornerRadius(6)
-
-            // Game info
-            VStack(alignment: .leading, spacing: 2) {
-                Text("vs \(game.opponent)")
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-
-                Text(game.date.formatted(date: .abbreviated, time: .omitted))
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-            }
-
-            Spacer()
-
-            // Score and points
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(game.scoreString)
-                    .font(.subheadline)
-                    .fontWeight(.semibold)
-                    .monospacedDigit()
-
-                Text("\(game.playerStats.points) pts")
-                    .font(.caption)
-                    .foregroundColor(.orange)
-            }
-
-            Image(systemName: "chevron.right")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-        .padding()
-        .background(Color(.systemBackground))
-        .cornerRadius(12)
     }
 }
 
