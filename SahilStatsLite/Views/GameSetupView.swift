@@ -71,7 +71,7 @@ struct GameSetupView: View {
 
                         if teams.count > 1 {
                             Picker("Team", selection: $selectedTeam) {
-                                ForEach(teams, id: \.self) { team in
+                                ForEach(Array(teams.enumerated()), id: \.offset) { _, team in
                                     Text(team).tag(team)
                                 }
                             }

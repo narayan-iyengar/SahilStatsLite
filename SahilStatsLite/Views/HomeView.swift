@@ -1251,7 +1251,7 @@ struct SettingsView: View {
             List {
                 // My Teams Section
                 Section {
-                    ForEach(teams, id: \.self) { team in
+                    ForEach(Array(teams.enumerated()), id: \.offset) { _, team in
                         Text(team)
                     }
                     .onDelete(perform: deleteTeam)
