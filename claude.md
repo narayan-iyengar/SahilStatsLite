@@ -89,6 +89,11 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 ## Build Requirements
 - iOS 17.0+
 - Physical device required for camera recording (simulator shows placeholder)
+- **GoogleService-Info.plist** - Download from Firebase Console (not in repo for security)
+  - See `GoogleService-Info.plist.template` for required structure
+  - Place in `SahilStatsLite/` directory
+- **GoogleSignIn-iOS** package - Add via Xcode: File > Add Package Dependencies
+  - URL: `https://github.com/google/GoogleSignIn-iOS`
 
 ## Firebase Integration
 
