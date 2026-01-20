@@ -112,6 +112,7 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 - **Half-based Timing**: Uses halves (not quarters) for AAU basketball games
 - **Clock Speed**: Normal = 1 second intervals, last minute = 2x speed (decrements by 2)
 - **Pre-game Footage**: Recording starts when entering landscape, overlay shows initial state (18:00 paused)
+- **Firebase Backward Compat**: `FirebaseGame` custom decoder handles missing fields and various timestamp formats
 
 ## Build Requirements
 - iOS 17.0+
@@ -158,7 +159,8 @@ DockKit framework (iOS 18+) support in `Services/GimbalTrackingManager.swift` fo
 
 ### Integrations
 - [x] **Calendar** - iOS Calendar integration with full month view
-  - Parses "vs Team" or "@ Team" from event titles
+  - Smart parsing: "vs Team", "@ Team", "Tournament: Name", keywords like "championship"
+  - Shows ALL events from selected calendars (falls back to event title if no pattern matches)
   - Select which calendars to integrate (filter work calendars in Settings)
   - Days with games shown bold with orange dot
   - Tap day → shows list of games → tap game → pre-fills GameSetupView
