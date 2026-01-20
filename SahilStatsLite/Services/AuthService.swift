@@ -2,7 +2,7 @@
 //  AuthService.swift
 //  SahilStatsLite
 //
-//  Firebase Authentication service with Google Sign-In
+//  Firebase Authentication service with Sign in with Apple
 //
 
 import Foundation
