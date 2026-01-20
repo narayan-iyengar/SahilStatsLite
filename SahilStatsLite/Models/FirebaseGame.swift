@@ -108,9 +108,29 @@ struct FirebaseGame: Codable {
         fouls = try container.decodeIfPresent(Int.self, forKey: .fouls) ?? 0
         turnovers = try container.decodeIfPresent(Int.self, forKey: .turnovers) ?? 0
 
-        // Timestamps
-        timestamp = try container.decodeIfPresent(Date.self, forKey: .timestamp)
-        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+        // Timestamps - handle both Firestore Timestamp and Date formats
+        timestamp = Self.decodeTimestamp(from: container, forKey: .timestamp)
+        createdAt = Self.decodeTimestamp(from: container, forKey: .createdAt)
+    }
+
+    /// Decode a timestamp field that might be a Firestore Timestamp, Date, or missing
+    private static func decodeTimestamp(from container: KeyedDecodingContainer<CodingKeys>, forKey key: CodingKeys) -> Date? {
+        // Try decoding as Firestore Timestamp first (has _seconds and _nanoseconds)
+        if let firestoreTimestamp = try? container.decode(Timestamp.self, forKey: key) {
+            return firestoreTimestamp.dateValue()
+        }
+
+        // Try decoding as regular Date
+        if let date = try? container.decode(Date.self, forKey: key) {
+            return date
+        }
+
+        // Try decoding as Double (seconds since epoch)
+        if let seconds = try? container.decode(Double.self, forKey: key) {
+            return Date(timeIntervalSince1970: seconds)
+        }
+
+        return nil
     }
 
     // MARK: - Conversion from Lite Game
