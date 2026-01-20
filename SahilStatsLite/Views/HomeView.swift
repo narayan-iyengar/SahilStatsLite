@@ -26,8 +26,12 @@ struct HomeView: View {
                 // Header
                 headerSection
 
-                // New Game Button
-                newGameButton
+                // Calendar (primary - this is how games are discovered)
+                if calendarManager.hasCalendarAccess {
+                    calendarSection
+                } else {
+                    calendarAccessCard
+                }
 
                 // Career Stats Card (if we have games)
                 if persistenceManager.careerGames > 0 {
@@ -36,13 +40,6 @@ struct HomeView: View {
 
                 // Game Log Card
                 gameLogCard
-
-                // Calendar
-                if calendarManager.hasCalendarAccess {
-                    calendarSection
-                } else {
-                    calendarAccessCard
-                }
 
                 Spacer(minLength: 40)
             }
@@ -114,32 +111,16 @@ struct HomeView: View {
 
             Spacer()
 
-            // Placeholder for symmetry
-            Image(systemName: "gearshape.fill")
-                .font(.title2)
-                .foregroundColor(.clear)
+            // New Game button (+ icon)
+            Button {
+                appState.currentScreen = .setup
+            } label: {
+                Image(systemName: "plus.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.orange)
+            }
         }
         .padding(.top, 20)
-    }
-
-    // MARK: - New Game Button
-
-    private var newGameButton: some View {
-        Button {
-            appState.currentScreen = .setup
-        } label: {
-            HStack {
-                Image(systemName: "video.fill")
-                    .font(.title2)
-                Text("New Game")
-                    .font(.headline)
-            }
-            .foregroundColor(.white)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(Color.orange)
-            .cornerRadius(16)
-        }
     }
 
     // MARK: - Career Stats Card
@@ -1258,25 +1239,56 @@ struct SettingsView: View {
     @ObservedObject private var calendarManager = GameCalendarManager.shared
     @Environment(\.dismiss) private var dismiss
 
-    // Team name stored in UserDefaults
-    @AppStorage("myTeamName") private var myTeamName: String = "Wildcats"
+    // Teams stored in UserDefaults as JSON
+    @State private var teams: [String] = []
+    @State private var newTeamName: String = ""
+    @State private var showAddTeam: Bool = false
+
+    private let teamsKey = "myTeams"
 
     var body: some View {
         NavigationView {
             List {
-                // My Team Section
+                // My Teams Section
                 Section {
-                    HStack {
-                        Text("Team Name")
-                        Spacer()
-                        TextField("Team name", text: $myTeamName)
-                            .multilineTextAlignment(.trailing)
-                            .foregroundColor(.secondary)
+                    ForEach(teams, id: \.self) { team in
+                        Text(team)
+                    }
+                    .onDelete(perform: deleteTeam)
+
+                    // Add team row
+                    if showAddTeam {
+                        HStack {
+                            TextField("Team name", text: $newTeamName)
+                                .textFieldStyle(.plain)
+
+                            Button {
+                                addTeam()
+                            } label: {
+                                Image(systemName: "checkmark.circle.fill")
+                                    .foregroundColor(.green)
+                            }
+                            .disabled(newTeamName.trimmingCharacters(in: .whitespaces).isEmpty)
+
+                            Button {
+                                showAddTeam = false
+                                newTeamName = ""
+                            } label: {
+                                Image(systemName: "xmark.circle.fill")
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    } else {
+                        Button {
+                            showAddTeam = true
+                        } label: {
+                            Label("Add Team", systemImage: "plus")
+                        }
                     }
                 } header: {
-                    Text("My Team")
+                    Text("My Teams")
                 } footer: {
-                    Text("This will be pre-filled when starting new games")
+                    Text("Teams you play for. Select one when starting a new game.")
                 }
 
                 // Calendar Section
@@ -1432,7 +1444,52 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
+            .onAppear {
+                loadTeams()
+            }
         }
+    }
+
+    // MARK: - Team Management Helpers
+
+    private func loadTeams() {
+        if let data = UserDefaults.standard.data(forKey: teamsKey),
+           let decoded = try? JSONDecoder().decode([String].self, from: data) {
+            teams = decoded
+        } else {
+            // Migration: check for old single team name
+            if let oldTeam = UserDefaults.standard.string(forKey: "myTeamName"), !oldTeam.isEmpty {
+                teams = [oldTeam]
+                saveTeams()
+            } else {
+                teams = ["Wildcats"] // Default
+                saveTeams()
+            }
+        }
+    }
+
+    private func saveTeams() {
+        if let encoded = try? JSONEncoder().encode(teams) {
+            UserDefaults.standard.set(encoded, forKey: teamsKey)
+        }
+    }
+
+    private func addTeam() {
+        let trimmed = newTeamName.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty, !teams.contains(trimmed) else { return }
+        teams.append(trimmed)
+        saveTeams()
+        newTeamName = ""
+        showAddTeam = false
+    }
+
+    private func deleteTeam(at offsets: IndexSet) {
+        teams.remove(atOffsets: offsets)
+        // Ensure at least one team exists
+        if teams.isEmpty {
+            teams = ["My Team"]
+        }
+        saveTeams()
     }
 
     // MARK: - Calendar Selection Helpers

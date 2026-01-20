@@ -142,15 +142,15 @@ class GameCalendarManager: ObservableObject {
 
         let events = eventStore.events(matching: predicate)
 
-        // Parse events into games
-        upcomingGames = events.compactMap { event -> CalendarGame? in
-            // Try to extract opponent from title
-            let opponent = parseOpponent(from: event.title ?? "")
-            guard !opponent.isEmpty else { return nil }
+        // Parse events into games - show ALL events from selected calendars
+        upcomingGames = events.map { event -> CalendarGame in
+            let title = event.title ?? "Game"
+            // Try to extract opponent, fall back to event title
+            let opponent = parseOpponent(from: title) ?? title
 
             return CalendarGame(
                 id: event.eventIdentifier,
-                title: event.title ?? "",
+                title: title,
                 opponent: opponent,
                 location: event.location ?? "",
                 startTime: event.startDate,
@@ -163,16 +163,16 @@ class GameCalendarManager: ObservableObject {
 
     // MARK: - Parse Opponent
 
-    private func parseOpponent(from title: String) -> String {
+    /// Attempts to extract opponent name from event title using common patterns.
+    /// Returns nil if no pattern matches (caller should fall back to full title).
+    private func parseOpponent(from title: String) -> String? {
         let lowercased = title.lowercased()
 
-        // Common patterns: "vs Team", "@ Team", "Team Game"
-        let patterns = ["vs ", "vs. ", "@ ", "at "]
-
-        for pattern in patterns {
+        // Pattern 1: "vs Team", "vs. Team", "@ Team", "at Team"
+        let vsPatterns = ["vs ", "vs. ", "@ ", "at "]
+        for pattern in vsPatterns {
             if let range = lowercased.range(of: pattern) {
                 let afterPattern = title[range.upperBound...]
-                // Take first word or phrase until common endings
                 let opponent = String(afterPattern)
                     .components(separatedBy: CharacterSet(charactersIn: "-–("))
                     .first?
@@ -183,15 +183,52 @@ class GameCalendarManager: ObservableObject {
             }
         }
 
-        // If title contains "basketball" or "game", use what comes before
-        if lowercased.contains("basketball") || lowercased.contains("game") {
-            let words = title.components(separatedBy: " ")
-            if let firstWord = words.first, !["basketball", "game"].contains(firstWord.lowercased()) {
-                return firstWord
+        // Pattern 2: "Team vs Us" or "Team @ Location" (opponent before vs/@)
+        let reversePatterns = [" vs", " @"]
+        for pattern in reversePatterns {
+            if let range = lowercased.range(of: pattern) {
+                let beforePattern = title[..<range.lowerBound]
+                let opponent = String(beforePattern)
+                    .trimmingCharacters(in: .whitespaces)
+                if !opponent.isEmpty && opponent.count < 30 {
+                    return opponent
+                }
             }
         }
 
-        return ""
+        // Pattern 3: Contains team-related keywords - extract meaningful part
+        let gameKeywords = ["game", "basketball", "tournament", "championship", "league", "playoffs"]
+        for keyword in gameKeywords {
+            if lowercased.contains(keyword) {
+                // Try to find a team name before the keyword
+                if let range = lowercased.range(of: keyword) {
+                    let beforeKeyword = title[..<range.lowerBound]
+                        .trimmingCharacters(in: .whitespaces)
+                        .trimmingCharacters(in: CharacterSet(charactersIn: ":-"))
+                        .trimmingCharacters(in: .whitespaces)
+                    if !beforeKeyword.isEmpty && beforeKeyword.count < 30 {
+                        return beforeKeyword
+                    }
+                }
+            }
+        }
+
+        // Pattern 4: Colon separator "Tournament: Team Name" or "AAU: Wildcats vs Eagles"
+        if let colonRange = title.range(of: ":") {
+            let afterColon = title[colonRange.upperBound...]
+                .trimmingCharacters(in: .whitespaces)
+            if !afterColon.isEmpty {
+                // Recursively try to parse what's after the colon
+                if let parsed = parseOpponent(from: String(afterColon)) {
+                    return parsed
+                }
+                // Otherwise use what's after the colon directly
+                return String(afterColon)
+            }
+        }
+
+        // No pattern matched - return nil to signal fallback to full title
+        return nil
     }
 
     // MARK: - Refresh

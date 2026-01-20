@@ -58,11 +58,11 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 - landscapeLeft (volume down) → 0°, landscapeRight (volume up) → 180°
 
 ### Home Screen Layout
-- **Settings gear** (top-left) - Opens SettingsView with account/sync status
-- **New Game button** - Start recording a new game
+- **Settings gear** (top-left) - Opens SettingsView with teams, calendars, account/sync
+- **Plus icon** (top-right) - Quick access to start new game
+- **Calendar month view** (primary) - Full month calendar with game days highlighted
 - **Career Stats card** - Quick stats overview, tap for detailed career stats
 - **Game Log card** - Opens AllGamesView with filters and pagination
-- **Calendar month view** - Full month calendar with game days highlighted, tap day to see games
 
 ### Game Flow
 1. **GameSetupView** - Enter team names, opponent, half length
@@ -93,7 +93,7 @@ The app uses a "what you see is what you get" approach where the scoreboard over
 | Component | Purpose |
 |-----------|---------|
 | `HomeView` | Main screen with cards for stats, game log, calendar |
-| `SettingsView` | Team name, calendar selection, account/sync status, sign in/out |
+| `SettingsView` | Multi-team management, calendar selection, account/sync, sign in/out |
 | `CareerStatsSheet` | Stats only: averages, trends, shooting charts |
 | `AllGamesView` | Game browsing with filters, search, pagination |
 | `GameDetailSheet` | Single game stats detail view |
@@ -170,7 +170,7 @@ DockKit framework (iOS 18+) support in `Services/GimbalTrackingManager.swift` fo
 - [x] Game detail view with full stats
 - [x] Unified Settings (account + sync in one place)
 - [x] Calendar integration with month view and selectable calendars
-- [x] Team name setting (stored in UserDefaults, pre-fills GameSetupView)
+- [x] Multi-team support (add/remove teams in Settings, picker in GameSetupView)
 
 ### Future Enhancements (if needed)
 - [ ] Season filtering for stats

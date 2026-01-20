@@ -11,15 +11,17 @@ struct GameSetupView: View {
     @EnvironmentObject var appState: AppState
     @StateObject private var gimbalManager = GimbalTrackingManager.shared
 
-    // Get saved team name from UserDefaults
-    @AppStorage("myTeamName") private var savedTeamName: String = "Wildcats"
+    // Teams loaded from UserDefaults
+    @State private var teams: [String] = []
+    @State private var selectedTeam: String = ""
 
     @State private var opponent: String = ""
-    @State private var teamName: String = ""
     @State private var location: String = ""
     @State private var halfLength: Int = 18  // AAU: 18 or 20 minute halves
 
     @FocusState private var isOpponentFocused: Bool
+
+    private let teamsKey = "myTeams"
 
     var body: some View {
         VStack(spacing: 24) {
@@ -67,9 +69,22 @@ struct GameSetupView: View {
                             .font(.subheadline)
                             .foregroundColor(.secondary)
 
-                        TextField("Team name", text: $teamName)
-                            .textFieldStyle(.roundedBorder)
-                            .font(.title3)
+                        if teams.count > 1 {
+                            Picker("Team", selection: $selectedTeam) {
+                                ForEach(teams, id: \.self) { team in
+                                    Text(team).tag(team)
+                                }
+                            }
+                            .pickerStyle(.segmented)
+                        } else {
+                            // Single team - just show it
+                            Text(selectedTeam.isEmpty ? "No team configured" : selectedTeam)
+                                .font(.title3)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(10)
+                                .background(Color(.systemGray6))
+                                .cornerRadius(8)
+                        }
                     }
 
                     // Location (optional)
@@ -124,10 +139,8 @@ struct GameSetupView: View {
         }
         .background(Color(.systemGroupedBackground))
         .onAppear {
-            // Pre-fill team name from settings
-            if teamName.isEmpty {
-                teamName = savedTeamName
-            }
+            // Load teams from UserDefaults
+            loadTeams()
 
             // Pre-fill from calendar if available
             if let pending = appState.pendingCalendarGame {
@@ -169,10 +182,28 @@ struct GameSetupView: View {
 
     // MARK: - Actions
 
+    private func loadTeams() {
+        if let data = UserDefaults.standard.data(forKey: teamsKey),
+           let decoded = try? JSONDecoder().decode([String].self, from: data) {
+            teams = decoded
+        } else {
+            // Fallback: check old single team key or use default
+            if let oldTeam = UserDefaults.standard.string(forKey: "myTeamName"), !oldTeam.isEmpty {
+                teams = [oldTeam]
+            } else {
+                teams = ["Wildcats"]
+            }
+        }
+        // Select first team by default
+        if selectedTeam.isEmpty, let first = teams.first {
+            selectedTeam = first
+        }
+    }
+
     private func startGame() {
         var game = Game(
             opponent: opponent,
-            teamName: teamName,
+            teamName: selectedTeam,
             location: location.isEmpty ? nil : location
         )
         game.halfLength = halfLength
