@@ -24,7 +24,7 @@ struct FirebaseGame: Codable {
     var opponentScore: Int
     var outcome: String // "W", "L", or "T"
 
-    // Game format
+    // Game format (optional for backwards compatibility with older games)
     var gameFormat: String // "halves" or "quarters"
     var quarterLength: Int
     var numQuarter: Int
@@ -48,6 +48,70 @@ struct FirebaseGame: Codable {
     // MARK: - Timestamps
     @ServerTimestamp var timestamp: Date?
     @ServerTimestamp var createdAt: Date?
+
+    // MARK: - Custom Decoding (handles missing fields in older games)
+
+    enum CodingKeys: String, CodingKey {
+        case id, teamName, opponent, location, season
+        case myTeamScore, opponentScore, outcome
+        case gameFormat, quarterLength, numQuarter, status
+        case points, fg2m, fg2a, fg3m, fg3a, ftm, fta
+        case rebounds, assists, steals, blocks, fouls, turnovers
+        case timestamp, createdAt
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+
+        // Required fields
+        id = try container.decodeIfPresent(String.self, forKey: .id)
+        teamName = try container.decodeIfPresent(String.self, forKey: .teamName) ?? "Unknown"
+        opponent = try container.decodeIfPresent(String.self, forKey: .opponent) ?? "Unknown"
+        location = try container.decodeIfPresent(String.self, forKey: .location)
+        season = try container.decodeIfPresent(String.self, forKey: .season)
+
+        // Scores
+        myTeamScore = try container.decodeIfPresent(Int.self, forKey: .myTeamScore) ?? 0
+        opponentScore = try container.decodeIfPresent(Int.self, forKey: .opponentScore) ?? 0
+
+        // Outcome - compute from scores if missing
+        if let storedOutcome = try container.decodeIfPresent(String.self, forKey: .outcome) {
+            outcome = storedOutcome
+        } else {
+            if myTeamScore > opponentScore {
+                outcome = "W"
+            } else if myTeamScore < opponentScore {
+                outcome = "L"
+            } else {
+                outcome = "T"
+            }
+        }
+
+        // Game format - defaults for missing fields
+        gameFormat = try container.decodeIfPresent(String.self, forKey: .gameFormat) ?? "halves"
+        quarterLength = try container.decodeIfPresent(Int.self, forKey: .quarterLength) ?? 18
+        numQuarter = try container.decodeIfPresent(Int.self, forKey: .numQuarter) ?? 2
+        status = try container.decodeIfPresent(String.self, forKey: .status) ?? "final"
+
+        // Player stats - default to 0 if missing
+        points = try container.decodeIfPresent(Int.self, forKey: .points) ?? 0
+        fg2m = try container.decodeIfPresent(Int.self, forKey: .fg2m) ?? 0
+        fg2a = try container.decodeIfPresent(Int.self, forKey: .fg2a) ?? 0
+        fg3m = try container.decodeIfPresent(Int.self, forKey: .fg3m) ?? 0
+        fg3a = try container.decodeIfPresent(Int.self, forKey: .fg3a) ?? 0
+        ftm = try container.decodeIfPresent(Int.self, forKey: .ftm) ?? 0
+        fta = try container.decodeIfPresent(Int.self, forKey: .fta) ?? 0
+        rebounds = try container.decodeIfPresent(Int.self, forKey: .rebounds) ?? 0
+        assists = try container.decodeIfPresent(Int.self, forKey: .assists) ?? 0
+        steals = try container.decodeIfPresent(Int.self, forKey: .steals) ?? 0
+        blocks = try container.decodeIfPresent(Int.self, forKey: .blocks) ?? 0
+        fouls = try container.decodeIfPresent(Int.self, forKey: .fouls) ?? 0
+        turnovers = try container.decodeIfPresent(Int.self, forKey: .turnovers) ?? 0
+
+        // Timestamps
+        timestamp = try container.decodeIfPresent(Date.self, forKey: .timestamp)
+        createdAt = try container.decodeIfPresent(Date.self, forKey: .createdAt)
+    }
 
     // MARK: - Conversion from Lite Game
 
