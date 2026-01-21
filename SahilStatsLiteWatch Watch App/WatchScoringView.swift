@@ -12,11 +12,20 @@ struct WatchScoringView: View {
     @State private var showEndGame: Bool = false
     @State private var myFeedback: Int? = nil
     @State private var oppFeedback: Int? = nil
+    @State private var colonVisible: Bool = true
 
     private var clockTime: String {
         let mins = connectivity.remainingSeconds / 60
         let secs = connectivity.remainingSeconds % 60
         return String(format: "%d:%02d", mins, secs)
+    }
+
+    private var clockMinutes: String {
+        String(connectivity.remainingSeconds / 60)
+    }
+
+    private var clockSeconds: String {
+        String(format: "%02d", connectivity.remainingSeconds % 60)
     }
 
     var body: some View {
@@ -92,6 +101,14 @@ struct WatchScoringView: View {
                 endGameOverlay
             }
         }
+        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+            // Blink colon when clock is paused
+            if !connectivity.isClockRunning {
+                colonVisible.toggle()
+            } else {
+                colonVisible = true
+            }
+        }
     }
 
     // MARK: - Live Indicator
@@ -161,19 +178,26 @@ struct WatchScoringView: View {
     }
 
     private var clockButton: some View {
-        Text(clockTime)
-            .font(.system(size: 20, weight: .semibold, design: .monospaced))
-            .foregroundColor(connectivity.isClockRunning ? .white : .orange)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 6)
-            .background(Color.white.opacity(0.1))
-            .cornerRadius(8)
-            .onTapGesture {
-                connectivity.toggleClock()
-            }
-            .onLongPressGesture(minimumDuration: 0.5) {
-                showEndGame = true
-            }
+        HStack(spacing: 0) {
+            Text(clockMinutes)
+                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+            Text(":")
+                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                .opacity(connectivity.isClockRunning ? 1.0 : (colonVisible ? 1.0 : 0.0))
+            Text(clockSeconds)
+                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+        }
+        .foregroundColor(connectivity.isClockRunning ? .white : .orange)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 6)
+        .background(Color.white.opacity(0.1))
+        .cornerRadius(8)
+        .onTapGesture {
+            connectivity.toggleClock()
+        }
+        .onLongPressGesture(minimumDuration: 0.5) {
+            showEndGame = true
+        }
     }
 
     // MARK: - Swipe Hint
