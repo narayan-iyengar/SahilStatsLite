@@ -252,7 +252,8 @@ SahilStatsLite/
 │   ├── GameCalendarManager.swift     # Calendar integration
 │   ├── ScoreTimelineTracker.swift    # Tracks score/clock during recording
 │   ├── OverlayCompositor.swift       # Burns overlay into video post-recording
-│   └── WatchConnectivityService.swift # iPhone-side Watch communication
+│   ├── WatchConnectivityService.swift # iPhone-side Watch communication
+│   └── YouTubeService.swift          # YouTube auth + upload (~200 lines)
 ├── Resources/
 │   └── Info.plist                    # Privacy descriptions
 └── SahilStatsLiteWatch Watch App/    # Apple Watch companion
@@ -276,6 +277,7 @@ SahilStatsLite/
 ## Dependencies Required
 - Firebase (FirebaseCore, FirebaseAuth, FirebaseFirestore)
 - DockKit (iOS 18+ for gimbal tracking)
+- GoogleSignIn (for YouTube OAuth)
 
 ---
 
@@ -664,3 +666,80 @@ Watch updates local state immediately when user taps (for responsiveness), then 
 - Green = clock running / made shots
 - Red = missed shots
 - White with opacity = secondary text
+
+---
+
+## YouTube Upload (Lean Implementation)
+
+### Overview
+Auto-uploads game videos to YouTube (unlisted) for building a portfolio and easy sharing with coaches.
+
+### Design Philosophy (Steve Jobs / Jony Ive)
+- **No WiFi monitoring** - User has unlimited 5G, no need for queue
+- **No upload queue** - Upload immediately when game ends
+- **No Firebase for tokens** - Use Keychain (simpler, local)
+- **~200 lines total** - Minimal code, maximum functionality
+
+### Files
+```
+SahilStatsLite/Services/
+└── YouTubeService.swift    # Auth + upload (~200 lines)
+```
+
+### YouTubeService.swift
+Single class handling both authentication and upload:
+
+**State:**
+```swift
+@Published var isAuthorized: Bool      // Connected to YouTube
+@Published var isUploading: Bool       // Currently uploading
+@Published var uploadProgress: Double  // 0.0 - 1.0
+@Published var lastError: String?      // Error message if failed
+@Published var isEnabled: Bool         // User preference toggle
+```
+
+**Auth Flow:**
+1. User taps "Connect YouTube" in Settings
+2. `authorize()` triggers Google Sign-In with YouTube upload scope
+3. Tokens stored in Keychain (not Firebase)
+4. Token refresh happens automatically if >45 minutes old
+
+**Upload Flow:**
+1. Game ends → video saved to Photos
+2. If `isEnabled && isAuthorized` → upload begins (non-blocking)
+3. Uses YouTube resumable upload API for large files
+4. Retries up to 3 times on failure
+5. Videos uploaded as **unlisted** (not public)
+
+### Settings UI
+YouTube section in SettingsView:
+- Toggle: "Auto-upload to YouTube"
+- Status: Connected/Not connected
+- Button: "Connect YouTube" or "Disconnect"
+
+### Video Title/Description Format
+```
+Title: "Wildcats vs Thunder - Jan 21, 2026"
+Description:
+  Wildcats 42 - 38 Thunder
+  Sahil: 15 pts
+
+  Recorded with Sahil Stats
+```
+
+### Keychain Storage
+- Service: `com.narayan.SahilStats.youtube`
+- Keys: `accessToken`, `refreshToken`, `tokenTimestamp`
+
+### Why Not WiFi Monitoring?
+Original SahilStats had WiFi-only uploads with a queue system. This was removed because:
+- User has unlimited 5G data plan
+- Simpler code without queue management
+- Immediate upload is better UX
+- No need for persistence/retry infrastructure
+
+### Why Keychain Instead of Firebase?
+- YouTube tokens are device-local (no cross-device sync needed)
+- Keychain is built-in, secure, no network required
+- Reduces Firebase dependencies
+- Simpler code (~50 lines vs ~100 lines for Firebase)
