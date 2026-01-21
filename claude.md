@@ -509,7 +509,7 @@ logger.info("Message here")
 9. **OT functionality fixed**: Period tap cycles 1st Half → 2nd Half → OT, tapping in OT adds +1 min, only long-press clock ends game
 10. **WYSIWYG overlays**: SwiftUI overlay redesigned to match NBA corner-style video overlay (bottom-right position)
 11. **4-char team names**: Changed from 3 to 4 characters for better readability (e.g., "LAVA" vs "LAV")
-12. **Blinking colon**: Clock colon blinks when paused (both iOS and Watch)
+12. **Blinking colon**: Clock colon blinks when RUNNING (both iOS and Watch) - indicates active clock
 13. **Subtle tap zones**: Very faint orange/blue tints with center divider to indicate tap areas
 14. **Removed WatchAppMockup.swift**: -622 lines of dead code (real Watch app is working)
 
