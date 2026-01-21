@@ -590,9 +590,24 @@ struct CareerStatsSheet: View {
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
     @Environment(\.dismiss) private var dismiss
     @State private var selectedTrendStat: TrendStat = .points
+    @State private var selectedTimePeriod: TimePeriod = .byWeek
 
     // Sahil's birthday for age calculation
     private let birthday = Calendar.current.date(from: DateComponents(year: 2016, month: 11, day: 1))!
+
+    enum TimePeriod: String, CaseIterable {
+        case byAge = "By Age"
+        case byMonth = "By Month"
+        case byWeek = "By Week"
+
+        var icon: String {
+            switch self {
+            case .byAge: return "person.fill"
+            case .byMonth: return "calendar"
+            case .byWeek: return "calendar.day.timeline.left"
+            }
+        }
+    }
 
     enum TrendStat: String, CaseIterable {
         case points = "Points"
@@ -639,50 +654,117 @@ struct CareerStatsSheet: View {
         return ageComponents.year ?? 0
     }
 
+    // Calculate stat value for a group of games
+    private func calculateStatValue(for stat: TrendStat, games: [Game]) -> Double {
+        guard !games.isEmpty else { return 0 }
+
+        switch stat {
+        case .points:
+            let total = games.reduce(0) { $0 + $1.playerStats.points }
+            return Double(total) / Double(games.count)
+        case .rebounds:
+            let total = games.reduce(0) { $0 + $1.playerStats.rebounds }
+            return Double(total) / Double(games.count)
+        case .assists:
+            let total = games.reduce(0) { $0 + $1.playerStats.assists }
+            return Double(total) / Double(games.count)
+        case .defense:
+            let total = games.reduce(0) { $0 + $1.playerStats.steals + $1.playerStats.blocks }
+            return Double(total) / Double(games.count)
+        case .shooting:
+            let made = games.reduce(0) { $0 + $1.playerStats.fg2Made + $1.playerStats.fg3Made }
+            let attempted = games.reduce(0) { $0 + $1.playerStats.fg2Attempted + $1.playerStats.fg3Attempted }
+            return attempted > 0 ? (Double(made) / Double(attempted)) * 100 : 0
+        case .winRate:
+            let wins = games.filter { $0.isWin }.count
+            return (Double(wins) / Double(games.count)) * 100
+        }
+    }
+
     // Group games by age and calculate stat averages
-    private func statsByAge(for stat: TrendStat) -> [(age: Int, value: Double)] {
+    private func statsByAge(for stat: TrendStat) -> [(label: String, value: Double)] {
         let games = persistenceManager.savedGames
         guard !games.isEmpty else { return [] }
 
-        // Group games by age
         var gamesByAge: [Int: [Game]] = [:]
         for game in games {
             let age = ageAtDate(game.date)
             gamesByAge[age, default: []].append(game)
         }
 
-        // Calculate average/percentage for each age
         return gamesByAge.keys.sorted().compactMap { age in
             guard let gamesAtAge = gamesByAge[age], !gamesAtAge.isEmpty else { return nil }
-
-            let value: Double
-            switch stat {
-            case .points:
-                let total = gamesAtAge.reduce(0) { $0 + $1.playerStats.points }
-                value = Double(total) / Double(gamesAtAge.count)
-            case .rebounds:
-                let total = gamesAtAge.reduce(0) { $0 + $1.playerStats.rebounds }
-                value = Double(total) / Double(gamesAtAge.count)
-            case .assists:
-                let total = gamesAtAge.reduce(0) { $0 + $1.playerStats.assists }
-                value = Double(total) / Double(gamesAtAge.count)
-            case .defense:
-                let total = gamesAtAge.reduce(0) { $0 + $1.playerStats.steals + $1.playerStats.blocks }
-                value = Double(total) / Double(gamesAtAge.count)
-            case .shooting:
-                let made = gamesAtAge.reduce(0) { $0 + $1.playerStats.fg2Made + $1.playerStats.fg3Made }
-                let attempted = gamesAtAge.reduce(0) { $0 + $1.playerStats.fg2Attempted + $1.playerStats.fg3Attempted }
-                value = attempted > 0 ? (Double(made) / Double(attempted)) * 100 : 0
-            case .winRate:
-                let wins = gamesAtAge.filter { $0.isWin }.count
-                value = (Double(wins) / Double(gamesAtAge.count)) * 100
-            }
-            return (age: age, value: value)
+            return (label: "Age \(age)", value: calculateStatValue(for: stat, games: gamesAtAge))
         }
     }
 
-    private var currentTrendData: [(age: Int, value: Double)] {
-        statsByAge(for: selectedTrendStat)
+    // Group games by week and calculate stat averages
+    private func statsByWeek(for stat: TrendStat) -> [(label: String, value: Double)] {
+        let games = persistenceManager.savedGames
+        guard !games.isEmpty else { return [] }
+
+        let calendar = Calendar.current
+        var gamesByWeek: [String: [Game]] = [:]
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MM/dd"
+
+        for game in games {
+            let weekOfYear = calendar.component(.weekOfYear, from: game.date)
+            let year = calendar.component(.year, from: game.date)
+            let weekStart = calendar.date(from: DateComponents(weekOfYear: weekOfYear, yearForWeekOfYear: year))!
+            let key = "\(year)-W\(weekOfYear)"
+            let label = dateFormatter.string(from: weekStart)
+            gamesByWeek[key, default: []].append(game)
+        }
+
+        // Sort by date and take last 12 weeks for readability
+        let sortedKeys = gamesByWeek.keys.sorted()
+        let recentKeys = sortedKeys.suffix(12)
+
+        return recentKeys.compactMap { key in
+            guard let gamesInWeek = gamesByWeek[key], !gamesInWeek.isEmpty else { return nil }
+            let weekStart = gamesInWeek.first!.date
+            let label = dateFormatter.string(from: weekStart)
+            return (label: label, value: calculateStatValue(for: stat, games: gamesInWeek))
+        }
+    }
+
+    // Group games by month and calculate stat averages
+    private func statsByMonth(for stat: TrendStat) -> [(label: String, value: Double)] {
+        let games = persistenceManager.savedGames
+        guard !games.isEmpty else { return [] }
+
+        let calendar = Calendar.current
+        var gamesByMonth: [String: [Game]] = [:]
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "MMM yy"
+
+        for game in games {
+            let month = calendar.component(.month, from: game.date)
+            let year = calendar.component(.year, from: game.date)
+            let key = "\(year)-\(month)"
+            gamesByMonth[key, default: []].append(game)
+        }
+
+        // Sort by date
+        let sortedKeys = gamesByMonth.keys.sorted()
+
+        return sortedKeys.compactMap { key in
+            guard let gamesInMonth = gamesByMonth[key], !gamesInMonth.isEmpty else { return nil }
+            let label = dateFormatter.string(from: gamesInMonth.first!.date)
+            return (label: label, value: calculateStatValue(for: stat, games: gamesInMonth))
+        }
+    }
+
+    private var currentTrendData: [(label: String, value: Double)] {
+        switch selectedTimePeriod {
+        case .byAge:
+            return statsByAge(for: selectedTrendStat)
+        case .byWeek:
+            return statsByWeek(for: selectedTrendStat)
+        case .byMonth:
+            return statsByMonth(for: selectedTrendStat)
+        }
     }
 
     var body: some View {
@@ -718,10 +800,42 @@ struct CareerStatsSheet: View {
     private var trendCard: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Progress by Age")
+                Text("Progress")
                     .font(.headline)
                 Spacer()
             }
+
+            // Time period picker - pill style
+            HStack(spacing: 0) {
+                ForEach(TimePeriod.allCases, id: \.self) { period in
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            selectedTimePeriod = period
+                        }
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: period.icon)
+                                .font(.caption2)
+                            Text(period.rawValue)
+                                .font(.caption)
+                                .fontWeight(.medium)
+                        }
+                        .foregroundColor(selectedTimePeriod == period ? .white : .secondary)
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 6)
+                        .background(
+                            selectedTimePeriod == period
+                                ? selectedTrendStat.color
+                                : Color.clear
+                        )
+                        .cornerRadius(12)
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(4)
+            .background(Color(.systemGray5))
+            .cornerRadius(16)
 
             // Stat picker
             HStack {
@@ -762,16 +876,16 @@ struct CareerStatsSheet: View {
                     let formattedValue = selectedTrendStat.isPercentage
                         ? String(format: "%.0f%%", latest.value)
                         : String(format: "%.1f", latest.value)
-                    Text("Age \(latest.age): \(formattedValue) \(selectedTrendStat.isPercentage ? "" : selectedTrendStat.label)")
+                    Text("\(latest.label): \(formattedValue) \(selectedTrendStat.isPercentage ? "" : selectedTrendStat.label)")
                         .font(.caption)
                         .foregroundColor(selectedTrendStat.color)
                 }
             }
 
             Chart {
-                ForEach(currentTrendData, id: \.age) { dataPoint in
+                ForEach(currentTrendData, id: \.label) { dataPoint in
                     LineMark(
-                        x: .value("Age", "Age \(dataPoint.age)"),
+                        x: .value("Period", dataPoint.label),
                         y: .value(selectedTrendStat.label, dataPoint.value)
                     )
                     .foregroundStyle(selectedTrendStat.color.gradient)
@@ -779,14 +893,14 @@ struct CareerStatsSheet: View {
                     .lineStyle(StrokeStyle(lineWidth: 3))
 
                     PointMark(
-                        x: .value("Age", "Age \(dataPoint.age)"),
+                        x: .value("Period", dataPoint.label),
                         y: .value(selectedTrendStat.label, dataPoint.value)
                     )
                     .foregroundStyle(selectedTrendStat.color)
                     .symbolSize(60)
 
                     AreaMark(
-                        x: .value("Age", "Age \(dataPoint.age)"),
+                        x: .value("Period", dataPoint.label),
                         y: .value(selectedTrendStat.label, dataPoint.value)
                     )
                     .foregroundStyle(selectedTrendStat.color.opacity(0.1).gradient)
@@ -818,6 +932,7 @@ struct CareerStatsSheet: View {
                 }
             }
             .animation(.easeInOut(duration: 0.3), value: selectedTrendStat)
+            .animation(.easeInOut(duration: 0.3), value: selectedTimePeriod)
         }
         .padding()
         .background(Color(.systemBackground))
