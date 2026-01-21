@@ -108,10 +108,10 @@ class OverlayRenderer: @unchecked Sendable {
         drawColorBar(in: context, x: bugX, y: homeRowY, width: colorBarWidth, height: rowHeight,
                      color: homeColor.cgColor, roundTop: true, roundBottom: false, cornerRadius: cornerRadius, scale: scale)
 
-        // Home team name
+        // Home team name (4 chars)
         let homeNameRect = CGRect(x: bugX + colorBarWidth + 10 * scale, y: homeRowY, width: teamWidth, height: rowHeight)
-        drawText(String(homeTeam.prefix(3)).uppercased(), in: homeNameRect, context: context,
-                 fontSize: 18 * scale, color: .white, bold: true, alignment: .left)
+        drawText(String(homeTeam.prefix(4)).uppercased(), in: homeNameRect, context: context,
+                 fontSize: 16 * scale, color: .white, bold: true, alignment: .left)
 
         // Home score
         let homeScoreRect = CGRect(x: bugX + colorBarWidth + teamWidth + 4 * scale, y: homeRowY, width: scoreWidth, height: rowHeight)
@@ -135,10 +135,10 @@ class OverlayRenderer: @unchecked Sendable {
         drawColorBar(in: context, x: bugX, y: awayRowY, width: colorBarWidth, height: rowHeight,
                      color: awayColor.cgColor, roundTop: false, roundBottom: true, cornerRadius: cornerRadius, scale: scale)
 
-        // Away team name
+        // Away team name (4 chars)
         let awayNameRect = CGRect(x: bugX + colorBarWidth + 10 * scale, y: awayRowY, width: teamWidth, height: rowHeight)
-        drawText(String(awayTeam.prefix(3)).uppercased(), in: awayNameRect, context: context,
-                 fontSize: 18 * scale, color: .white, bold: true, alignment: .left)
+        drawText(String(awayTeam.prefix(4)).uppercased(), in: awayNameRect, context: context,
+                 fontSize: 16 * scale, color: .white, bold: true, alignment: .left)
 
         // Away score
         let awayScoreRect = CGRect(x: bugX + colorBarWidth + teamWidth + 4 * scale, y: awayRowY, width: scoreWidth, height: rowHeight)

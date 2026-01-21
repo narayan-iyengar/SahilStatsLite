@@ -53,6 +53,7 @@ struct UltraMinimalRecordingView: View {
     @State private var isPortrait: Bool = true
     @State private var hasStartedRecording: Bool = false
     @State private var isPulsing: Bool = false
+    @State private var colonVisible: Bool = true
 
     // Computed
     private var halfLength: Int {
@@ -63,6 +64,14 @@ struct UltraMinimalRecordingView: View {
         let mins = remainingSeconds / 60
         let secs = remainingSeconds % 60
         return String(format: "%d:%02d", mins, secs)
+    }
+
+    private var clockMinutes: String {
+        String(remainingSeconds / 60)
+    }
+
+    private var clockSeconds: String {
+        String(format: "%02d", remainingSeconds % 60)
     }
 
     private var sahilPoints: Int {
@@ -147,13 +156,18 @@ struct UltraMinimalRecordingView: View {
             // Full-screen tap areas for scoring (left = my team, right = opponent)
             if !isPortrait || recordingManager.isSimulator || appState.isStatsOnly {
                 HStack(spacing: 0) {
-                    // Left half - My team tap area
-                    Color.clear
+                    // Left half - My team tap area (subtle orange tint)
+                    Color.orange.opacity(0.03)
                         .contentShape(Rectangle())
                         .onTapGesture { handleMyTeamTap() }
 
-                    // Right half - Opponent tap area
-                    Color.clear
+                    // Subtle center divider
+                    Rectangle()
+                        .fill(Color.white.opacity(0.08))
+                        .frame(width: 1)
+
+                    // Right half - Opponent tap area (subtle blue tint)
+                    Color.blue.opacity(0.03)
                         .contentShape(Rectangle())
                         .onTapGesture { handleOpponentTap() }
                 }
@@ -225,6 +239,14 @@ struct UltraMinimalRecordingView: View {
             }
         }
         .animation(.spring(response: 0.3), value: showSahilStats)
+        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+            // Blink colon when clock is paused
+            if !isClockRunning {
+                colonVisible.toggle()
+            } else {
+                colonVisible = true
+            }
+        }
     }
 
     // MARK: - Initialize Game State
@@ -421,11 +443,11 @@ struct UltraMinimalRecordingView: View {
                     .fill(Color.orange)
                     .frame(width: 5)
 
-                // Team name
-                Text((appState.currentGame?.teamName ?? "WLD").prefix(3).uppercased())
-                    .font(.system(size: 13, weight: .bold))
+                // Team name (4 chars)
+                Text((appState.currentGame?.teamName ?? "HOME").prefix(4).uppercased())
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.white)
-                    .frame(width: 40, alignment: .leading)
+                    .frame(width: 44, alignment: .leading)
                     .padding(.leading, 6)
 
                 // Score
@@ -464,11 +486,11 @@ struct UltraMinimalRecordingView: View {
                     .fill(Color.blue)
                     .frame(width: 5)
 
-                // Team name
-                Text((appState.currentGame?.opponent ?? "OPP").prefix(3).uppercased())
-                    .font(.system(size: 13, weight: .bold))
+                // Team name (4 chars)
+                Text((appState.currentGame?.opponent ?? "AWAY").prefix(4).uppercased())
+                    .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.white)
-                    .frame(width: 40, alignment: .leading)
+                    .frame(width: 44, alignment: .leading)
                     .padding(.leading, 6)
 
                 // Score
@@ -483,12 +505,19 @@ struct UltraMinimalRecordingView: View {
                     .frame(width: 1, height: 22)
                     .padding(.horizontal, 6)
 
-                // Clock (tap to pause/play)
+                // Clock (tap to pause/play) - colon blinks when paused
                 Button(action: { toggleClock() }) {
-                    Text(clockTime)
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundColor(isClockRunning ? .white : .orange)
-                        .frame(width: 52, alignment: .center)
+                    HStack(spacing: 0) {
+                        Text(clockMinutes)
+                            .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        Text(":")
+                            .font(.system(size: 14, weight: .bold, design: .monospaced))
+                            .opacity(isClockRunning ? 1.0 : (colonVisible ? 1.0 : 0.0))
+                        Text(clockSeconds)
+                            .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    }
+                    .foregroundColor(isClockRunning ? .white : .orange)
+                    .frame(width: 52, alignment: .center)
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 4)
