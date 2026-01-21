@@ -506,20 +506,19 @@ struct UltraMinimalRecordingView: View {
                     .padding(.horizontal, 6)
 
                 // Clock (tap to pause/play) - colon blinks when paused
-                Button(action: { toggleClock() }) {
-                    HStack(spacing: 0) {
-                        Text(clockMinutes)
-                            .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        Text(":")
-                            .font(.system(size: 14, weight: .bold, design: .monospaced))
-                            .opacity(isClockRunning ? 1.0 : (colonVisible ? 1.0 : 0.0))
-                        Text(clockSeconds)
-                            .font(.system(size: 14, weight: .bold, design: .monospaced))
-                    }
-                    .foregroundColor(isClockRunning ? .white : .orange)
-                    .frame(width: 52, alignment: .center)
+                HStack(spacing: 0) {
+                    Text(clockMinutes)
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                    Text(":")
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .opacity(isClockRunning ? 1.0 : (colonVisible ? 1.0 : 0.0))
+                    Text(clockSeconds)
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
                 }
-                .buttonStyle(.plain)
+                .foregroundColor(isClockRunning ? .white : .orange)
+                .frame(width: 52, alignment: .center)
+                .contentShape(Rectangle())
+                .onTapGesture { toggleClock() }
                 .padding(.trailing, 4)
             }
             .frame(height: 28)
