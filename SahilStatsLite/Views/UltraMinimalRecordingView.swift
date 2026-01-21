@@ -15,6 +15,7 @@ struct UltraMinimalRecordingView: View {
     @ObservedObject private var recordingManager = RecordingManager.shared
     @ObservedObject private var gimbalManager = GimbalTrackingManager.shared
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
+    @ObservedObject private var watchService = WatchConnectivityService.shared
 
     // Game state
     @State private var myScore: Int = 0
@@ -229,6 +230,94 @@ struct UltraMinimalRecordingView: View {
 
     private func initializeGameState() {
         remainingSeconds = halfLength * 60
+        setupWatchCallbacks()
+        sendGameStateToWatch()
+    }
+
+    // MARK: - Watch Connectivity
+
+    private func setupWatchCallbacks() {
+        // Handle score updates from watch
+        watchService.onScoreUpdate = { [self] team, points in
+            if team == "my" {
+                myScore += points
+            } else {
+                opponentScore += points
+            }
+            updateOverlayState()
+            sendScoreToWatch()
+        }
+
+        // Handle clock toggle from watch
+        watchService.onClockToggle = { [self] in
+            toggleClock()
+        }
+
+        // Handle period advance from watch
+        watchService.onPeriodAdvance = { [self] in
+            advancePeriod()
+        }
+
+        // Handle stat updates from watch
+        watchService.onStatUpdate = { [self] statType, value in
+            switch statType {
+            case "fg2Made":
+                fg2Made += value
+                myScore += 2
+            case "fg2Att": fg2Att += value
+            case "fg3Made":
+                fg3Made += value
+                myScore += 3
+            case "fg3Att": fg3Att += value
+            case "ftMade":
+                ftMade += value
+                myScore += 1
+            case "ftAtt": ftAtt += value
+            case "assists": playerStats.assists += value
+            case "rebounds": playerStats.rebounds += value
+            case "steals": playerStats.steals += value
+            case "blocks": playerStats.blocks += value
+            case "turnovers": playerStats.turnovers += value
+            default: break
+            }
+            updateOverlayState()
+            sendScoreToWatch()
+        }
+
+        // Handle end game from watch - end and save directly
+        watchService.onEndGame = { [self] in
+            endGame()
+        }
+    }
+
+    private func sendGameStateToWatch() {
+        let periodNames = ["1st Half", "2nd Half", "OT", "OT2", "OT3"]
+        let periodIdx = periodNames.firstIndex(of: period) ?? 0
+
+        watchService.sendGameState(
+            teamName: appState.currentGame?.teamName ?? "Home",
+            opponent: appState.currentGame?.opponent ?? "Away",
+            myScore: myScore,
+            oppScore: opponentScore,
+            remainingSeconds: remainingSeconds,
+            isClockRunning: isClockRunning,
+            period: period,
+            periodIndex: periodIdx
+        )
+    }
+
+    private func sendScoreToWatch() {
+        watchService.sendScoreUpdate(myScore: myScore, oppScore: opponentScore)
+    }
+
+    private func sendClockToWatch() {
+        watchService.sendClockUpdate(remainingSeconds: remainingSeconds, isRunning: isClockRunning)
+    }
+
+    private func sendPeriodToWatch() {
+        let periodNames = ["1st Half", "2nd Half", "OT", "OT2", "OT3"]
+        let periodIdx = periodNames.firstIndex(of: period) ?? 0
+        watchService.sendPeriodUpdate(period: period, periodIndex: periodIdx, remainingSeconds: remainingSeconds)
     }
 
     // MARK: - Camera Preview
@@ -454,6 +543,7 @@ struct UltraMinimalRecordingView: View {
         appState.currentGame?.scoreEvents.append(event)
 
         updateOverlayState()
+        sendScoreToWatch()
 
         let impact = UIImpactFeedbackGenerator(style: .medium)
         impact.impactOccurred()
@@ -472,6 +562,7 @@ struct UltraMinimalRecordingView: View {
             stopTimer()
         }
         updateOverlayState()
+        sendClockToWatch()
     }
 
     private func startTimerIfNeeded() {
@@ -482,7 +573,10 @@ struct UltraMinimalRecordingView: View {
     private func scheduleNextTick() {
         timer?.cancel()
         guard isClockRunning, remainingSeconds > 0 else {
-            if remainingSeconds == 0 { isClockRunning = false }
+            if remainingSeconds == 0 {
+                isClockRunning = false
+                sendClockToWatch()
+            }
             return
         }
 
@@ -499,6 +593,10 @@ struct UltraMinimalRecordingView: View {
                     self.isClockRunning = false
                 }
                 self.updateOverlayState()
+
+                // Send clock update to watch every second for real-time sync
+                self.sendClockToWatch()
+
                 if self.isClockRunning {
                     self.scheduleNextTick()
                 }
@@ -646,6 +744,9 @@ struct UltraMinimalRecordingView: View {
     private func endGame() {
         isFinishingRecording = true
         timer?.cancel()
+
+        // Notify Watch that game has ended
+        watchService.sendEndGame()
 
         // Sync player stats
         syncPlayerStats()
@@ -829,6 +930,7 @@ struct UltraMinimalRecordingView: View {
             break
         }
         updateOverlayState()
+        sendPeriodToWatch()
     }
 
     private func addOvertime() {
@@ -840,6 +942,7 @@ struct UltraMinimalRecordingView: View {
         }
         showSahilStats = false
         updateOverlayState()
+        sendPeriodToWatch()
     }
 
     private func shootingTile(_ label: String, made: Binding<Int>, att: Binding<Int>, pts: Int, color: Color) -> some View {

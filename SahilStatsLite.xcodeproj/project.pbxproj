@@ -13,10 +13,40 @@
 		8B4AE43F2F142002005F206B /* FirebaseFirestore in Frameworks */ = {isa = PBXBuildFile; productRef = 8B4AE43E2F142002005F206B /* FirebaseFirestore */; };
 		8B4AE4872F1F3D58005F206B /* GoogleSignIn in Frameworks */ = {isa = PBXBuildFile; productRef = 8B4AE4862F1F3D58005F206B /* GoogleSignIn */; };
 		8B4AE4892F1F3D58005F206B /* GoogleSignInSwift in Frameworks */ = {isa = PBXBuildFile; productRef = 8B4AE4882F1F3D58005F206B /* GoogleSignInSwift */; };
+		8B4AE4A02F2057DF005F206B /* SahilStatsLiteWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 8B4AE4962F2057DD005F206B /* SahilStatsLiteWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		8B4AE4A72F20581C005F206B /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B4AE4A62F20581C005F206B /* WatchConnectivity.framework */; };
+		8B4AE4B32F205878005F206B /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B4AE4B22F205878005F206B /* WatchConnectivity.framework */; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		8B4AE49E2F2057DF005F206B /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8B4AE4212F141E81005F206B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8B4AE4952F2057DD005F206B;
+			remoteInfo = "SahilStatsLiteWatch Watch App";
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		8B4AE4A42F2057DF005F206B /* Embed Watch Content */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(CONTENTS_FOLDER_PATH)/Watch";
+			dstSubfolderSpec = 16;
+			files = (
+				8B4AE4A02F2057DF005F206B /* SahilStatsLiteWatch Watch App.app in Embed Watch Content */,
+			);
+			name = "Embed Watch Content";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		8B4AE4292F141E81005F206B /* SahilStatsLite.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = SahilStatsLite.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		8B4AE4962F2057DD005F206B /* SahilStatsLiteWatch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SahilStatsLiteWatch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		8B4AE4A62F20581C005F206B /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = System/Library/Frameworks/WatchConnectivity.framework; sourceTree = SDKROOT; };
+		8B4AE4B22F205878005F206B /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.2.sdk/System/Library/Frameworks/WatchConnectivity.framework; sourceTree = DEVELOPER_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -38,6 +68,11 @@
 			path = SahilStatsLite;
 			sourceTree = "<group>";
 		};
+		8B4AE4972F2057DD005F206B /* SahilStatsLiteWatch Watch App */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "SahilStatsLiteWatch Watch App";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -49,8 +84,17 @@
 				8B4AE43D2F142002005F206B /* FirebaseDatabase in Frameworks */,
 				8B4AE43F2F142002005F206B /* FirebaseFirestore in Frameworks */,
 				8B4AE4892F1F3D58005F206B /* GoogleSignInSwift in Frameworks */,
+				8B4AE4A72F20581C005F206B /* WatchConnectivity.framework in Frameworks */,
 				8B4AE43B2F142002005F206B /* FirebaseCore in Frameworks */,
 				8B4AE4392F142002005F206B /* FirebaseAuth in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8B4AE4932F2057DD005F206B /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				8B4AE4B32F205878005F206B /* WatchConnectivity.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -61,6 +105,8 @@
 			isa = PBXGroup;
 			children = (
 				8B4AE42B2F141E81005F206B /* SahilStatsLite */,
+				8B4AE4972F2057DD005F206B /* SahilStatsLiteWatch Watch App */,
+				8B4AE4A52F20581B005F206B /* Frameworks */,
 				8B4AE42A2F141E81005F206B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -69,8 +115,18 @@
 			isa = PBXGroup;
 			children = (
 				8B4AE4292F141E81005F206B /* SahilStatsLite.app */,
+				8B4AE4962F2057DD005F206B /* SahilStatsLiteWatch Watch App.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		8B4AE4A52F20581B005F206B /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				8B4AE4B22F205878005F206B /* WatchConnectivity.framework */,
+				8B4AE4A62F20581C005F206B /* WatchConnectivity.framework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -83,10 +139,12 @@
 				8B4AE4252F141E81005F206B /* Sources */,
 				8B4AE4262F141E81005F206B /* Frameworks */,
 				8B4AE4272F141E81005F206B /* Resources */,
+				8B4AE4A42F2057DF005F206B /* Embed Watch Content */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				8B4AE49F2F2057DF005F206B /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				8B4AE42B2F141E81005F206B /* SahilStatsLite */,
@@ -104,6 +162,28 @@
 			productReference = 8B4AE4292F141E81005F206B /* SahilStatsLite.app */;
 			productType = "com.apple.product-type.application";
 		};
+		8B4AE4952F2057DD005F206B /* SahilStatsLiteWatch Watch App */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8B4AE4A12F2057DF005F206B /* Build configuration list for PBXNativeTarget "SahilStatsLiteWatch Watch App" */;
+			buildPhases = (
+				8B4AE4922F2057DD005F206B /* Sources */,
+				8B4AE4932F2057DD005F206B /* Frameworks */,
+				8B4AE4942F2057DD005F206B /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				8B4AE4972F2057DD005F206B /* SahilStatsLiteWatch Watch App */,
+			);
+			name = "SahilStatsLiteWatch Watch App";
+			packageProductDependencies = (
+			);
+			productName = "SahilStatsLiteWatch Watch App";
+			productReference = 8B4AE4962F2057DD005F206B /* SahilStatsLiteWatch Watch App.app */;
+			productType = "com.apple.product-type.application";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -115,6 +195,9 @@
 				LastUpgradeCheck = 2620;
 				TargetAttributes = {
 					8B4AE4282F141E81005F206B = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					8B4AE4952F2057DD005F206B = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -138,12 +221,20 @@
 			projectRoot = "";
 			targets = (
 				8B4AE4282F141E81005F206B /* SahilStatsLite */,
+				8B4AE4952F2057DD005F206B /* SahilStatsLiteWatch Watch App */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		8B4AE4272F141E81005F206B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8B4AE4942F2057DD005F206B /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -160,7 +251,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8B4AE4922F2057DD005F206B /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		8B4AE49F2F2057DF005F206B /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8B4AE4952F2057DD005F206B /* SahilStatsLiteWatch Watch App */;
+			targetProxy = 8B4AE49E2F2057DF005F206B /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		8B4AE4322F141E82005F206B /* Debug */ = {
@@ -300,6 +406,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -308,6 +415,9 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.narayan.SahilStats;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -333,6 +443,7 @@
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
 				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 26.0;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -341,12 +452,85 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.narayan.SahilStats;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
 				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
 				SWIFT_VERSION = 5.0;
 				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		8B4AE4A22F2057DF005F206B /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TTV9QQRD5H;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = SahilStatsLiteWatch;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.narayan.SahilStats;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.narayan.SahilStats.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
+			};
+			name = Debug;
+		};
+		8B4AE4A32F2057DF005F206B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				CODE_SIGN_IDENTITY = "Apple Development";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TTV9QQRD5H;
+				ENABLE_PREVIEWS = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = SahilStatsLiteWatch;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.narayan.SahilStats;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.narayan.SahilStats.watchkitapp;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				PROVISIONING_PROFILE_SPECIFIER = "";
+				SDKROOT = watchos;
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 4;
+				WATCHOS_DEPLOYMENT_TARGET = 26.0;
 			};
 			name = Release;
 		};
@@ -367,6 +551,15 @@
 			buildConfigurations = (
 				8B4AE4352F141E82005F206B /* Debug */,
 				8B4AE4362F141E82005F206B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8B4AE4A12F2057DF005F206B /* Build configuration list for PBXNativeTarget "SahilStatsLiteWatch Watch App" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8B4AE4A22F2057DF005F206B /* Debug */,
+				8B4AE4A32F2057DF005F206B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
