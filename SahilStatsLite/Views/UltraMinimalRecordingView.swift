@@ -69,10 +69,6 @@ struct UltraMinimalRecordingView: View {
         (fg2Made * 2) + (fg3Made * 3) + ftMade
     }
 
-    private var isCrunchTime: Bool {
-        remainingSeconds < 60 && remainingSeconds > 0
-    }
-
     private var timerInterval: TimeInterval {
         1.0  // Always 1-second updates for smooth video overlay
     }
@@ -135,13 +131,16 @@ struct UltraMinimalRecordingView: View {
                 Spacer()
             }
 
-            // Smart Scoreboard at bottom (only in landscape, or always in stats-only/simulator)
+            // Smart Scoreboard at bottom-right corner (NBA style - matches video overlay)
             if !isPortrait || recordingManager.isSimulator || appState.isStatsOnly {
                 VStack {
                     Spacer()
-                    smartScoreboard
-                        .padding(.horizontal, 50)
-                        .padding(.bottom, 20)
+                    HStack {
+                        Spacer()
+                        smartScoreboard
+                            .padding(.trailing, 24)
+                            .padding(.bottom, 24)
+                    }
                 }
             }
 
@@ -411,65 +410,97 @@ struct UltraMinimalRecordingView: View {
         }
     }
 
-    // MARK: - Smart Scoreboard
+    // MARK: - Smart Scoreboard (NBA Corner Style - matches video overlay)
 
     private var smartScoreboard: some View {
-        HStack(spacing: 0) {
-            // LEFT: My team (display only - tap on screen to score)
-            VStack(spacing: 2) {
+        VStack(spacing: 0) {
+            // HOME ROW (top)
+            HStack(spacing: 0) {
+                // Color bar
+                Rectangle()
+                    .fill(Color.orange)
+                    .frame(width: 6)
+
+                // Team name
                 Text((appState.currentGame?.teamName ?? "WLD").prefix(3).uppercased())
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.orange)
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 50, alignment: .leading)
+                    .padding(.leading, 8)
+
+                // Score
                 Text("\(myScore)")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(width: 44, alignment: .trailing)
 
-            // CENTER: Clock (tap to pause/play)
-            Button(action: { toggleClock() }) {
-                VStack(spacing: 2) {
-                    Text(period)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.orange)
+                // Divider
+                Rectangle()
+                    .fill(Color.white.opacity(0.2))
+                    .frame(width: 1, height: 28)
+                    .padding(.horizontal, 8)
 
-                    Text(clockTime)
-                        .font(.system(size: 18, weight: .bold, design: .monospaced))
-                        .foregroundColor(clockColor)
-
-                    Image(systemName: isClockRunning ? "pause.fill" : "play.fill")
-                        .font(.system(size: 10))
-                        .foregroundColor(.secondary)
-                }
-                .frame(width: 80)
-                .padding(.vertical, 8)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            // RIGHT: Opponent (display only - tap on screen to score)
-            VStack(spacing: 2) {
-                Text((appState.currentGame?.opponent ?? "OPP").prefix(3).uppercased())
+                // Period
+                Text(period)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundColor(.blue)
-                Text("\(opponentScore)")
-                    .font(.system(size: 34, weight: .bold, design: .rounded))
-                    .foregroundColor(.primary)
+                    .foregroundColor(.white.opacity(0.7))
+                    .frame(width: 60, alignment: .center)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
+            .frame(height: 36)
+
+            // Row separator
+            Rectangle()
+                .fill(Color.white.opacity(0.15))
+                .frame(height: 1)
+                .padding(.leading, 6)
+
+            // AWAY ROW (bottom)
+            HStack(spacing: 0) {
+                // Color bar
+                Rectangle()
+                    .fill(Color.blue)
+                    .frame(width: 6)
+
+                // Team name
+                Text((appState.currentGame?.opponent ?? "OPP").prefix(3).uppercased())
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+                    .frame(width: 50, alignment: .leading)
+                    .padding(.leading, 8)
+
+                // Score
+                Text("\(opponentScore)")
+                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(width: 44, alignment: .trailing)
+
+                // Divider
+                Rectangle()
+                    .fill(Color.white.opacity(0.2))
+                    .frame(width: 1, height: 28)
+                    .padding(.horizontal, 8)
+
+                // Clock (tap to pause/play)
+                Button(action: { toggleClock() }) {
+                    Text(clockTime)
+                        .font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .foregroundColor(isClockRunning ? .white : .orange)
+                        .frame(width: 60, alignment: .center)
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(height: 36)
         }
-        .background(.regularMaterial)
-        .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.12), radius: 10, y: 3)
+        .background(Color(white: 0.08, opacity: 0.88))
+        .cornerRadius(10)
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(Color.white.opacity(0.1), lineWidth: 1)
+        )
     }
 
-    private var clockColor: Color {
-        if !isClockRunning { return .orange }
-        if isCrunchTime { return .red }
-        return .primary
-    }
 
     // MARK: - Tap Feedback
 
