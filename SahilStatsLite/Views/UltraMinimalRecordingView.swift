@@ -240,8 +240,8 @@ struct UltraMinimalRecordingView: View {
         }
         .animation(.spring(response: 0.3), value: showSahilStats)
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-            // Blink colon when clock is paused
-            if !isClockRunning {
+            // Blink colon when clock is running
+            if isClockRunning {
                 colonVisible.toggle()
             } else {
                 colonVisible = true
@@ -511,7 +511,7 @@ struct UltraMinimalRecordingView: View {
                         .font(.system(size: 14, weight: .bold, design: .monospaced))
                     Text(":")
                         .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .opacity(isClockRunning ? 1.0 : (colonVisible ? 1.0 : 0.0))
+                        .opacity(isClockRunning ? (colonVisible ? 1.0 : 0.0) : 1.0)
                     Text(clockSeconds)
                         .font(.system(size: 14, weight: .bold, design: .monospaced))
                 }

@@ -6,6 +6,7 @@
 //
 
 import SwiftUI
+import Combine
 
 struct WatchScoringView: View {
     @EnvironmentObject var connectivity: WatchConnectivityClient
@@ -102,8 +103,8 @@ struct WatchScoringView: View {
             }
         }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-            // Blink colon when clock is paused
-            if !connectivity.isClockRunning {
+            // Blink colon when clock is running
+            if connectivity.isClockRunning {
                 colonVisible.toggle()
             } else {
                 colonVisible = true
@@ -183,7 +184,7 @@ struct WatchScoringView: View {
                 .font(.system(size: 20, weight: .semibold, design: .monospaced))
             Text(":")
                 .font(.system(size: 20, weight: .semibold, design: .monospaced))
-                .opacity(connectivity.isClockRunning ? 1.0 : (colonVisible ? 1.0 : 0.0))
+                .opacity(connectivity.isClockRunning ? (colonVisible ? 1.0 : 0.0) : 1.0)
             Text(clockSeconds)
                 .font(.system(size: 20, weight: .semibold, design: .monospaced))
         }
