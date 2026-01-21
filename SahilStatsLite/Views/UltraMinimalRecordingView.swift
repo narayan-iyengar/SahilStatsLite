@@ -958,8 +958,12 @@ struct UltraMinimalRecordingView: View {
         switch period {
         case "1st Half": return "2nd Half"
         case "2nd Half": return "Overtime"
-        case "OT": return "End Game"
-        default: return "Next"
+        default:
+            // In OT - tapping adds more time
+            if period.hasPrefix("OT") {
+                return "+1:00 OT"
+            }
+            return "Next"
         }
     }
 
@@ -971,17 +975,17 @@ struct UltraMinimalRecordingView: View {
             isClockRunning = false
             stopTimer()
         case "2nd Half":
-            // Go to OT instead of ending game
+            // Go to OT
             period = "OT"
             remainingSeconds = 60  // 1 minute OT
             isClockRunning = false
             stopTimer()
-        case "OT":
-            // Now end the game
-            showSahilStats = false
-            showEndConfirmation = true
         default:
-            break
+            // Already in OT - add another minute
+            if period.hasPrefix("OT") {
+                remainingSeconds += 60
+                // Don't change period name, just add time
+            }
         }
         updateOverlayState()
         sendPeriodToWatch()
