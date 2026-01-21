@@ -241,7 +241,7 @@ SahilStatsLite/
 ├── Models/
 │   └── Game.swift                    # Game, ScoreEvent models
 ├── Views/
-│   ├── HomeView.swift                # Home screen with game list
+│   ├── HomeView.swift                # Home screen with game list + Career Stats
 │   ├── GameSetupView.swift           # Quick opponent entry
 │   ├── RecordingView.swift           # Full-screen recording with floating controls
 │   ├── UltraMinimalRecordingView.swift # Simplified recording UI
@@ -279,13 +279,29 @@ SahilStatsLite/
 
 ---
 
+## Career Stats Feature
+
+The Career Stats sheet (accessible from HomeView) tracks Sahil's progress over time.
+
+**Stats tracked:**
+- Points (PPG), Rebounds (RPG), Assists (APG)
+- Defense (STL+BLK), Shooting (FG%), Win Rate
+
+**Time period options:**
+- **By Age** - Long-term yearly view (original)
+- **By Month** - Monthly averages for seasonal trends
+- **By Week** - Last 12 weeks for granular progress (default)
+
+The weekly view is recommended since youth player progress over a year appears flat, but week-to-week shows meaningful variation.
+
+---
+
 ## Known Issues / TODO
 1. **Auto expand/collapse floating bar** - Collapse when not used for a while
 2. **Physical device testing** - Need to test full flow on iPhone with gimbal
 3. **Gimbal tracking** - DockKit integration needs real-world testing
-4. **Watch app requires paid account** - Cannot install with Personal Team (free account)
-5. **Watch-Mac connection issues** - "Device rejected connection" on iOS/watchOS 26 beta
-6. **Watch logging** - Switch from debugPrint to os_log for better Console.app filtering
+4. ~~**Watch app requires paid account**~~ - RESOLVED: Watch app working with proper Xcode setup
+5. **Watch logging** - Switch from debugPrint to os_log for better Console.app filtering
 
 ### Recent Changes (2025-01-17)
 
@@ -486,6 +502,7 @@ logger.info("Message here")
 4. **Auto-save to Photos**: Video automatically saved to Photos library when game ends
 5. **Go to home screen**: After game ends, app returns directly to home screen (skips summary screen)
 6. **Watch Stats redesign (Jony Ive-inspired)**: Complete UX overhaul with generous touch targets, swipe navigation, haptic feedback
+7. **Career Stats time period selector**: Progress chart now supports By Age, By Month, or By Week views for more granular progress tracking
 
 ---
 
