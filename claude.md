@@ -1,6 +1,6 @@
 # Sahil Stats - Project Context
 
-> **COMPLETED (2026-01-21):** Watch app successfully installed and working! Scoring from Watch syncs to iPhone in real-time. End game from Watch now saves directly without phone confirmation.
+> **UPDATED (2026-01-21):** Watch app working, YouTube upload added (lean ~200 lines), WYSIWYG overlays (SwiftUI matches video), blinking colon when paused, 4-char team names, OT fixed.
 
 ---
 
@@ -505,6 +505,13 @@ logger.info("Message here")
 5. **Go to home screen**: After game ends, app returns directly to home screen (skips summary screen)
 6. **Watch Stats redesign (Jony Ive-inspired)**: Complete UX overhaul with generous touch targets, swipe navigation, haptic feedback
 7. **Career Stats time period selector**: Progress chart now supports By Age, By Month, or By Week views for more granular progress tracking
+8. **YouTube upload (lean)**: ~200 lines, Keychain-based auth, immediate upload (no WiFi queue needed with 5G)
+9. **OT functionality fixed**: Period tap cycles 1st Half → 2nd Half → OT, tapping in OT adds +1 min, only long-press clock ends game
+10. **WYSIWYG overlays**: SwiftUI overlay redesigned to match NBA corner-style video overlay (bottom-right position)
+11. **4-char team names**: Changed from 3 to 4 characters for better readability (e.g., "LAVA" vs "LAV")
+12. **Blinking colon**: Clock colon blinks when paused (both iOS and Watch)
+13. **Subtle tap zones**: Very faint orange/blue tints with center divider to indicate tap areas
+14. **Removed WatchAppMockup.swift**: -622 lines of dead code (real Watch app is working)
 
 ---
 
