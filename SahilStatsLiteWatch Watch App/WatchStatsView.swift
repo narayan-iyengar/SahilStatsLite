@@ -98,17 +98,17 @@ struct WatchStatsView: View {
                 .font(.system(size: 9, weight: .semibold))
                 .foregroundColor(.white.opacity(0.6))
 
-            HStack(spacing: 3) {
+            HStack(spacing: 6) {
                 // Make button
                 Button {
                     onTap(true)
                 } label: {
                     Text("\u{2713}")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.black)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 32, height: 32)
                         .background(Color.green)
-                        .cornerRadius(6)
+                        .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
 
@@ -117,11 +117,11 @@ struct WatchStatsView: View {
                     onTap(false)
                 } label: {
                     Text("\u{2717}")
-                        .font(.system(size: 10, weight: .bold))
+                        .font(.system(size: 16, weight: .bold))
                         .foregroundColor(.white)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 32, height: 32)
                         .background(Color.red)
-                        .cornerRadius(6)
+                        .cornerRadius(8)
                 }
                 .buttonStyle(.plain)
             }
