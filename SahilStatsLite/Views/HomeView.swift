@@ -1409,6 +1409,7 @@ struct SettingsView: View {
     @ObservedObject private var authService = AuthService.shared
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
     @ObservedObject private var calendarManager = GameCalendarManager.shared
+    @ObservedObject private var youtubeService = YouTubeService.shared
     @Environment(\.dismiss) private var dismiss
 
     // Teams stored in UserDefaults as JSON
@@ -1421,6 +1422,42 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             List {
+                // YouTube Section
+                Section {
+                    Toggle("Auto-upload to YouTube", isOn: $youtubeService.isEnabled)
+
+                    if youtubeService.isAuthorized {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundColor(.green)
+                            Text("YouTube Connected")
+                                .foregroundColor(.secondary)
+                            Spacer()
+                            Button("Disconnect") {
+                                youtubeService.revokeAccess()
+                            }
+                            .font(.caption)
+                            .foregroundColor(.red)
+                        }
+                    } else {
+                        Button {
+                            Task {
+                                do {
+                                    try await youtubeService.authorize()
+                                } catch {
+                                    debugPrint("YouTube auth error: \(error)")
+                                }
+                            }
+                        } label: {
+                            Label("Connect YouTube", systemImage: "play.rectangle.fill")
+                        }
+                    }
+                } header: {
+                    Text("YouTube")
+                } footer: {
+                    Text("Videos are uploaded as unlisted to your YouTube channel for easy sharing with coaches.")
+                }
+
                 // My Teams Section
                 Section {
                     ForEach(Array(teams.enumerated()), id: \.offset) { _, team in

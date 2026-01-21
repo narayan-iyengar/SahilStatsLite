@@ -17,6 +17,7 @@ struct UltraMinimalRecordingView: View {
     @ObservedObject private var gimbalManager = GimbalTrackingManager.shared
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
     @ObservedObject private var watchService = WatchConnectivityService.shared
+    @ObservedObject private var youtubeService = YouTubeService.shared
 
     // Game state
     @State private var myScore: Int = 0
@@ -773,17 +774,32 @@ struct UltraMinimalRecordingView: View {
             Task {
                 let videoURL = await recordingManager.stopRecordingAndWait()
 
+                // Save to persistence
+                if let game = appState.currentGame {
+                    persistenceManager.saveGame(game)
+                }
+
+                // Auto-save video to Photos
+                if let url = videoURL {
+                    saveVideoToPhotos(url: url)
+
+                    // Upload to YouTube (non-blocking)
+                    if youtubeService.isEnabled && youtubeService.isAuthorized {
+                        let title = "\(appState.currentGame?.teamName ?? "Game") vs \(appState.currentGame?.opponent ?? "Opponent") - \(formattedDate())"
+                        let description = """
+                        \(appState.currentGame?.teamName ?? "Home") \(myScore) - \(opponentScore) \(appState.currentGame?.opponent ?? "Away")
+                        Sahil: \(sahilPoints) pts
+
+                        Recorded with Sahil Stats
+                        """
+
+                        Task.detached {
+                            _ = await YouTubeService.shared.uploadVideo(url: url, title: title, description: description)
+                        }
+                    }
+                }
+
                 await MainActor.run {
-                    // Save to persistence
-                    if let game = appState.currentGame {
-                        persistenceManager.saveGame(game)
-                    }
-
-                    // Auto-save video to Photos
-                    if let url = videoURL {
-                        saveVideoToPhotos(url: url)
-                    }
-
                     isFinishingRecording = false
                     appState.goHome()
                 }
@@ -817,6 +833,12 @@ struct UltraMinimalRecordingView: View {
         playerStats.fg3Attempted = fg3Att
         playerStats.ftMade = ftMade
         playerStats.ftAttempted = ftAtt
+    }
+
+    private func formattedDate() -> String {
+        let formatter = DateFormatter()
+        formatter.dateStyle = .medium
+        return formatter.string(from: Date())
     }
 
     // MARK: - Stats Overlay
