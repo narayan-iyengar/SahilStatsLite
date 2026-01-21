@@ -765,7 +765,7 @@ struct UltraMinimalRecordingView: View {
             }
             isFinishingRecording = false
             appState.isStatsOnly = false  // Reset for next game
-            appState.endGame()
+            appState.goHome()
         } else {
             // Recording mode: stop recording and save
             gimbalManager.stopTracking()
@@ -785,7 +785,7 @@ struct UltraMinimalRecordingView: View {
                     }
 
                     isFinishingRecording = false
-                    appState.endGame()
+                    appState.goHome()
                 }
             }
         }
