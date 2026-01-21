@@ -957,7 +957,7 @@ struct UltraMinimalRecordingView: View {
     private var nextPeriodLabel: String {
         switch period {
         case "1st Half": return "2nd Half"
-        case "2nd Half": return "End Game"
+        case "2nd Half": return "Overtime"
         case "OT": return "End Game"
         default: return "Next"
         }
@@ -970,7 +970,14 @@ struct UltraMinimalRecordingView: View {
             remainingSeconds = halfLength * 60
             isClockRunning = false
             stopTimer()
-        case "2nd Half", "OT":
+        case "2nd Half":
+            // Go to OT instead of ending game
+            period = "OT"
+            remainingSeconds = 60  // 1 minute OT
+            isClockRunning = false
+            stopTimer()
+        case "OT":
+            // Now end the game
             showSahilStats = false
             showEndConfirmation = true
         default:
