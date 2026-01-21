@@ -9,6 +9,7 @@
 import SwiftUI
 import AVFoundation
 import Combine
+import Photos
 
 struct UltraMinimalRecordingView: View {
     @EnvironmentObject var appState: AppState
@@ -770,7 +771,7 @@ struct UltraMinimalRecordingView: View {
             gimbalManager.stopTracking()
 
             Task {
-                let _ = await recordingManager.stopRecordingAndWait()
+                let videoURL = await recordingManager.stopRecordingAndWait()
 
                 await MainActor.run {
                     // Save to persistence
@@ -778,8 +779,32 @@ struct UltraMinimalRecordingView: View {
                         persistenceManager.saveGame(game)
                     }
 
+                    // Auto-save video to Photos
+                    if let url = videoURL {
+                        saveVideoToPhotos(url: url)
+                    }
+
                     isFinishingRecording = false
                     appState.endGame()
+                }
+            }
+        }
+    }
+
+    private func saveVideoToPhotos(url: URL) {
+        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+            guard status == .authorized || status == .limited else {
+                debugPrint("📹 Photo library access denied")
+                return
+            }
+
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+            } completionHandler: { success, error in
+                if success {
+                    debugPrint("📹 Video saved to Photos")
+                } else if let error = error {
+                    debugPrint("📹 Failed to save video: \(error.localizedDescription)")
                 }
             }
         }
