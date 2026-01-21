@@ -299,11 +299,12 @@ The weekly view is recommended since youth player progress over a year appears f
 ---
 
 ## Known Issues / TODO
-1. **Auto expand/collapse floating bar** - Collapse when not used for a while
-2. **Physical device testing** - Need to test full flow on iPhone with gimbal
+1. **App icon** - Need icons for iOS app and Watch app
+2. **Physical device testing** - Test full recording flow on iPhone with gimbal
 3. **Gimbal tracking** - DockKit integration needs real-world testing
-4. ~~**Watch app requires paid account**~~ - RESOLVED: Watch app working with proper Xcode setup
-5. **Watch logging** - Switch from debugPrint to os_log for better Console.app filtering
+4. **YouTube upload testing** - Test OAuth flow and actual upload to YouTube
+5. ~~**Watch app requires paid account**~~ - RESOLVED
+6. ~~**Auto expand/collapse floating bar**~~ - Not needed with Watch as primary input
 
 ### Recent Changes (2025-01-17)
 
