@@ -485,6 +485,7 @@ logger.info("Message here")
 3. **End game notification**: iPhone sends `endGame` message back to Watch so it returns to waiting screen
 4. **Auto-save to Photos**: Video automatically saved to Photos library when game ends
 5. **Go to home screen**: After game ends, app returns directly to home screen (skips summary screen)
+6. **Watch Stats redesign (Jony Ive-inspired)**: Complete UX overhaul with generous touch targets, swipe navigation, haptic feedback
 
 ---
 
@@ -530,34 +531,53 @@ The main scoring interface during games.
 - Shows final score with color (green if winning, red if losing)
 - Cancel or End buttons
 
-### WatchStatsView (Secondary Screen)
-Individual player stats tracking for Sahil.
+### WatchStatsView (Secondary Screen) - Jony Ive Redesign
+Individual player stats tracking for Sahil. Redesigned with generous touch targets and swipe navigation.
 
-**Layout:**
+**Design Principles:**
+- Simplicity: Focus on one task at a time
+- Generous touch targets: Large 80pt MAKE/MISS buttons
+- Intuitive navigation: Horizontal swipe between shooting and other stats
+- Clear visual hierarchy: Points prominent, then shot type, then actions
+- Haptic feedback on every action
+
+**Shooting Stats Layout (Primary):**
 ```
 ┌─────────────────────────────┐
-│         SAHIL'S TEAM        │
-│           12 pts            │  <- Calculated from shooting stats
+│  28 PTS            3/5      │  <- Points + current shot stats
 ├─────────────────────────────┤
-│   2PT    │   3PT    │  FT   │
-│  ✓   ✗   │  ✓   ✗   │ ✓  ✗  │  <- Make/miss buttons
-│   3/5    │   1/4    │ 2/3   │  <- Made/attempted
-├─────────────────────────────┤
-│  2  │  4  │  1  │  0  │  2  │
-│ AST │ REB │ STL │ BLK │ TO  │  <- Tap to increment
-├─────────────────────────────┤
-│          ↓ Score            │  <- Swipe down to return
+│  ┌─────┬─────┬─────┐       │
+│  │ 2PT │ 3PT │ FT  │       │  <- Pill selector (tap to switch)
+│  └─────┴─────┴─────┘       │
+│                             │
+│  ┌───────────┬───────────┐ │
+│  │     ✓     │     ✗     │ │
+│  │   MAKE    │   MISS    │ │  <- BIG 80pt buttons
+│  │  (green)  │   (red)   │ │
+│  └───────────┴───────────┘ │
+│       More stats →          │  <- Swipe hint
 └─────────────────────────────┘
 ```
 
-**Shooting Stats (2PT, 3PT, FT):**
-- Green ✓ button → Record made shot (increments both made AND attempted)
-- Red ✗ button → Record missed shot (increments only attempted)
-- Shows "made/attempted" below
+**Other Stats Layout (Swipe Left):**
+```
+┌─────────────────────────────┐
+│  ← Shooting                 │
+├─────────────────────────────┤
+│  ┌─────┬─────┬─────┐       │
+│  │  2  │  4  │  1  │       │
+│  │ AST │ REB │ STL │       │  <- Tap to increment
+│  └─────┴─────┴─────┘       │
+│  ┌─────┬─────┬─────┐       │
+│  │  0  │  2  │  0  │       │
+│  │ BLK │ TO  │ PF  │       │
+│  └─────┴─────┴─────┘       │
+└─────────────────────────────┘
+```
 
-**Other Stats (AST, REB, STL, BLK, TO):**
-- Tap to increment by 1
-- TO = turnovers (bad), others are positive stats
+**Navigation:**
+- Vertical swipe: Score ↔ Stats (main TabView)
+- Horizontal swipe: Shooting ↔ Other stats (within Stats)
 
 **Points Calculation:**
 ```swift
