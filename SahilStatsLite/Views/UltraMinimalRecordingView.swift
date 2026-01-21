@@ -419,84 +419,85 @@ struct UltraMinimalRecordingView: View {
                 // Color bar
                 Rectangle()
                     .fill(Color.orange)
-                    .frame(width: 6)
+                    .frame(width: 5)
 
                 // Team name
                 Text((appState.currentGame?.teamName ?? "WLD").prefix(3).uppercased())
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.white)
-                    .frame(width: 50, alignment: .leading)
-                    .padding(.leading, 8)
+                    .frame(width: 40, alignment: .leading)
+                    .padding(.leading, 6)
 
                 // Score
                 Text("\(myScore)")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
-                    .frame(width: 44, alignment: .trailing)
+                    .frame(width: 32, alignment: .trailing)
 
                 // Divider
                 Rectangle()
                     .fill(Color.white.opacity(0.2))
-                    .frame(width: 1, height: 28)
-                    .padding(.horizontal, 8)
+                    .frame(width: 1, height: 22)
+                    .padding(.horizontal, 6)
 
                 // Period
                 Text(period)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundColor(.white.opacity(0.7))
-                    .frame(width: 60, alignment: .center)
+                    .frame(width: 44, alignment: .center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
             }
-            .frame(height: 36)
+            .frame(height: 28)
 
             // Row separator
             Rectangle()
                 .fill(Color.white.opacity(0.15))
                 .frame(height: 1)
-                .padding(.leading, 6)
+                .padding(.leading, 5)
 
             // AWAY ROW (bottom)
             HStack(spacing: 0) {
                 // Color bar
                 Rectangle()
                     .fill(Color.blue)
-                    .frame(width: 6)
+                    .frame(width: 5)
 
                 // Team name
                 Text((appState.currentGame?.opponent ?? "OPP").prefix(3).uppercased())
-                    .font(.system(size: 14, weight: .bold))
+                    .font(.system(size: 13, weight: .bold))
                     .foregroundColor(.white)
-                    .frame(width: 50, alignment: .leading)
-                    .padding(.leading, 8)
+                    .frame(width: 40, alignment: .leading)
+                    .padding(.leading, 6)
 
                 // Score
                 Text("\(opponentScore)")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
+                    .font(.system(size: 18, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
-                    .frame(width: 44, alignment: .trailing)
+                    .frame(width: 32, alignment: .trailing)
 
                 // Divider
                 Rectangle()
                     .fill(Color.white.opacity(0.2))
-                    .frame(width: 1, height: 28)
-                    .padding(.horizontal, 8)
+                    .frame(width: 1, height: 22)
+                    .padding(.horizontal, 6)
 
                 // Clock (tap to pause/play)
                 Button(action: { toggleClock() }) {
                     Text(clockTime)
-                        .font(.system(size: 16, weight: .bold, design: .monospaced))
+                        .font(.system(size: 14, weight: .bold, design: .monospaced))
                         .foregroundColor(isClockRunning ? .white : .orange)
-                        .frame(width: 60, alignment: .center)
+                        .frame(width: 44, alignment: .center)
                 }
                 .buttonStyle(.plain)
             }
-            .frame(height: 36)
+            .frame(height: 28)
         }
+        .fixedSize()  // Prevent expansion
         .background(Color(white: 0.08, opacity: 0.88))
-        .cornerRadius(10)
+        .cornerRadius(8)
         .overlay(
-            RoundedRectangle(cornerRadius: 10)
+            RoundedRectangle(cornerRadius: 8)
                 .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
     }
