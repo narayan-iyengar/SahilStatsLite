@@ -552,23 +552,20 @@ struct WatchMockupPreview: View {
 
 // MARK: - Previews
 
-#Preview("Watch App") {
+#Preview("Watch App", traits: .fixedLayout(width: 300, height: 500)) {
     WatchMockupPreview()
-        .previewLayout(.fixed(width: 300, height: 500))
 }
 
-#Preview("Scoring") {
+#Preview("Scoring", traits: .fixedLayout(width: 260, height: 320)) {
     WatchFramePreview {
         WatchScoringView()
     }
-    .previewLayout(.fixed(width: 260, height: 320))
 }
 
-#Preview("Stats") {
+#Preview("Stats", traits: .fixedLayout(width: 260, height: 320)) {
     WatchFramePreview {
         WatchStatsView()
     }
-    .previewLayout(.fixed(width: 260, height: 320))
 }
 
 // Standalone watch frame for individual screen previews

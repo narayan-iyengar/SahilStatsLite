@@ -713,7 +713,6 @@ struct CareerStatsSheet: View {
             let year = calendar.component(.year, from: game.date)
             let weekStart = calendar.date(from: DateComponents(weekOfYear: weekOfYear, yearForWeekOfYear: year))!
             let key = "\(year)-W\(weekOfYear)"
-            let label = dateFormatter.string(from: weekStart)
             gamesByWeek[key, default: []].append(game)
         }
 
