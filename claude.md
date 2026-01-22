@@ -1,6 +1,6 @@
 # Sahil Stats - Project Context
 
-> **UPDATED (2026-01-21):** Hero Card calendar UI, smart opponent/team detection from calendar, normalized team names (no case duplicates).
+> **UPDATED (2026-01-21):** Hero Card calendar UI, smart opponent/team detection, Jony Ive design polish (clean header, hidden scrollbars, subtle actions).
 
 ---
 
@@ -523,6 +523,9 @@ logger.info("Message here")
 22. **Smart team detection from calendar**: "Royal Kings - Bay Area Lava" → Detects "Lava" as your team, "Royal Kings" as opponent. Auto-selects team in GameSetupView.
 23. **Normalized team names**: Removed case duplicates (e.g., "Lava" and "LAVA" merged to just "Lava"). Settings now shows clean list.
 24. **Upcoming Games sheet**: "More games this month" link shows full list grouped by date (Today, Tomorrow, Friday Jan 24, etc.) instead of going to Settings.
+25. **Jony Ive header cleanup**: Removed settings icon from header. Settings now a subtle text link at bottom of scroll content. Header is clean and centered.
+26. **Hidden scroll indicators**: Removed scroll bar for cleaner look.
+27. **Direct hide button**: Replaced ellipsis menu with subtle `eye.slash` icon - one tap to hide a game, no menu.
 
 ---
 
