@@ -64,35 +64,13 @@ struct HomeView: View {
 
     private var headerSection: some View {
         HStack {
-            // Settings button (combines profile + settings)
+            // Settings button
             Button {
                 showSettings = true
             } label: {
-                ZStack(alignment: .bottomTrailing) {
-                    Image(systemName: "gearshape.fill")
-                        .font(.title2)
-                        .foregroundColor(.secondary)
-
-                    // Sync/auth status indicator
-                    if AuthService.shared.isSignedIn {
-                        if persistenceManager.isSyncing {
-                            Circle()
-                                .fill(.orange)
-                                .frame(width: 10, height: 10)
-                                .offset(x: 2, y: 2)
-                        } else if persistenceManager.syncError != nil {
-                            Circle()
-                                .fill(.red)
-                                .frame(width: 10, height: 10)
-                                .offset(x: 2, y: 2)
-                        } else {
-                            Circle()
-                                .fill(.green)
-                                .frame(width: 10, height: 10)
-                                .offset(x: 2, y: 2)
-                        }
-                    }
-                }
+                Image(systemName: "person.crop.circle")
+                    .font(.title2)
+                    .foregroundColor(.orange)
             }
 
             Spacer()
