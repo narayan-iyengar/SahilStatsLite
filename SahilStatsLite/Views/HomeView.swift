@@ -68,9 +68,9 @@ struct HomeView: View {
             Button {
                 showSettings = true
             } label: {
-                Image(systemName: "person.crop.circle")
+                Image(systemName: "ellipsis.circle")
                     .font(.title2)
-                    .foregroundColor(.orange)
+                    .foregroundColor(.secondary)
             }
 
             Spacer()
