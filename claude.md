@@ -299,7 +299,7 @@ The weekly view is recommended since youth player progress over a year appears f
 ---
 
 ## Known Issues / TODO
-1. **App icon** - Need icons for iOS app and Watch app
+1. ~~**App icon**~~ - DONE (copied from SahilStats)
 2. **Physical device testing** - Test full recording flow on iPhone with gimbal
 3. **Gimbal tracking** - DockKit integration needs real-world testing
 4. **YouTube upload testing** - Test OAuth flow and actual upload to YouTube
@@ -515,6 +515,7 @@ logger.info("Message here")
 14. **Removed WatchAppMockup.swift**: -622 lines of dead code (real Watch app is working)
 15. **Watch period sync fix**: `sendPeriodUpdate` now includes `isRunning` so Watch shows correct clock state (orange/solid) in 2nd Half and OT
 16. **iOS blinking colon fix**: Created dedicated `BlinkingColon` view struct with its own timer - fixes issue where colon wasn't blinking on iOS
+17. **App icons**: Copied 1024.png from SahilStats to both iOS and Watch app
 
 ---
 
