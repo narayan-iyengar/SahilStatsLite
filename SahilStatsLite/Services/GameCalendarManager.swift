@@ -18,8 +18,13 @@ class GameCalendarManager: ObservableObject {
     @MainActor @Published var hasCalendarAccess = false
     @MainActor @Published var upcomingGames: [CalendarGame] = []
     @MainActor @Published var selectedCalendars: [String] = []
+    @MainActor @Published var knownTeamNames: [String] = []
 
     private let selectedCalendarsKey = "selectedCalendars"
+    private let knownTeamNamesKey = "knownTeamNames"
+
+    // Default team names for Sahil's teams
+    private let defaultTeamNames = ["Uneqld", "UNEQLD", "Lava", "LAVA", "Elements", "ELEMENTS"]
 
     // MARK: - Calendar Game Model
 
@@ -53,7 +58,39 @@ class GameCalendarManager: ObservableObject {
 
     private init() {
         loadSelectedCalendars()
+        loadKnownTeamNames()
         checkCalendarAccess()
+    }
+
+    // MARK: - Known Team Names
+
+    private func loadKnownTeamNames() {
+        if let saved = UserDefaults.standard.array(forKey: knownTeamNamesKey) as? [String], !saved.isEmpty {
+            knownTeamNames = saved
+        } else {
+            // Use defaults on first launch
+            knownTeamNames = defaultTeamNames
+            UserDefaults.standard.set(defaultTeamNames, forKey: knownTeamNamesKey)
+        }
+    }
+
+    func saveKnownTeamNames(_ names: [String]) {
+        knownTeamNames = names
+        UserDefaults.standard.set(names, forKey: knownTeamNamesKey)
+        loadUpcomingGames() // Re-parse with new team names
+    }
+
+    func addKnownTeamName(_ name: String) {
+        guard !name.isEmpty, !knownTeamNames.contains(where: { $0.lowercased() == name.lowercased() }) else { return }
+        knownTeamNames.append(name)
+        UserDefaults.standard.set(knownTeamNames, forKey: knownTeamNamesKey)
+        loadUpcomingGames()
+    }
+
+    func removeKnownTeamName(_ name: String) {
+        knownTeamNames.removeAll { $0.lowercased() == name.lowercased() }
+        UserDefaults.standard.set(knownTeamNames, forKey: knownTeamNamesKey)
+        loadUpcomingGames()
     }
 
     // MARK: - Calendar Access
@@ -164,9 +201,25 @@ class GameCalendarManager: ObservableObject {
     // MARK: - Parse Opponent
 
     /// Attempts to extract opponent name from event title using common patterns.
+    /// Intelligently detects known team names (Sahil's teams) and returns the OTHER team as opponent.
     /// Returns nil if no pattern matches (caller should fall back to full title).
     private func parseOpponent(from title: String) -> String? {
         let lowercased = title.lowercased()
+
+        // First, try to find two teams and identify which is ours
+        let teams = extractTeamPair(from: title)
+        if let teams = teams {
+            // Check if either team is one of our known teams
+            let team1IsOurs = knownTeamNames.contains { $0.lowercased() == teams.0.lowercased() }
+            let team2IsOurs = knownTeamNames.contains { $0.lowercased() == teams.1.lowercased() }
+
+            if team1IsOurs && !team2IsOurs {
+                return teams.1 // Return the opponent
+            } else if team2IsOurs && !team1IsOurs {
+                return teams.0 // Return the opponent
+            }
+            // If both or neither are ours, fall through to other patterns
+        }
 
         // Pattern 1: "vs Team", "vs. Team", "@ Team", "at Team"
         let vsPatterns = ["vs ", "vs. ", "@ ", "at "]
@@ -178,7 +231,10 @@ class GameCalendarManager: ObservableObject {
                     .first?
                     .trimmingCharacters(in: .whitespaces) ?? ""
                 if !opponent.isEmpty {
-                    return opponent
+                    // Skip if this is one of our teams
+                    if !knownTeamNames.contains(where: { $0.lowercased() == opponent.lowercased() }) {
+                        return opponent
+                    }
                 }
             }
         }
@@ -191,7 +247,10 @@ class GameCalendarManager: ObservableObject {
                 let opponent = String(beforePattern)
                     .trimmingCharacters(in: .whitespaces)
                 if !opponent.isEmpty && opponent.count < 30 {
-                    return opponent
+                    // Skip if this is one of our teams
+                    if !knownTeamNames.contains(where: { $0.lowercased() == opponent.lowercased() }) {
+                        return opponent
+                    }
                 }
             }
         }
@@ -200,7 +259,6 @@ class GameCalendarManager: ObservableObject {
         let gameKeywords = ["game", "basketball", "tournament", "championship", "league", "playoffs"]
         for keyword in gameKeywords {
             if lowercased.contains(keyword) {
-                // Try to find a team name before the keyword
                 if let range = lowercased.range(of: keyword) {
                     let beforeKeyword = title[..<range.lowerBound]
                         .trimmingCharacters(in: .whitespaces)
@@ -218,16 +276,35 @@ class GameCalendarManager: ObservableObject {
             let afterColon = title[colonRange.upperBound...]
                 .trimmingCharacters(in: .whitespaces)
             if !afterColon.isEmpty {
-                // Recursively try to parse what's after the colon
                 if let parsed = parseOpponent(from: String(afterColon)) {
                     return parsed
                 }
-                // Otherwise use what's after the colon directly
                 return String(afterColon)
             }
         }
 
         // No pattern matched - return nil to signal fallback to full title
+        return nil
+    }
+
+    /// Extracts a pair of team names from formats like "Team1 vs Team2" or "Team1 @ Team2"
+    private func extractTeamPair(from title: String) -> (String, String)? {
+        let separators = [" vs ", " vs. ", " @ ", " at "]
+        let lowercased = title.lowercased()
+
+        for separator in separators {
+            if let range = lowercased.range(of: separator) {
+                let before = title[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
+                let after = title[range.upperBound...].trimmingCharacters(in: .whitespaces)
+                    .components(separatedBy: CharacterSet(charactersIn: "-–("))
+                    .first?
+                    .trimmingCharacters(in: .whitespaces) ?? ""
+
+                if !before.isEmpty && !after.isEmpty {
+                    return (before, after)
+                }
+            }
+        }
         return nil
     }
 

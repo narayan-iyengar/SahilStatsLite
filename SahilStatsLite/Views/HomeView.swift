@@ -18,47 +18,49 @@ struct HomeView: View {
     @State private var showAllGames = false
     @State private var showSettings = false
     @State private var selectedDate: Date = Date()
-    @State private var showDayGames = false
+    @State private var navigateToDay = false
 
     var body: some View {
-        ScrollView {
-            VStack(spacing: 24) {
-                // Header
-                headerSection
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    // Header
+                    headerSection
 
-                // Calendar (primary - this is how games are discovered)
-                if calendarManager.hasCalendarAccess {
-                    calendarSection
-                } else {
-                    calendarAccessCard
+                    // Calendar (primary - this is how games are discovered)
+                    if calendarManager.hasCalendarAccess {
+                        calendarSection
+                    } else {
+                        calendarAccessCard
+                    }
+
+                    // Career Stats Card (if we have games)
+                    if persistenceManager.careerGames > 0 {
+                        careerStatsCard
+                    }
+
+                    // Game Log Card
+                    gameLogCard
+
+                    Spacer(minLength: 40)
                 }
-
-                // Career Stats Card (if we have games)
-                if persistenceManager.careerGames > 0 {
-                    careerStatsCard
-                }
-
-                // Game Log Card
-                gameLogCard
-
-                Spacer(minLength: 40)
+                .padding()
             }
-            .padding()
-        }
-        .background(Color(.systemGroupedBackground))
-        .navigationBarHidden(true)
-        .sheet(isPresented: $showStatsSheet) {
-            CareerStatsSheet()
-        }
-        .sheet(isPresented: $showAllGames) {
-            AllGamesView()
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView()
-        }
-        .sheet(isPresented: $showDayGames) {
-            DayGamesSheet(date: selectedDate, calendarManager: calendarManager)
-                .environmentObject(appState)
+            .background(Color(.systemGroupedBackground))
+            .navigationBarHidden(true)
+            .navigationDestination(isPresented: $navigateToDay) {
+                DayGamesView(date: selectedDate, calendarManager: calendarManager)
+                    .environmentObject(appState)
+            }
+            .sheet(isPresented: $showStatsSheet) {
+                CareerStatsSheet()
+            }
+            .sheet(isPresented: $showAllGames) {
+                AllGamesView()
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView()
+            }
         }
     }
 
@@ -256,7 +258,7 @@ struct HomeView: View {
                     selectedDate = date
                     let games = calendarManager.games(for: date)
                     if !games.isEmpty {
-                        showDayGames = true
+                        navigateToDay = true
                     }
                 }
             )
@@ -463,9 +465,9 @@ struct DayCell: View {
     }
 }
 
-// MARK: - Day Games Sheet
+// MARK: - Day Games View (iOS Calendar-style navigation)
 
-struct DayGamesSheet: View {
+struct DayGamesView: View {
     let date: Date
     @ObservedObject var calendarManager: GameCalendarManager
     @EnvironmentObject var appState: AppState
@@ -477,63 +479,124 @@ struct DayGamesSheet: View {
 
     private var dateTitle: String {
         let formatter = DateFormatter()
-        formatter.dateStyle = .full
+        formatter.dateFormat = "EEEE, MMMM d"
+        return formatter.string(from: date)
+    }
+
+    private var yearString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy"
         return formatter.string(from: date)
     }
 
     var body: some View {
-        NavigationView {
-            List {
+        ScrollView {
+            VStack(spacing: 0) {
+                // Large date header (like iOS Calendar day view)
+                VStack(spacing: 4) {
+                    Text(dayNumber)
+                        .font(.system(size: 72, weight: .light, design: .rounded))
+                        .foregroundColor(Calendar.current.isDateInToday(date) ? .orange : .primary)
+
+                    Text(dateTitle)
+                        .font(.title3)
+                        .fontWeight(.medium)
+                        .foregroundColor(.secondary)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
+                .background(Color(.systemBackground))
+
+                Divider()
+
+                // Games list
                 if games.isEmpty {
-                    ContentUnavailableView(
-                        "No Games",
-                        systemImage: "calendar.badge.exclamationmark",
-                        description: Text("No games scheduled for this day")
-                    )
+                    VStack(spacing: 16) {
+                        Image(systemName: "calendar.badge.exclamationmark")
+                            .font(.system(size: 48))
+                            .foregroundColor(.secondary.opacity(0.5))
+
+                        Text("No Games Scheduled")
+                            .font(.headline)
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 60)
                 } else {
-                    ForEach(games) { game in
-                        Button {
-                            dismiss()
-                            // Navigate to setup with pre-filled data
-                            appState.pendingCalendarGame = (opponent: game.opponent, location: game.location)
-                            appState.currentScreen = .setup
-                        } label: {
-                            HStack {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text("vs \(game.opponent)")
-                                        .font(.headline)
-                                        .foregroundColor(.primary)
-
-                                    Text(game.timeString)
-                                        .font(.subheadline)
-                                        .foregroundColor(.secondary)
-
-                                    if !game.location.isEmpty {
-                                        Label(game.location, systemImage: "location")
-                                            .font(.caption)
-                                            .foregroundColor(.secondary)
-                                    }
-                                }
-
-                                Spacer()
-
-                                Image(systemName: "chevron.right")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
+                    LazyVStack(spacing: 0) {
+                        ForEach(games) { game in
+                            Button {
+                                appState.pendingCalendarGame = (opponent: game.opponent, location: game.location)
+                                appState.currentScreen = .setup
+                            } label: {
+                                gameRow(game)
                             }
-                            .padding(.vertical, 4)
+                            .buttonStyle(.plain)
+
+                            Divider()
+                                .padding(.leading, 16)
                         }
                     }
+                    .background(Color(.systemBackground))
                 }
-            }
-            .navigationTitle(dateTitle)
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
-                }
+
+                Spacer(minLength: 100)
             }
         }
+        .background(Color(.systemGroupedBackground))
+        .navigationTitle(yearString)
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var dayNumber: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "d"
+        return formatter.string(from: date)
+    }
+
+    private func gameRow(_ game: GameCalendarManager.CalendarGame) -> some View {
+        HStack(spacing: 12) {
+            // Time
+            VStack(alignment: .trailing, spacing: 2) {
+                Text(game.timeString)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.primary)
+            }
+            .frame(width: 60, alignment: .trailing)
+
+            // Color bar
+            RoundedRectangle(cornerRadius: 2)
+                .fill(Color.orange)
+                .frame(width: 4)
+
+            // Game details
+            VStack(alignment: .leading, spacing: 4) {
+                Text(game.opponent)
+                    .font(.headline)
+                    .foregroundColor(.primary)
+
+                if !game.location.isEmpty {
+                    Label(game.location, systemImage: "location.fill")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
+                Text(game.calendarTitle)
+                    .font(.caption2)
+                    .foregroundColor(.secondary.opacity(0.7))
+            }
+
+            Spacer()
+
+            // Play button
+            Image(systemName: "play.circle.fill")
+                .font(.title2)
+                .foregroundColor(.orange)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground))
     }
 }
 
@@ -1410,12 +1473,8 @@ struct SettingsView: View {
     @ObservedObject private var youtubeService = YouTubeService.shared
     @Environment(\.dismiss) private var dismiss
 
-    // Teams stored in UserDefaults as JSON
-    @State private var teams: [String] = []
     @State private var newTeamName: String = ""
     @State private var showAddTeam: Bool = false
-
-    private let teamsKey = "myTeams"
 
     var body: some View {
         NavigationView {
@@ -1456,21 +1515,32 @@ struct SettingsView: View {
                     Text("Videos are uploaded as unlisted to your YouTube channel for easy sharing with coaches.")
                 }
 
-                // My Teams Section
+                // My Teams Section (for smart opponent detection)
                 Section {
-                    ForEach(Array(teams.enumerated()), id: \.offset) { _, team in
+                    ForEach(calendarManager.knownTeamNames, id: \.self) { team in
                         Text(team)
                     }
-                    .onDelete(perform: deleteTeam)
+                    .onDelete { indexSet in
+                        for index in indexSet {
+                            let team = calendarManager.knownTeamNames[index]
+                            calendarManager.removeKnownTeamName(team)
+                        }
+                    }
 
                     // Add team row
                     if showAddTeam {
                         HStack {
                             TextField("Team name", text: $newTeamName)
                                 .textFieldStyle(.plain)
+                                .autocapitalization(.words)
 
                             Button {
-                                addTeam()
+                                let trimmed = newTeamName.trimmingCharacters(in: .whitespaces)
+                                if !trimmed.isEmpty {
+                                    calendarManager.addKnownTeamName(trimmed)
+                                    newTeamName = ""
+                                    showAddTeam = false
+                                }
                             } label: {
                                 Image(systemName: "checkmark.circle.fill")
                                     .foregroundColor(.green)
@@ -1495,7 +1565,7 @@ struct SettingsView: View {
                 } header: {
                     Text("My Teams")
                 } footer: {
-                    Text("Teams you play for. Select one when starting a new game.")
+                    Text("Sahil's teams (Uneqld, Lava, etc). Calendar events with these names will auto-detect the opponent.")
                 }
 
                 // Calendar Section
@@ -1651,52 +1721,7 @@ struct SettingsView: View {
                     Button("Done") { dismiss() }
                 }
             }
-            .onAppear {
-                loadTeams()
-            }
         }
-    }
-
-    // MARK: - Team Management Helpers
-
-    private func loadTeams() {
-        if let data = UserDefaults.standard.data(forKey: teamsKey),
-           let decoded = try? JSONDecoder().decode([String].self, from: data) {
-            teams = decoded
-        } else {
-            // Migration: check for old single team name
-            if let oldTeam = UserDefaults.standard.string(forKey: "myTeamName"), !oldTeam.isEmpty {
-                teams = [oldTeam]
-                saveTeams()
-            } else {
-                teams = ["Wildcats"] // Default
-                saveTeams()
-            }
-        }
-    }
-
-    private func saveTeams() {
-        if let encoded = try? JSONEncoder().encode(teams) {
-            UserDefaults.standard.set(encoded, forKey: teamsKey)
-        }
-    }
-
-    private func addTeam() {
-        let trimmed = newTeamName.trimmingCharacters(in: .whitespaces)
-        guard !trimmed.isEmpty, !teams.contains(trimmed) else { return }
-        teams.append(trimmed)
-        saveTeams()
-        newTeamName = ""
-        showAddTeam = false
-    }
-
-    private func deleteTeam(at offsets: IndexSet) {
-        teams.remove(atOffsets: offsets)
-        // Ensure at least one team exists
-        if teams.isEmpty {
-            teams = ["My Team"]
-        }
-        saveTeams()
     }
 
     // MARK: - Calendar Selection Helpers
