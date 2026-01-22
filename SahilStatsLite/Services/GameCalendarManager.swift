@@ -19,9 +19,11 @@ class GameCalendarManager: ObservableObject {
     @MainActor @Published var upcomingGames: [CalendarGame] = []
     @MainActor @Published var selectedCalendars: [String] = []
     @MainActor @Published var knownTeamNames: [String] = []
+    @MainActor @Published var ignoredEventIDs: Set<String> = []
 
     private let selectedCalendarsKey = "selectedCalendars"
     private let knownTeamNamesKey = "knownTeamNames"
+    private let ignoredEventsKey = "ignoredEventIDs"
 
     // Default team names for Sahil's teams
     private let defaultTeamNames = ["Uneqld", "UNEQLD", "Lava", "LAVA", "Elements", "ELEMENTS"]
@@ -59,7 +61,34 @@ class GameCalendarManager: ObservableObject {
     private init() {
         loadSelectedCalendars()
         loadKnownTeamNames()
+        loadIgnoredEvents()
         checkCalendarAccess()
+    }
+
+    // MARK: - Ignored Events
+
+    private func loadIgnoredEvents() {
+        if let saved = UserDefaults.standard.array(forKey: ignoredEventsKey) as? [String] {
+            ignoredEventIDs = Set(saved)
+        }
+    }
+
+    func ignoreEvent(_ eventID: String) {
+        ignoredEventIDs.insert(eventID)
+        UserDefaults.standard.set(Array(ignoredEventIDs), forKey: ignoredEventsKey)
+        loadUpcomingGames() // Refresh to remove from list
+    }
+
+    func unignoreEvent(_ eventID: String) {
+        ignoredEventIDs.remove(eventID)
+        UserDefaults.standard.set(Array(ignoredEventIDs), forKey: ignoredEventsKey)
+        loadUpcomingGames()
+    }
+
+    func clearIgnoredEvents() {
+        ignoredEventIDs.removeAll()
+        UserDefaults.standard.removeObject(forKey: ignoredEventsKey)
+        loadUpcomingGames()
     }
 
     // MARK: - Known Team Names
@@ -179,23 +208,33 @@ class GameCalendarManager: ObservableObject {
 
         let events = eventStore.events(matching: predicate)
 
-        // Parse events into games - show ALL events from selected calendars
-        upcomingGames = events.map { event -> CalendarGame in
-            let title = event.title ?? "Game"
-            // Try to extract opponent, fall back to event title
-            let opponent = parseOpponent(from: title) ?? title
+        // Filter to events containing known team names, exclude ignored
+        upcomingGames = events
+            .filter { event in
+                guard let title = event.title else { return false }
+                // Skip ignored events
+                if ignoredEventIDs.contains(event.eventIdentifier) { return false }
+                // Only include events with known team names
+                let lowercasedTitle = title.lowercased()
+                return knownTeamNames.contains { teamName in
+                    lowercasedTitle.contains(teamName.lowercased())
+                }
+            }
+            .map { event -> CalendarGame in
+                let title = event.title ?? "Game"
+                let opponent = parseOpponent(from: title) ?? title
 
-            return CalendarGame(
-                id: event.eventIdentifier,
-                title: title,
-                opponent: opponent,
-                location: event.location ?? "",
-                startTime: event.startDate,
-                endTime: event.endDate,
-                calendarTitle: event.calendar.title
-            )
-        }
-        .sorted { $0.startTime < $1.startTime }
+                return CalendarGame(
+                    id: event.eventIdentifier,
+                    title: title,
+                    opponent: opponent,
+                    location: event.location ?? "",
+                    startTime: event.startDate,
+                    endTime: event.endDate,
+                    calendarTitle: event.calendar.title
+                )
+            }
+            .sorted { $0.startTime < $1.startTime }
     }
 
     // MARK: - Parse Opponent

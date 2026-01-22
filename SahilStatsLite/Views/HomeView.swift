@@ -17,50 +17,42 @@ struct HomeView: View {
     @State private var showStatsSheet = false
     @State private var showAllGames = false
     @State private var showSettings = false
-    @State private var selectedDate: Date = Date()
-    @State private var navigateToDay = false
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(spacing: 24) {
-                    // Header
-                    headerSection
+        ScrollView {
+            VStack(spacing: 24) {
+                // Header
+                headerSection
 
-                    // Calendar (primary - this is how games are discovered)
-                    if calendarManager.hasCalendarAccess {
-                        calendarSection
-                    } else {
-                        calendarAccessCard
-                    }
-
-                    // Career Stats Card (if we have games)
-                    if persistenceManager.careerGames > 0 {
-                        careerStatsCard
-                    }
-
-                    // Game Log Card
-                    gameLogCard
-
-                    Spacer(minLength: 40)
+                // Upcoming Games (smart filtered from calendar)
+                if calendarManager.hasCalendarAccess {
+                    upcomingGamesSection
+                } else {
+                    calendarAccessCard
                 }
-                .padding()
+
+                // Career Stats Card (if we have games)
+                if persistenceManager.careerGames > 0 {
+                    careerStatsCard
+                }
+
+                // Game Log Card
+                gameLogCard
+
+                Spacer(minLength: 40)
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationBarHidden(true)
-            .navigationDestination(isPresented: $navigateToDay) {
-                DayGamesView(date: selectedDate, calendarManager: calendarManager)
-                    .environmentObject(appState)
-            }
-            .sheet(isPresented: $showStatsSheet) {
-                CareerStatsSheet()
-            }
-            .sheet(isPresented: $showAllGames) {
-                AllGamesView()
-            }
-            .sheet(isPresented: $showSettings) {
-                SettingsView()
-            }
+            .padding()
+        }
+        .background(Color(.systemGroupedBackground))
+        .navigationBarHidden(true)
+        .sheet(isPresented: $showStatsSheet) {
+            CareerStatsSheet()
+        }
+        .sheet(isPresented: $showAllGames) {
+            AllGamesView()
+        }
+        .sheet(isPresented: $showSettings) {
+            SettingsView()
         }
     }
 
@@ -233,38 +225,59 @@ struct HomeView: View {
         }
     }
 
-    // MARK: - Calendar Section
+    // MARK: - Upcoming Games Section (Smart Filtered)
 
-    private var calendarSection: some View {
+    private var upcomingGamesSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Text("Schedule")
+                Text("Upcoming Games")
                     .font(.headline)
                     .foregroundColor(.secondary)
                 Spacer()
                 Button {
                     showSettings = true
                 } label: {
-                    Text("Calendars")
-                        .font(.caption)
-                        .foregroundColor(.orange)
+                    Image(systemName: "gear")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
                 }
             }
 
-            CalendarMonthView(
-                selectedDate: $selectedDate,
-                calendarManager: calendarManager,
-                onDateTap: { date in
-                    selectedDate = date
-                    let games = calendarManager.games(for: date)
-                    if !games.isEmpty {
-                        navigateToDay = true
+            if calendarManager.upcomingGames.isEmpty {
+                // Empty state
+                VStack(spacing: 12) {
+                    Image(systemName: "calendar.badge.clock")
+                        .font(.system(size: 36))
+                        .foregroundColor(.secondary.opacity(0.5))
+
+                    Text("No upcoming games")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    Text("Events with your team names\n(Uneqld, Lava, Elements) will appear here")
+                        .font(.caption)
+                        .foregroundColor(.secondary.opacity(0.7))
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 32)
+                .background(Color(.systemBackground))
+                .cornerRadius(16)
+            } else {
+                // Games list
+                VStack(spacing: 0) {
+                    ForEach(calendarManager.upcomingGames) { game in
+                        UpcomingGameRow(game: game, appState: appState, calendarManager: calendarManager)
+
+                        if game.id != calendarManager.upcomingGames.last?.id {
+                            Divider()
+                                .padding(.leading, 60)
+                        }
                     }
                 }
-            )
-            .padding()
-            .background(Color(.systemBackground))
-            .cornerRadius(16)
+                .background(Color(.systemBackground))
+                .cornerRadius(16)
+            }
         }
     }
 
@@ -301,302 +314,85 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Calendar Month View
+// MARK: - Upcoming Game Row (with swipe to ignore)
 
-struct CalendarMonthView: View {
-    @Binding var selectedDate: Date
-    @ObservedObject var calendarManager: GameCalendarManager
-    var onDateTap: (Date) -> Void
+struct UpcomingGameRow: View {
+    let game: GameCalendarManager.CalendarGame
+    let appState: AppState
+    let calendarManager: GameCalendarManager
 
-    @State private var displayedMonth: Date = Date()
-
-    private let calendar = Calendar.current
-    private let weekdaySymbols = Calendar.current.veryShortWeekdaySymbols
-
-    private var monthTitle: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "MMMM yyyy"
-        return formatter.string(from: displayedMonth)
-    }
-
-    private var daysInMonth: [Date?] {
-        guard let monthInterval = calendar.dateInterval(of: .month, for: displayedMonth),
-              let monthFirstWeek = calendar.dateInterval(of: .weekOfMonth, for: monthInterval.start) else {
-            return []
+    private var dateLabel: String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(game.startTime) {
+            return "TODAY"
+        } else if calendar.isDateInTomorrow(game.startTime) {
+            return "TOMORROW"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEE, MMM d"
+            return formatter.string(from: game.startTime).uppercased()
         }
-
-        var days: [Date?] = []
-        var currentDate = monthFirstWeek.start
-
-        // Add days for 6 weeks (covers all possible month layouts)
-        for _ in 0..<42 {
-            if calendar.isDate(currentDate, equalTo: displayedMonth, toGranularity: .month) {
-                days.append(currentDate)
-            } else if days.isEmpty || days.last != nil {
-                days.append(nil)
-            }
-            currentDate = calendar.date(byAdding: .day, value: 1, to: currentDate) ?? currentDate
-        }
-
-        // Trim trailing nils
-        while days.last == nil && days.count > 0 {
-            days.removeLast()
-        }
-
-        return days
     }
 
     var body: some View {
-        VStack(spacing: 16) {
-            // Month navigation
-            HStack {
-                Button {
-                    withAnimation {
-                        displayedMonth = calendar.date(byAdding: .month, value: -1, to: displayedMonth) ?? displayedMonth
+        Button {
+            appState.pendingCalendarGame = (opponent: game.opponent, location: game.location)
+            appState.currentScreen = .setup
+        } label: {
+            HStack(spacing: 12) {
+                // Date & Time
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(dateLabel)
+                        .font(.caption)
+                        .fontWeight(.semibold)
+                        .foregroundColor(Calendar.current.isDateInToday(game.startTime) ? .orange : .secondary)
+
+                    Text(game.timeString)
+                        .font(.subheadline)
+                        .foregroundColor(.primary)
+                }
+                .frame(width: 80, alignment: .leading)
+
+                // Color bar
+                RoundedRectangle(cornerRadius: 2)
+                    .fill(Color.orange)
+                    .frame(width: 4, height: 40)
+
+                // Game details
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("vs \(game.opponent)")
+                        .font(.headline)
+                        .foregroundColor(.primary)
+
+                    if !game.location.isEmpty {
+                        Text(game.location)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
                     }
-                } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.body.weight(.semibold))
-                        .foregroundColor(.orange)
                 }
 
                 Spacer()
 
-                Text(monthTitle)
-                    .font(.headline)
-
-                Spacer()
-
-                Button {
-                    withAnimation {
-                        displayedMonth = calendar.date(byAdding: .month, value: 1, to: displayedMonth) ?? displayedMonth
-                    }
-                } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.body.weight(.semibold))
-                        .foregroundColor(.orange)
-                }
+                // Start button
+                Image(systemName: "play.circle.fill")
+                    .font(.title2)
+                    .foregroundColor(.orange)
             }
-
-            // Weekday headers
-            HStack(spacing: 0) {
-                ForEach(Array(weekdaySymbols.enumerated()), id: \.offset) { _, symbol in
-                    Text(symbol)
-                        .font(.caption2)
-                        .fontWeight(.medium)
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-
-            // Days grid
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 8) {
-                ForEach(Array(daysInMonth.enumerated()), id: \.offset) { _, date in
-                    if let date = date {
-                        DayCell(
-                            date: date,
-                            isToday: calendar.isDateInToday(date),
-                            isSelected: calendar.isDate(date, inSameDayAs: selectedDate),
-                            hasGames: !calendarManager.games(for: date).isEmpty,
-                            onTap: { onDateTap(date) }
-                        )
-                    } else {
-                        Color.clear
-                            .frame(height: 36)
-                    }
-                }
-            }
-        }
-    }
-}
-
-// MARK: - Day Cell
-
-struct DayCell: View {
-    let date: Date
-    let isToday: Bool
-    let isSelected: Bool
-    let hasGames: Bool
-    let onTap: () -> Void
-
-    private var dayNumber: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d"
-        return formatter.string(from: date)
-    }
-
-    var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 2) {
-                Text(dayNumber)
-                    .font(.system(.callout, design: .rounded))
-                    .fontWeight(hasGames ? .bold : .regular)
-                    .foregroundColor(foregroundColor)
-
-                // Game indicator dot
-                Circle()
-                    .fill(hasGames ? Color.orange : Color.clear)
-                    .frame(width: 6, height: 6)
-            }
-            .frame(height: 36)
-            .frame(maxWidth: .infinity)
-            .background(backgroundColor)
-            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
         }
         .buttonStyle(.plain)
-    }
-
-    private var foregroundColor: Color {
-        if isSelected {
-            return .white
-        } else if isToday {
-            return .orange
-        } else {
-            return .primary
-        }
-    }
-
-    private var backgroundColor: Color {
-        if isSelected {
-            return .orange
-        } else {
-            return .clear
-        }
-    }
-}
-
-// MARK: - Day Games View (iOS Calendar-style navigation)
-
-struct DayGamesView: View {
-    let date: Date
-    @ObservedObject var calendarManager: GameCalendarManager
-    @EnvironmentObject var appState: AppState
-    @Environment(\.dismiss) private var dismiss
-
-    private var games: [GameCalendarManager.CalendarGame] {
-        calendarManager.games(for: date)
-    }
-
-    private var dateTitle: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "EEEE, MMMM d"
-        return formatter.string(from: date)
-    }
-
-    private var yearString: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy"
-        return formatter.string(from: date)
-    }
-
-    var body: some View {
-        ScrollView {
-            VStack(spacing: 0) {
-                // Large date header (like iOS Calendar day view)
-                VStack(spacing: 4) {
-                    Text(dayNumber)
-                        .font(.system(size: 72, weight: .light, design: .rounded))
-                        .foregroundColor(Calendar.current.isDateInToday(date) ? .orange : .primary)
-
-                    Text(dateTitle)
-                        .font(.title3)
-                        .fontWeight(.medium)
-                        .foregroundColor(.secondary)
+        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+            Button(role: .destructive) {
+                withAnimation {
+                    calendarManager.ignoreEvent(game.id)
                 }
-                .frame(maxWidth: .infinity)
-                .padding(.vertical, 32)
-                .background(Color(.systemBackground))
-
-                Divider()
-
-                // Games list
-                if games.isEmpty {
-                    VStack(spacing: 16) {
-                        Image(systemName: "calendar.badge.exclamationmark")
-                            .font(.system(size: 48))
-                            .foregroundColor(.secondary.opacity(0.5))
-
-                        Text("No Games Scheduled")
-                            .font(.headline)
-                            .foregroundColor(.secondary)
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 60)
-                } else {
-                    LazyVStack(spacing: 0) {
-                        ForEach(games) { game in
-                            Button {
-                                appState.pendingCalendarGame = (opponent: game.opponent, location: game.location)
-                                appState.currentScreen = .setup
-                            } label: {
-                                gameRow(game)
-                            }
-                            .buttonStyle(.plain)
-
-                            Divider()
-                                .padding(.leading, 16)
-                        }
-                    }
-                    .background(Color(.systemBackground))
-                }
-
-                Spacer(minLength: 100)
+            } label: {
+                Label("Ignore", systemImage: "eye.slash")
             }
+            .tint(.gray)
         }
-        .background(Color(.systemGroupedBackground))
-        .navigationTitle(yearString)
-        .navigationBarTitleDisplayMode(.inline)
-    }
-
-    private var dayNumber: String {
-        let formatter = DateFormatter()
-        formatter.dateFormat = "d"
-        return formatter.string(from: date)
-    }
-
-    private func gameRow(_ game: GameCalendarManager.CalendarGame) -> some View {
-        HStack(spacing: 12) {
-            // Time
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(game.timeString)
-                    .font(.subheadline)
-                    .fontWeight(.medium)
-                    .foregroundColor(.primary)
-            }
-            .frame(width: 60, alignment: .trailing)
-
-            // Color bar
-            RoundedRectangle(cornerRadius: 2)
-                .fill(Color.orange)
-                .frame(width: 4)
-
-            // Game details
-            VStack(alignment: .leading, spacing: 4) {
-                Text(game.opponent)
-                    .font(.headline)
-                    .foregroundColor(.primary)
-
-                if !game.location.isEmpty {
-                    Label(game.location, systemImage: "location.fill")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-
-                Text(game.calendarTitle)
-                    .font(.caption2)
-                    .foregroundColor(.secondary.opacity(0.7))
-            }
-
-            Spacer()
-
-            // Play button
-            Image(systemName: "play.circle.fill")
-                .font(.title2)
-                .foregroundColor(.orange)
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 12)
-        .background(Color(.systemBackground))
     }
 }
 

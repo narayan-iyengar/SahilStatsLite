@@ -516,8 +516,9 @@ logger.info("Message here")
 15. **Watch period sync fix**: `sendPeriodUpdate` now includes `isRunning` so Watch shows correct clock state (orange/solid) in 2nd Half and OT
 16. **iOS blinking colon fix**: Created dedicated `BlinkingColon` view struct with its own timer - fixes issue where colon wasn't blinking on iOS
 17. **App icons**: Copied 1024.png from SahilStats to both iOS and Watch app
-18. **Smart opponent detection**: Calendar events now auto-detect opponent by recognizing Sahil's team names (Uneqld, Lava, Elements). No need for "vs" prefix.
-19. **iOS Calendar-style day view**: Tapping a date now navigates (push transition) to a day detail view instead of showing a popup sheet. Large date number header like Apple Calendar.
+18. **Smart calendar filtering**: Only shows calendar events containing Sahil's team names (Uneqld, Lava, Elements). No complex calendar grid - just "Upcoming Games" list.
+19. **Swipe to ignore**: Practices and non-game events can be swiped away (ignored). They won't reappear.
+20. **Auto opponent detection**: "Uneqld vs Hawks" → Opponent detected as "Hawks" automatically.
 
 ---
 
