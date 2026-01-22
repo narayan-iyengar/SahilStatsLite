@@ -118,12 +118,13 @@ class WatchConnectivityService: NSObject, ObservableObject {
     }
 
     /// Send period update to watch
-    func sendPeriodUpdate(period: String, periodIndex: Int, remainingSeconds: Int) {
+    func sendPeriodUpdate(period: String, periodIndex: Int, remainingSeconds: Int, isRunning: Bool) {
         let message: [String: Any] = [
             WatchMessage.periodUpdate: true,
             WatchMessage.period: period,
             WatchMessage.periodIndex: periodIndex,
-            WatchMessage.remainingSeconds: remainingSeconds
+            WatchMessage.remainingSeconds: remainingSeconds,
+            WatchMessage.isRunning: isRunning
         ]
         sendMessage(message)
     }

@@ -53,7 +53,6 @@ struct UltraMinimalRecordingView: View {
     @State private var isPortrait: Bool = true
     @State private var hasStartedRecording: Bool = false
     @State private var isPulsing: Bool = false
-    @State private var colonVisible: Bool = true
 
     // Computed
     private var halfLength: Int {
@@ -239,14 +238,6 @@ struct UltraMinimalRecordingView: View {
             }
         }
         .animation(.spring(response: 0.3), value: showSahilStats)
-        .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-            // Blink colon when clock is running
-            if isClockRunning {
-                colonVisible.toggle()
-            } else {
-                colonVisible = true
-            }
-        }
     }
 
     // MARK: - Initialize Game State
@@ -340,7 +331,7 @@ struct UltraMinimalRecordingView: View {
     private func sendPeriodToWatch() {
         let periodNames = ["1st Half", "2nd Half", "OT", "OT2", "OT3"]
         let periodIdx = periodNames.firstIndex(of: period) ?? 0
-        watchService.sendPeriodUpdate(period: period, periodIndex: periodIdx, remainingSeconds: remainingSeconds)
+        watchService.sendPeriodUpdate(period: period, periodIndex: periodIdx, remainingSeconds: remainingSeconds, isRunning: isClockRunning)
     }
 
     // MARK: - Camera Preview
@@ -505,17 +496,21 @@ struct UltraMinimalRecordingView: View {
                     .frame(width: 1, height: 22)
                     .padding(.horizontal, 6)
 
-                // Clock (tap to pause/play) - colon blinks when paused
+                // Clock (tap to pause/play) - colon blinks when running
                 HStack(spacing: 0) {
                     Text(clockMinutes)
                         .font(.system(size: 14, weight: .bold, design: .monospaced))
-                    Text(":")
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .opacity(isClockRunning ? (colonVisible ? 1.0 : 0.0) : 1.0)
+                        .foregroundColor(isClockRunning ? .white : .orange)
+                    BlinkingColon(
+                        isRunning: isClockRunning,
+                        font: .system(size: 14, weight: .bold, design: .monospaced),
+                        runningColor: .white,
+                        pausedColor: .orange
+                    )
                     Text(clockSeconds)
                         .font(.system(size: 14, weight: .bold, design: .monospaced))
+                        .foregroundColor(isClockRunning ? .white : .orange)
                 }
-                .foregroundColor(isClockRunning ? .white : .orange)
                 .frame(width: 52, alignment: .center)
                 .contentShape(Rectangle())
                 .onTapGesture { toggleClock() }
@@ -1132,6 +1127,31 @@ struct UltraMinimalRecordingView: View {
         }
     }
 
+}
+
+// MARK: - Blinking Colon View
+
+struct BlinkingColon: View {
+    let isRunning: Bool
+    let font: Font
+    let runningColor: Color
+    let pausedColor: Color
+
+    @State private var visible: Bool = true
+
+    var body: some View {
+        Text(":")
+            .font(font)
+            .foregroundColor(isRunning ? runningColor : pausedColor)
+            .opacity(isRunning ? (visible ? 1.0 : 0.0) : 1.0)
+            .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
+                if isRunning {
+                    visible.toggle()
+                } else {
+                    visible = true
+                }
+            }
+    }
 }
 
 // MARK: - Camera Preview View

@@ -513,6 +513,8 @@ logger.info("Message here")
 12. **Blinking colon**: Clock colon blinks when RUNNING (both iOS and Watch) - indicates active clock
 13. **Subtle tap zones**: Very faint orange/blue tints with center divider to indicate tap areas
 14. **Removed WatchAppMockup.swift**: -622 lines of dead code (real Watch app is working)
+15. **Watch period sync fix**: `sendPeriodUpdate` now includes `isRunning` so Watch shows correct clock state (orange/solid) in 2nd Half and OT
+16. **iOS blinking colon fix**: Created dedicated `BlinkingColon` view struct with its own timer - fixes issue where colon wasn't blinking on iOS
 
 ---
 

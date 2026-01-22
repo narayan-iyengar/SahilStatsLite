@@ -263,6 +263,9 @@ extension WatchConnectivityClient: WCSessionDelegate {
             if let secs = message[WatchMessage.remainingSeconds] as? Int {
                 remainingSeconds = secs
             }
+            if let running = message[WatchMessage.isRunning] as? Bool {
+                isClockRunning = running
+            }
         }
 
         // End game from phone
