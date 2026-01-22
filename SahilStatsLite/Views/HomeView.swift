@@ -19,6 +19,10 @@ struct HomeView: View {
     @State private var showSettings = false
     @State private var showUpcomingGames = false
 
+    // Undo toast state
+    @State private var hiddenGameID: String? = nil
+    @State private var showUndoToast = false
+
     var body: some View {
         ScrollView {
             VStack(spacing: 24) {
@@ -68,6 +72,57 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showUpcomingGames) {
             UpcomingGamesSheet(calendarManager: calendarManager, appState: appState)
+        }
+        .overlay(alignment: .bottom) {
+            if showUndoToast {
+                undoToast
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .padding(.bottom, 40)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: showUndoToast)
+    }
+
+    // MARK: - Undo Toast
+
+    private var undoToast: some View {
+        HStack(spacing: 16) {
+            Text("Game hidden")
+                .font(.subheadline)
+                .foregroundColor(.white)
+
+            Button {
+                if let id = hiddenGameID {
+                    calendarManager.unignoreEvent(id)
+                }
+                showUndoToast = false
+                hiddenGameID = nil
+            } label: {
+                Text("Undo")
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.orange)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 12)
+        .background(.ultraThinMaterial, in: Capsule())
+        .onAppear {
+            // Auto-dismiss after 3 seconds
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                withAnimation {
+                    showUndoToast = false
+                    hiddenGameID = nil
+                }
+            }
+        }
+    }
+
+    func hideGame(_ gameID: String) {
+        hiddenGameID = gameID
+        calendarManager.ignoreEvent(gameID)
+        withAnimation {
+            showUndoToast = true
         }
     }
 
@@ -232,7 +287,7 @@ struct HomeView: View {
                     game: nextGame,
                     todayCount: todayGames.count,
                     appState: appState,
-                    calendarManager: calendarManager
+                    onHide: hideGame
                 )
 
                 // Later Today section (tournament days)
@@ -240,7 +295,7 @@ struct HomeView: View {
                     LaterTodaySection(
                         games: Array(todayGames.dropFirst()),
                         appState: appState,
-                        calendarManager: calendarManager
+                        onHide: hideGame
                     )
                 }
 
@@ -343,7 +398,7 @@ struct NextGameHeroCard: View {
     let game: GameCalendarManager.CalendarGame
     let todayCount: Int
     let appState: AppState
-    let calendarManager: GameCalendarManager
+    let onHide: (String) -> Void
 
     private var isToday: Bool {
         Calendar.current.isDateInToday(game.startTime)
@@ -396,9 +451,7 @@ struct NextGameHeroCard: View {
 
                 // Hide button - subtle, one tap
                 Button {
-                    withAnimation {
-                        calendarManager.ignoreEvent(game.id)
-                    }
+                    onHide(game.id)
                 } label: {
                     Image(systemName: "eye.slash")
                         .font(.footnote)
@@ -484,7 +537,7 @@ struct NextGameHeroCard: View {
 struct LaterTodaySection: View {
     let games: [GameCalendarManager.CalendarGame]
     let appState: AppState
-    let calendarManager: GameCalendarManager
+    let onHide: (String) -> Void
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -496,7 +549,7 @@ struct LaterTodaySection: View {
 
             VStack(spacing: 0) {
                 ForEach(games) { game in
-                    LaterTodayRow(game: game, appState: appState, calendarManager: calendarManager)
+                    LaterTodayRow(game: game, appState: appState, onHide: onHide)
 
                     if game.id != games.last?.id {
                         Divider()
@@ -513,7 +566,7 @@ struct LaterTodaySection: View {
 struct LaterTodayRow: View {
     let game: GameCalendarManager.CalendarGame
     let appState: AppState
-    let calendarManager: GameCalendarManager
+    let onHide: (String) -> Void
 
     var body: some View {
         Button {
@@ -562,9 +615,7 @@ struct LaterTodayRow: View {
         .buttonStyle(.plain)
         .contextMenu {
             Button(role: .destructive) {
-                withAnimation {
-                    calendarManager.ignoreEvent(game.id)
-                }
+                onHide(game.id)
             } label: {
                 Label("Hide this game", systemImage: "eye.slash")
             }
