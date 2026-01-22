@@ -40,6 +40,16 @@ struct HomeView: View {
                 // Game Log Card
                 gameLogCard
 
+                // Settings link - subtle, at the bottom where it belongs
+                Button {
+                    showSettings = true
+                } label: {
+                    Text("Settings")
+                        .font(.footnote)
+                        .foregroundColor(.secondary.opacity(0.6))
+                }
+                .padding(.top, 20)
+
                 Spacer(minLength: 40)
             }
             .padding()
@@ -65,14 +75,9 @@ struct HomeView: View {
 
     private var headerSection: some View {
         HStack {
-            // Settings button
-            Button {
-                showSettings = true
-            } label: {
-                Image(systemName: "ellipsis")
-                    .font(.title3)
-                    .foregroundColor(.secondary.opacity(0.6))
-            }
+            // Empty space for balance
+            Color.clear
+                .frame(width: 32, height: 32)
 
             Spacer()
 
@@ -88,7 +93,7 @@ struct HomeView: View {
 
             Spacer()
 
-            // New Game button (+ icon for recording)
+            // New Game button
             Button {
                 appState.isLogOnly = false
                 appState.currentScreen = .setup
@@ -97,6 +102,7 @@ struct HomeView: View {
                     .font(.title2)
                     .foregroundColor(.orange)
             }
+            .frame(width: 32, height: 32)
         }
         .padding(.top, 20)
     }
