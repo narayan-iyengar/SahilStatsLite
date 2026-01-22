@@ -526,6 +526,7 @@ logger.info("Message here")
 25. **Jony Ive header cleanup**: Removed settings icon from header. Settings now a subtle text link at bottom of scroll content. Header is clean and centered.
 26. **Hidden scroll indicators**: Removed scroll bar for cleaner look.
 27. **Direct hide button**: Replaced ellipsis menu with subtle `eye.slash` icon - one tap to hide a game, no menu.
+28. **Undo toast for hide**: Shows "Game hidden" toast with Undo button for 3 seconds. Capsule design with blur background. Tap Undo to restore.
 
 ---
 
