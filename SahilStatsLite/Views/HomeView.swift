@@ -394,20 +394,15 @@ struct NextGameHeroCard: View {
                         .foregroundColor(.secondary)
                 }
 
-                // Ignore button
-                Menu {
-                    Button(role: .destructive) {
-                        withAnimation {
-                            calendarManager.ignoreEvent(game.id)
-                        }
-                    } label: {
-                        Label("Hide this game", systemImage: "eye.slash")
+                // Hide button - subtle, one tap
+                Button {
+                    withAnimation {
+                        calendarManager.ignoreEvent(game.id)
                     }
                 } label: {
-                    Image(systemName: "ellipsis")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
-                        .padding(8)
+                    Image(systemName: "eye.slash")
+                        .font(.footnote)
+                        .foregroundColor(.secondary.opacity(0.5))
                 }
             }
             .padding(.horizontal, 20)
