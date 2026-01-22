@@ -44,6 +44,7 @@ struct HomeView: View {
             }
             .padding()
         }
+        .scrollIndicators(.hidden)
         .background(Color(.systemGroupedBackground))
         .navigationBarHidden(true)
         .sheet(isPresented: $showStatsSheet) {
@@ -68,9 +69,9 @@ struct HomeView: View {
             Button {
                 showSettings = true
             } label: {
-                Image(systemName: "ellipsis.circle")
-                    .font(.title2)
-                    .foregroundColor(.secondary)
+                Image(systemName: "ellipsis")
+                    .font(.title3)
+                    .foregroundColor(.secondary.opacity(0.6))
             }
 
             Spacer()
