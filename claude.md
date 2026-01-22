@@ -1,6 +1,6 @@
 # Sahil Stats - Project Context
 
-> **UPDATED (2026-01-21):** Watch app working, YouTube upload added (lean ~200 lines), WYSIWYG overlays (SwiftUI matches video), blinking colon when paused, 4-char team names, OT fixed.
+> **UPDATED (2026-01-21):** Hero Card calendar UI, smart opponent/team detection from calendar, normalized team names (no case duplicates).
 
 ---
 
@@ -519,6 +519,10 @@ logger.info("Message here")
 18. **Smart calendar filtering**: Only shows calendar events containing Sahil's team names (Uneqld, Lava, Elements). No complex calendar grid - just "Upcoming Games" list.
 19. **Swipe to ignore**: Practices and non-game events can be swiped away (ignored). They won't reappear.
 20. **Auto opponent detection**: "Uneqld vs Hawks" → Opponent detected as "Hawks" automatically.
+21. **Hero Card calendar UI**: Next game shown prominently with large time, opponent name, location, and "Record Game" button. Tournament days show "LATER TODAY" section for multiple games.
+22. **Smart team detection from calendar**: "Royal Kings - Bay Area Lava" → Detects "Lava" as your team, "Royal Kings" as opponent. Auto-selects team in GameSetupView.
+23. **Normalized team names**: Removed case duplicates (e.g., "Lava" and "LAVA" merged to just "Lava"). Settings now shows clean list.
+24. **Upcoming Games sheet**: "More games this month" link shows full list grouped by date (Today, Tomorrow, Friday Jan 24, etc.) instead of going to Settings.
 
 ---
 

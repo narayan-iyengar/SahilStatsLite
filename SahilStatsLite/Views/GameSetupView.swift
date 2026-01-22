@@ -171,6 +171,17 @@ struct GameSetupView: View {
             if let pending = appState.pendingCalendarGame {
                 opponent = pending.opponent
                 location = pending.location
+
+                // Auto-select team if detected from calendar
+                if let detectedTeam = pending.team {
+                    // Find matching team (case-insensitive)
+                    if let matchingTeam = teams.first(where: { $0.lowercased() == detectedTeam.lowercased() }) {
+                        selectedTeam = matchingTeam
+                    } else if let matchingTeam = teams.first(where: { $0.lowercased().contains(detectedTeam.lowercased()) || detectedTeam.lowercased().contains($0.lowercased()) }) {
+                        selectedTeam = matchingTeam
+                    }
+                }
+
                 // Clear after use
                 appState.pendingCalendarGame = nil
             }

@@ -84,7 +84,7 @@ class AppState: ObservableObject {
     @MainActor @Published var isStatsOnly: Bool = false
 
     // Pre-fill data from calendar (cleared after use)
-    @MainActor @Published var pendingCalendarGame: (opponent: String, location: String)?
+    @MainActor @Published var pendingCalendarGame: (opponent: String, location: String, team: String?)?
 
     // Recent games now come from persistence
     var recentGames: [Game] {

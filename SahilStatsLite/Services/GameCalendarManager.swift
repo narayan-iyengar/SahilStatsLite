@@ -25,8 +25,8 @@ class GameCalendarManager: ObservableObject {
     private let knownTeamNamesKey = "knownTeamNames"
     private let ignoredEventsKey = "ignoredEventIDs"
 
-    // Default team names for Sahil's teams
-    private let defaultTeamNames = ["Uneqld", "UNEQLD", "Lava", "LAVA", "Elements", "ELEMENTS"]
+    // Default team names for Sahil's teams (normalized - no duplicates)
+    private let defaultTeamNames = ["Uneqld", "Lava", "Elements"]
 
     // MARK: - Calendar Game Model
 
@@ -34,6 +34,7 @@ class GameCalendarManager: ObservableObject {
         let id: String
         let title: String
         let opponent: String
+        let detectedTeam: String?  // Which of our teams is playing (e.g., "Lava")
         let location: String
         let startTime: Date
         let endTime: Date
@@ -95,7 +96,12 @@ class GameCalendarManager: ObservableObject {
 
     private func loadKnownTeamNames() {
         if let saved = UserDefaults.standard.array(forKey: knownTeamNamesKey) as? [String], !saved.isEmpty {
-            knownTeamNames = saved
+            // Normalize: remove case-insensitive duplicates, keep first occurrence
+            knownTeamNames = normalizeTeamNames(saved)
+            // Save back if we removed duplicates
+            if knownTeamNames.count != saved.count {
+                UserDefaults.standard.set(knownTeamNames, forKey: knownTeamNamesKey)
+            }
         } else {
             // Use defaults on first launch
             knownTeamNames = defaultTeamNames
@@ -103,9 +109,24 @@ class GameCalendarManager: ObservableObject {
         }
     }
 
+    /// Removes case-insensitive duplicates, keeping the first occurrence
+    private func normalizeTeamNames(_ names: [String]) -> [String] {
+        var seen = Set<String>()
+        var result: [String] = []
+        for name in names {
+            let lowercased = name.lowercased()
+            if !seen.contains(lowercased) {
+                seen.insert(lowercased)
+                result.append(name)
+            }
+        }
+        return result
+    }
+
     func saveKnownTeamNames(_ names: [String]) {
-        knownTeamNames = names
-        UserDefaults.standard.set(names, forKey: knownTeamNamesKey)
+        // Normalize to remove case-insensitive duplicates
+        knownTeamNames = normalizeTeamNames(names)
+        UserDefaults.standard.set(knownTeamNames, forKey: knownTeamNamesKey)
         loadUpcomingGames() // Re-parse with new team names
     }
 
@@ -208,26 +229,36 @@ class GameCalendarManager: ObservableObject {
 
         let events = eventStore.events(matching: predicate)
 
-        // Filter to events containing known team names, exclude ignored
+        // Filter to GAMES only (not practices), containing known team names, exclude ignored
         upcomingGames = events
             .filter { event in
                 guard let title = event.title else { return false }
+                let lowercasedTitle = title.lowercased()
+
                 // Skip ignored events
                 if ignoredEventIDs.contains(event.eventIdentifier) { return false }
+
+                // Skip practices
+                if lowercasedTitle.contains("practice") { return false }
+
                 // Only include events with known team names
-                let lowercasedTitle = title.lowercased()
                 return knownTeamNames.contains { teamName in
                     lowercasedTitle.contains(teamName.lowercased())
                 }
             }
+            .filter { event in
+                // Only show future games (or games happening now)
+                event.endDate > Date()
+            }
             .map { event -> CalendarGame in
                 let title = event.title ?? "Game"
-                let opponent = parseOpponent(from: title) ?? title
+                let (opponent, detectedTeam) = parseOpponentAndTeam(from: title)
 
                 return CalendarGame(
                     id: event.eventIdentifier,
                     title: title,
                     opponent: opponent,
+                    detectedTeam: detectedTeam,
                     location: event.location ?? "",
                     startTime: event.startDate,
                     endTime: event.endDate,
@@ -237,114 +268,101 @@ class GameCalendarManager: ObservableObject {
             .sorted { $0.startTime < $1.startTime }
     }
 
-    // MARK: - Parse Opponent
+    // MARK: - Helper: Games for Today
 
-    /// Attempts to extract opponent name from event title using common patterns.
-    /// Intelligently detects known team names (Sahil's teams) and returns the OTHER team as opponent.
-    /// Returns nil if no pattern matches (caller should fall back to full title).
-    private func parseOpponent(from title: String) -> String? {
-        let lowercased = title.lowercased()
-
-        // First, try to find two teams and identify which is ours
-        let teams = extractTeamPair(from: title)
-        if let teams = teams {
-            // Check if either team is one of our known teams
-            let team1IsOurs = knownTeamNames.contains { $0.lowercased() == teams.0.lowercased() }
-            let team2IsOurs = knownTeamNames.contains { $0.lowercased() == teams.1.lowercased() }
-
-            if team1IsOurs && !team2IsOurs {
-                return teams.1 // Return the opponent
-            } else if team2IsOurs && !team1IsOurs {
-                return teams.0 // Return the opponent
-            }
-            // If both or neither are ours, fall through to other patterns
-        }
-
-        // Pattern 1: "vs Team", "vs. Team", "@ Team", "at Team"
-        let vsPatterns = ["vs ", "vs. ", "@ ", "at "]
-        for pattern in vsPatterns {
-            if let range = lowercased.range(of: pattern) {
-                let afterPattern = title[range.upperBound...]
-                let opponent = String(afterPattern)
-                    .components(separatedBy: CharacterSet(charactersIn: "-–("))
-                    .first?
-                    .trimmingCharacters(in: .whitespaces) ?? ""
-                if !opponent.isEmpty {
-                    // Skip if this is one of our teams
-                    if !knownTeamNames.contains(where: { $0.lowercased() == opponent.lowercased() }) {
-                        return opponent
-                    }
-                }
-            }
-        }
-
-        // Pattern 2: "Team vs Us" or "Team @ Location" (opponent before vs/@)
-        let reversePatterns = [" vs", " @"]
-        for pattern in reversePatterns {
-            if let range = lowercased.range(of: pattern) {
-                let beforePattern = title[..<range.lowerBound]
-                let opponent = String(beforePattern)
-                    .trimmingCharacters(in: .whitespaces)
-                if !opponent.isEmpty && opponent.count < 30 {
-                    // Skip if this is one of our teams
-                    if !knownTeamNames.contains(where: { $0.lowercased() == opponent.lowercased() }) {
-                        return opponent
-                    }
-                }
-            }
-        }
-
-        // Pattern 3: Contains team-related keywords - extract meaningful part
-        let gameKeywords = ["game", "basketball", "tournament", "championship", "league", "playoffs"]
-        for keyword in gameKeywords {
-            if lowercased.contains(keyword) {
-                if let range = lowercased.range(of: keyword) {
-                    let beforeKeyword = title[..<range.lowerBound]
-                        .trimmingCharacters(in: .whitespaces)
-                        .trimmingCharacters(in: CharacterSet(charactersIn: ":-"))
-                        .trimmingCharacters(in: .whitespaces)
-                    if !beforeKeyword.isEmpty && beforeKeyword.count < 30 {
-                        return beforeKeyword
-                    }
-                }
-            }
-        }
-
-        // Pattern 4: Colon separator "Tournament: Team Name" or "AAU: Wildcats vs Eagles"
-        if let colonRange = title.range(of: ":") {
-            let afterColon = title[colonRange.upperBound...]
-                .trimmingCharacters(in: .whitespaces)
-            if !afterColon.isEmpty {
-                if let parsed = parseOpponent(from: String(afterColon)) {
-                    return parsed
-                }
-                return String(afterColon)
-            }
-        }
-
-        // No pattern matched - return nil to signal fallback to full title
-        return nil
+    func gamesToday() -> [CalendarGame] {
+        let calendar = Calendar.current
+        return upcomingGames.filter { calendar.isDateInToday($0.startTime) }
     }
 
-    /// Extracts a pair of team names from formats like "Team1 vs Team2" or "Team1 @ Team2"
-    private func extractTeamPair(from title: String) -> (String, String)? {
-        let separators = [" vs ", " vs. ", " @ ", " at "]
+    func gamesAfterToday() -> [CalendarGame] {
+        let calendar = Calendar.current
+        return upcomingGames.filter { !calendar.isDateInToday($0.startTime) }
+    }
+
+    // MARK: - Parse Opponent and Team
+
+    /// Parses event title to extract opponent name and detect which of our teams is playing.
+    /// Returns (opponent, detectedTeam) tuple.
+    private func parseOpponentAndTeam(from title: String) -> (opponent: String, detectedTeam: String?) {
         let lowercased = title.lowercased()
 
+        // First, find which of our teams is mentioned
+        var detectedTeam: String? = nil
+        for teamName in knownTeamNames {
+            if lowercased.contains(teamName.lowercased()) {
+                detectedTeam = teamName
+                break
+            }
+        }
+
+        // Common separators between team names
+        let separators = [" vs ", " vs. ", " @ ", " at ", " - ", " – "]
+
+        // Try to split the title by separators
         for separator in separators {
             if let range = lowercased.range(of: separator) {
                 let before = title[..<range.lowerBound].trimmingCharacters(in: .whitespaces)
-                let after = title[range.upperBound...].trimmingCharacters(in: .whitespaces)
-                    .components(separatedBy: CharacterSet(charactersIn: "-–("))
-                    .first?
-                    .trimmingCharacters(in: .whitespaces) ?? ""
+                var after = title[range.upperBound...].trimmingCharacters(in: .whitespaces)
 
-                if !before.isEmpty && !after.isEmpty {
-                    return (before, after)
+                // Clean up the "after" part - remove trailing location/time info
+                if let parenRange = after.range(of: "(") {
+                    after = String(after[..<parenRange.lowerBound]).trimmingCharacters(in: .whitespaces)
+                }
+
+                // Check which side is our team and return the other as opponent
+                let beforeIsOurs = knownTeamNames.contains { before.lowercased().contains($0.lowercased()) }
+                let afterIsOurs = knownTeamNames.contains { after.lowercased().contains($0.lowercased()) }
+
+                if beforeIsOurs && !afterIsOurs && !after.isEmpty {
+                    return (opponent: after, detectedTeam: detectedTeam)
+                } else if afterIsOurs && !beforeIsOurs && !before.isEmpty {
+                    return (opponent: before, detectedTeam: detectedTeam)
                 }
             }
         }
-        return nil
+
+        // Fallback: If we detected our team, try to remove it from the title
+        if let team = detectedTeam {
+            var remaining = title
+
+            // Remove our team name (case insensitive)
+            if let range = remaining.range(of: team, options: .caseInsensitive) {
+                remaining.removeSubrange(range)
+            }
+
+            // Also try common variations like "Bay Area Lava" for "Lava"
+            let teamVariations = [
+                "bay area \(team.lowercased())",
+                "\(team.lowercased()) basketball",
+                "\(team.lowercased()) hoops"
+            ]
+            for variation in teamVariations {
+                if let range = remaining.lowercased().range(of: variation) {
+                    let startIdx = remaining.index(remaining.startIndex, offsetBy: remaining.distance(from: remaining.startIndex, to: range.lowerBound))
+                    let endIdx = remaining.index(remaining.startIndex, offsetBy: remaining.distance(from: remaining.startIndex, to: range.upperBound))
+                    remaining.removeSubrange(startIdx..<endIdx)
+                }
+            }
+
+            // Clean up separators and whitespace
+            remaining = remaining
+                .replacingOccurrences(of: " vs ", with: " ")
+                .replacingOccurrences(of: " vs. ", with: " ")
+                .replacingOccurrences(of: " - ", with: " ")
+                .replacingOccurrences(of: " – ", with: " ")
+                .replacingOccurrences(of: " @ ", with: " ")
+                .trimmingCharacters(in: .whitespaces)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "-–"))
+                .trimmingCharacters(in: .whitespaces)
+
+            if !remaining.isEmpty && remaining.count < 50 {
+                return (opponent: remaining, detectedTeam: detectedTeam)
+            }
+        }
+
+        // Last resort: return the full title
+        return (opponent: title, detectedTeam: detectedTeam)
     }
 
     // MARK: - Refresh
