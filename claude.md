@@ -1,6 +1,6 @@
 # Sahil Stats - Project Context
 
-> **UPDATED (2026-01-21):** Hero Card calendar UI, smart opponent/team detection, Jony Ive design polish (clean header, hidden scrollbars, subtle actions).
+> **UPDATED (2026-01-23):** AI Lab planning for post-Saturday. Smart court detection, sideline filtering, audio enhancement, post-processing zoom. See "AI Lab" section for full details.
 
 ---
 
@@ -765,3 +765,160 @@ Original SahilStats had WiFi-only uploads with a queue system. This was removed 
 - Keychain is built-in, secure, no network required
 - Reduces Firebase dependencies
 - Simpler code (~50 lines vs ~100 lines for Firebase)
+
+---
+
+## AI Lab (Post-Saturday Feature Branch)
+
+> **STATUS**: Planning phase. Will implement after Saturday's game day test.
+> **Branch**: `feature/ai-lab` (to be created after Saturday)
+
+### Overview
+Advanced AI features to crush XBotGo and enhance game videos. All experimental features are isolated in separate services and controlled by feature flags.
+
+### The XBotGo Problem
+XBotGo's auto-tracking has a critical flaw: during timeouts or dead balls, the gimbal follows sideline movement (parents, other teams walking by) instead of holding position on the court. Users are forced to manually calibrate court bounds, which is tedious and error-prone.
+
+**Our solution**: AI that learns court bounds automatically and ignores sideline activity.
+
+### Planned Features
+
+| Feature | Description | Priority |
+|---------|-------------|----------|
+| **Smart Court Detection** | Auto-detect court lines/bounds using Vision framework | High |
+| **Sideline Filtering** | Ignore motion outside learned play area | High |
+| **Game State Awareness** | Detect timeouts (hold position when play stops) | High |
+| **Audio Enhancement** | Noise reduction, focus on game sounds | Medium |
+| **Post-Processing Zoom** | Auto-zoom to basket/action in post | Medium |
+
+### Architecture: Branch + Feature Flags + Isolated Services
+
+```
+main branch (stable)          feature/ai-lab branch
+        │                            │
+   Saturday test                AI experiments
+   Known working                 Isolated services
+   No risk                       Feature flagged
+        │                            │
+        └──── merge when proven ─────┘
+```
+
+### File Structure (AI Lab)
+
+```
+Services/
+├── RecordingManager.swift      # UNTOUCHED
+├── GimbalTrackingManager.swift # UNTOUCHED
+├── OverlayCompositor.swift     # UNTOUCHED
+│
+└── AILab/                      # NEW - isolated experiments
+    ├── CourtDetectionService.swift    # Learn court bounds via Vision
+    ├── SmartTrackingService.swift     # Filter sideline motion
+    ├── AudioEnhancementService.swift  # Noise reduction
+    └── PostProcessingService.swift    # Auto-zoom to action
+```
+
+### Feature Flags
+
+```swift
+// UserDefaults toggles - all OFF by default
+@AppStorage("ai_courtDetection") var courtDetection = false
+@AppStorage("ai_smartTracking") var smartTracking = false
+@AppStorage("ai_noiseReduction") var noiseReduction = false
+@AppStorage("ai_postZoom") var postProcessingZoom = false
+```
+
+### Smart Court Detection (Technical Details)
+
+**Phase 1: Auto-Detect Court Bounds (first 30-60 seconds)**
+- Vision framework detects court lines (half-court, 3-point arc, key)
+- Build "heat map" of where gameplay activity happens
+- Most movement in center = court area. Stationary clusters on sides = spectators
+
+**Phase 2: Smart Filtering**
+- Create invisible "play zone" boundary based on learned court
+- Ignore motion outside this zone (sidelines, bleachers)
+- DockKit already has `setRegionOfInterest()` - feed it smart bounds
+
+**Phase 3: Game State Detection**
+- Ball tracking (orange sphere detection) to know if play is active
+- Pose estimation to distinguish running players from standing spectators
+- When timeout detected (no ball movement, players clustered) → hold position
+
+**iOS Vision APIs to Use:**
+```swift
+VNDetectHumanBodyPoseRequest  // Distinguish active players from spectators
+VNDetectRectanglesRequest     // Court line detection
+VNTrackObjectRequest          // Ball tracking
+
+// Feed learned bounds to DockKit
+dockAccessory.setRegionOfInterest(learnedCourtBounds)
+```
+
+### Why This Beats XBotGo
+
+| XBotGo | SahilStats AI |
+|--------|---------------|
+| Tracks any human movement | Learns court bounds, ignores sidelines |
+| No game state awareness | Detects timeouts, holds position |
+| Manual calibration required | Auto-learns in first minute |
+| Gets confused by parents walking | Filters out non-player motion |
+
+### Testing Without a Basketball Court
+
+| Feature | How to Test |
+|---------|-------------|
+| Court detection | Any marked area - parking lot lines, playground, backyard |
+| Smart tracking | Record family walking around, see if it ignores "sideline" movement |
+| Noise reduction | Record anything with background noise, process it |
+| Post-zoom | Use existing game footage, test zoom-to-action algorithm |
+
+### Implementation Order (After Saturday)
+
+1. **Create branch**: `git checkout -b feature/ai-lab`
+2. **Stub services**: Create empty AILab/ folder with service files
+3. **Add feature flags**: Settings UI with toggles (all off by default)
+4. **Court detection first**: Most impactful, enables smart tracking
+5. **Smart tracking**: Uses court detection output
+6. **Audio/zoom later**: Lower priority, nice-to-have
+
+### Audio Enhancement Details
+
+**Goals:**
+- Reduce crowd noise during gameplay
+- Enhance referee whistles and game sounds
+- Keep player communication audible
+
+**Approach:**
+- Use AVAudioEngine for real-time processing (or post-processing)
+- Frequency filtering to isolate game sounds
+- Possibly train CoreML model on basketball game audio
+
+### Post-Processing Zoom Details
+
+**Goals:**
+- Auto-zoom to basket when shot is taken
+- Track ball flight for exciting replays
+- Create automatic highlight clips
+
+**Approach:**
+- Analyze recorded video frame-by-frame
+- Detect ball position and trajectory
+- Apply smooth zoom/pan in post-processing
+- Could generate 15-second highlight clips automatically
+
+---
+
+## Pending Tasks
+
+### Saturday Game Day Test (Priority 1)
+- [ ] Full recording flow on physical iPhone + gimbal
+- [ ] Watch scoring works from sideline
+- [ ] Video saves with overlay correctly
+- [ ] YouTube upload works (OAuth + actual upload)
+
+### Post-Saturday (Priority 2)
+- [ ] Game editing in Game Log (edit scores/stats after game)
+- [ ] Create `feature/ai-lab` branch
+- [ ] Stub out AILab service files
+- [ ] Begin court detection experiments
