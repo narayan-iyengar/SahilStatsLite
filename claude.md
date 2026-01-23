@@ -694,7 +694,7 @@ Watch updates local state immediately when user taps (for responsiveness), then 
 ## YouTube Upload (Lean Implementation)
 
 ### Overview
-Auto-uploads game videos to YouTube (unlisted) for building a portfolio and easy sharing with coaches.
+Auto-uploads game videos to YouTube (public) for building a portfolio and sharing Sahil's highlights.
 
 ### Design Philosophy (Steve Jobs / Jony Ive)
 - **No WiFi monitoring** - User has unlimited 5G, no need for queue
@@ -731,7 +731,7 @@ Single class handling both authentication and upload:
 2. If `isEnabled && isAuthorized` → upload begins (non-blocking)
 3. Uses YouTube resumable upload API for large files
 4. Retries up to 3 times on failure
-5. Videos uploaded as **unlisted** (not public)
+5. Videos uploaded as **public**
 
 ### Settings UI
 YouTube section in SettingsView:
