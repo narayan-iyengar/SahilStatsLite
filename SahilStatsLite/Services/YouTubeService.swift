@@ -146,7 +146,7 @@ class YouTubeService: ObservableObject {
                 "categoryId": "17" // Sports
             ],
             "status": [
-                "privacyStatus": "unlisted"
+                "privacyStatus": "public"
             ]
         ]
 
