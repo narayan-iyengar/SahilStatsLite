@@ -926,38 +926,127 @@ let region = TrackingRegion(
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Skynet Mode (Real-time Learning) - TODO
+### Skynet Mode (Real-time Learning) - INTEGRATION PLAN
 
-Instead of pre-built heat map, learn and adapt during the game:
+**Core Principles:**
+1. **No hardcoded assumptions** - works from center court, corner, bleachers, any angle
+2. **Learn from observation** - players cluster = court, adults on edges = sideline
+3. **Continuous adaptation** - keep learning throughout game, adjust to halftime, timeouts
 
-```swift
-// Every N seconds during recording:
-// 1. Sample current frame
-// 2. Detect humans, classify (player/ref/coach)
-// 3. Update rolling heat map (weighted recent > old)
-// 4. Recalculate tracking region
-// 5. Feed to DockKit.setRegionOfInterest()
-
-// Benefits:
-// - Adapts if court position shifts (different gym setup)
-// - Handles timeouts naturally (players cluster = ignore zone expands)
-// - No manual calibration ever
+**Architecture:**
+```
+┌─────────────────────────────────────────────────────────┐
+│                    SKYNET MODE                           │
+├─────────────────────────────────────────────────────────┤
+│                                                          │
+│  CONTINUOUS LEARNING (entire game):                      │
+│  ├─ Sample frames every 0.5-1 sec                       │
+│  ├─ Detect people, classify (kid/adult)                 │
+│  ├─ Update rolling heat map (recent weighted higher)    │
+│  ├─ Recalculate court bounds from heat map              │
+│  └─ No "hold still" phase - learn while tracking        │
+│                                                          │
+│  REAL-TIME TRACKING:                                     │
+│  ├─ Filter: within court bounds + kid-sized             │
+│  ├─ Calculate action center (weighted by size)          │
+│  ├─ Pan gimbal → action center                          │
+│  ├─ Zoom based on player spread (max 1.5x)              │
+│  └─ Smooth easing (no jumpy movement)                   │
+│                                                          │
+│  SMART BEHAVIORS:                                        │
+│  ├─ Timeout: players cluster at edges → hold position   │
+│  ├─ Fast break: action moves quickly → smooth follow    │
+│  ├─ Under basket: cluster → subtle zoom in              │
+│  └─ Spread offense: wide → zoom out                     │
+│                                                          │
+└─────────────────────────────────────────────────────────┘
 ```
 
-**Implementation in GimbalTrackingManager.swift:**
-```swift
-// Add to existing DockKit tracking:
-func updateTrackingRegion(from frame: CVPixelBuffer) {
-    let people = detectAndClassifyHumans(in: frame)
-    let actionCenter = calculateActionCenter(from: people)
+**Implementation Files:**
 
-    // DockKit API to constrain tracking
-    dockAccessory.setRegionOfInterest(
-        center: actionCenter,
-        size: CGSize(width: 0.6, height: 0.8)  // 60% of frame
-    )
+1. **SkynetTracker.swift** (NEW) - Core AI brain
+```swift
+class SkynetTracker {
+    // Rolling heat map (decays over time, recent > old)
+    private var heatMap: [[Float]]  // 20x20 grid
+    private let decayFactor: Float = 0.95  // Old data fades
+
+    // Learned court bounds
+    private(set) var courtBounds: CGRect = CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+
+    // Process frame and update learning
+    func processFrame(_ pixelBuffer: CVPixelBuffer) -> TrackingResult {
+        // 1. Detect people
+        let people = detectHumans(in: pixelBuffer)
+
+        // 2. Classify (kid vs adult based on size)
+        let players = people.filter { $0.height < medianHeight * 1.25 }
+
+        // 3. Update heat map (where players are)
+        updateHeatMap(with: players)
+
+        // 4. Recalculate court bounds from heat map
+        courtBounds = calculateBoundsFromHeatMap()
+
+        // 5. Filter to on-court players only
+        let onCourtPlayers = players.filter { courtBounds.contains($0.center) }
+
+        // 6. Calculate action center
+        let actionCenter = calculateWeightedCenter(onCourtPlayers)
+
+        // 7. Calculate zoom (spread = wide, cluster = zoom)
+        let spread = calculateSpread(onCourtPlayers)
+        let zoomFactor = mapSpreadToZoom(spread, min: 1.0, max: 1.5)
+
+        return TrackingResult(
+            actionCenter: actionCenter,
+            zoomFactor: zoomFactor,
+            playerCount: onCourtPlayers.count,
+            courtBounds: courtBounds
+        )
+    }
 }
 ```
+
+2. **GimbalTrackingManager.swift** - Wire in Skynet
+```swift
+// Add to existing tracking:
+private let skynet = SkynetTracker()
+
+func onFrameCaptured(_ pixelBuffer: CVPixelBuffer) {
+    let result = skynet.processFrame(pixelBuffer)
+
+    // Pan gimbal to action center
+    if let accessory = connectedAccessory {
+        accessory.setRegionOfInterest(
+            center: result.actionCenter,
+            size: CGSize(width: 0.6, height: 0.8)
+        )
+    }
+}
+```
+
+3. **RecordingManager.swift** - Real-time zoom
+```swift
+// Add zoom control:
+func updateZoom(_ factor: CGFloat) {
+    guard let device = captureDevice else { return }
+    try? device.lockForConfiguration()
+    device.videoZoomFactor = factor.clamped(to: 1.0...1.5)
+    device.unlockForConfiguration()
+}
+```
+
+**Why This Crushes XBotGo:**
+
+| XBotGo | Skynet |
+|--------|--------|
+| Manual calibration | Self-learning |
+| Fixed court bounds | Continuous adaptation |
+| Follows any human | Filters by size + position |
+| No zoom intelligence | Smart zoom on clusters |
+| Gets lost on timeouts | Holds position (learned sideline) |
+| One angle only | Works from any angle |
 
 ### Future Refinements
 
