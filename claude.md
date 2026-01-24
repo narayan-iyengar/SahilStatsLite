@@ -1,6 +1,6 @@
 # Sahil Stats - Project Context
 
-> **UPDATED (2026-01-24):** AI Lab R&D complete. Heat map approach validated, court line detection doesn't work, command-line tool created. Ready for Saturday test, then real-world gimbal integration.
+> **UPDATED (2026-01-24):** AI Lab R&D complete. Stripe detection (refs) + heat map (court bounds) + zoom-in-post (smooth action following) all working. Two-layer architecture ready: DockKit constraints + post-processing zoom. Next: Skynet mode (real-time learning).
 
 ---
 
@@ -770,10 +770,10 @@ Original SahilStats had WiFi-only uploads with a queue system. This was removed 
 
 ## AI Lab (R&D Complete - 2026-01-24)
 
-> **STATUS**: R&D phase complete. Tools built and validated. Ready for real-world gimbal testing after Saturday.
+> **STATUS**: R&D phase complete. Stripe detection + heat map + zoom-in-post all working. Ready for Skynet mode (real-time learning).
 
 ### Overview
-Advanced AI features to crush XBotGo and enhance game videos. Experimented with Vision framework approaches, validated heat map method.
+Advanced AI features to crush XBotGo and enhance game videos. Two-layer tracking system: gimbal constraints + post-processing zoom.
 
 ### The XBotGo Problem
 XBotGo's auto-tracking has a critical flaw: during timeouts or dead balls, the gimbal follows sideline movement (parents, other teams walking by) instead of holding position on the court. Users are forced to manually calibrate court bounds, which is tedious and error-prone.
@@ -787,9 +787,41 @@ XBotGo's auto-tracking has a critical flaw: during timeouts or dead balls, the g
 | **VNDetectRectanglesRequest** | ❌ Garbage | Detects windows, ceiling trusses, signs - NOT court lines |
 | **VNDetectHumanBodyPoseRequest** | ⚠️ Flaky | Works sometimes, weird diagonal lines, partial skeletons |
 | **VNDetectHumanRectanglesRequest** | ✅ Works | Reliable human bounding boxes |
-| **Heat Map (player positions)** | ✅ Works | Best approach - learns court from where players actually are |
+| **Heat Map (player positions)** | ✅ Primary | Learn court bounds from where players cluster |
+| **Hoop Detection (orange rim scan)** | ❌ Unreliable | Too many false positives, lines drawn in wrong places |
+| **Stripe Detection (ref jerseys)** | ✅ Works | Black/white alternating pattern in torso = REF |
+| **Kid/Adult Classification** | ✅ Works | Size-based: adults are 25%+ taller than median |
+| **Zoom-in-Post** | ✅ Works | Crop video to follow action center with smooth easing |
 
-### Heat Map Approach (Validated)
+### Stripe Detection (Ref Jerseys)
+
+Refs wear black/white striped jerseys. We detect this by sampling the torso region:
+
+```swift
+// Sample vertical line through torso
+// Look for light/dark transitions (brightness > 140 vs < 140)
+// Must be low saturation (grayscale, not colored stripes)
+// 3+ transitions = striped jersey = REF
+
+// Color coding:
+// Yellow = REF (striped jersey detected)
+// Cyan   = PLAYER (kid on court, no stripes)
+// Magenta = ADULT? (adult on court, no stripes - rare)
+// Orange = BENCH (kid off court)
+// Red    = COACH (adult off court, no stripes)
+```
+
+### Kid vs Adult Classification
+
+Since players are kids and coaches/parents are adults, we classify by bounding box size:
+
+```swift
+// Calculate median height of all detected people
+// Adults are typically 25%+ taller than median (kids)
+let adultThreshold = medianHeight * 1.25
+```
+
+### Heat Map Approach (Fallback)
 
 Instead of trying to detect court lines visually, we track where players cluster over time:
 
@@ -822,18 +854,37 @@ First 60 seconds of game:
 /Users/narayan/SahilStats/ailab.swift
 
 Usage:
-swift ailab.swift <video_path> [start_seconds] [duration_seconds]
+swift ailab.swift <video_path> [start_seconds] [duration_seconds] [--zoom]
 
-Example:
-swift ailab.swift "~/game.mp4" 1470 120  # Start at 24:30, process 2 min
+Examples:
+swift ailab.swift "~/game.mp4" 0 60           # Tracking overlay mode
+swift ailab.swift "~/game.mp4" 0 60 --zoom    # Zoom-in-post mode
 ```
-- Builds heat map from video samples
-- Calculates tracking region
-- Exports annotated video with:
-  - Green box = tracking region
-  - Cyan boxes = "TRACK" (players in region)
-  - Orange boxes = "IGNORE" (sideline people)
-- Output: `~/Desktop/AILab_Tracked.mp4`
+
+**Two modes:**
+
+| Mode | Flag | Output | Purpose |
+|------|------|--------|---------|
+| Tracking | (default) | `AILab_Tracked.mp4` | Debug/tune - shows classifications |
+| Zoom | `--zoom` | `AILab_Zoomed.mp4` | Final output - cropped following action |
+
+**Features:**
+- **Heat map** - learns court bounds from player positions
+- **Stripe detection** - identifies refs by black/white jersey pattern
+- **Kid/adult classification** - filters coaches/parents by size
+- **Action center** - weighted average of player positions (bigger = closer = more weight)
+- **Smooth easing** - camera doesn't jump, eases toward action (20% per frame)
+- **2x zoom** - 4K→1080p or 1080p→540p crop headroom
+
+**Tracking mode output:**
+- Green rectangle = tracking region (heat map based)
+- Red shaded = ignore zones
+- Cyan = PLAYER, Yellow = REF, Orange = BENCH, Red = COACH
+
+**Zoom mode output:**
+- Cropped video following action center
+- Smooth pan as action moves across court
+- Progress shows: `Center:(0.35,0.52) Players:3 Refs:1`
 
 ### Tracking Region Calculation
 
@@ -849,24 +900,73 @@ let region = TrackingRegion(
 )
 ```
 
-### Future Refinements Identified
+### Two-Layer Tracking Architecture
 
-1. **Ref detection** - Striped shirts could be detected, use as game state signal
-2. **Near > Far priority** - Bigger bounding box = closer = more important to track
-3. **Dynamic filtering** - Instead of static region, filter subjects per-frame based on size/position
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                     DURING GAME (Real-time)                      │
+├─────────────────────────────────────────────────────────────────┤
+│  iPhone on Gimbal                                                │
+│  └─→ DockKit auto-tracks people (physical pan)                   │
+│      └─→ Our AI constrains tracking region                       │
+│          └─→ Ignores sideline movement during timeouts           │
+│                                                                  │
+│  Records 4K wide-angle footage                                   │
+└─────────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────────┐
+│                     POST-GAME (Polish)                           │
+├─────────────────────────────────────────────────────────────────┤
+│  Run ailab.swift --zoom on recorded video                        │
+│  └─→ Virtual zoom following action center                        │
+│      └─→ Smoother than mechanical gimbal                         │
+│          └─→ Catches moments gimbal missed                       │
+│                                                                  │
+│  Output: Cropped, professional-looking game video                │
+└─────────────────────────────────────────────────────────────────┘
+```
 
-### Important Discovery: Camera Movement
+### Skynet Mode (Real-time Learning) - TODO
 
-Testing on XBotGo footage revealed a problem:
-- XBotGo video has **moving camera** (auto-tracking)
-- Our heat map assumes **stationary camera**
-- If camera is panning, "sideline" moves around in frame
+Instead of pre-built heat map, learn and adapt during the game:
 
-**For real use:**
-1. First 60s: Camera stationary, build heat map
-2. Rest of game: DockKit tracks within learned region
+```swift
+// Every N seconds during recording:
+// 1. Sample current frame
+// 2. Detect humans, classify (player/ref/coach)
+// 3. Update rolling heat map (weighted recent > old)
+// 4. Recalculate tracking region
+// 5. Feed to DockKit.setRegionOfInterest()
 
-OR use dynamic filtering (filter each detected human based on size/position, not static region).
+// Benefits:
+// - Adapts if court position shifts (different gym setup)
+// - Handles timeouts naturally (players cluster = ignore zone expands)
+// - No manual calibration ever
+```
+
+**Implementation in GimbalTrackingManager.swift:**
+```swift
+// Add to existing DockKit tracking:
+func updateTrackingRegion(from frame: CVPixelBuffer) {
+    let people = detectAndClassifyHumans(in: frame)
+    let actionCenter = calculateActionCenter(from: people)
+
+    // DockKit API to constrain tracking
+    dockAccessory.setRegionOfInterest(
+        center: actionCenter,
+        size: CGSize(width: 0.6, height: 0.8)  // 60% of frame
+    )
+}
+```
+
+### Future Refinements
+
+1. ~~**Ref detection**~~ → DONE (stripe pattern detection)
+2. ~~**Dynamic filtering**~~ → DONE (per-frame classification)
+3. ~~**Zoom-in-post**~~ → DONE (action center + smooth easing)
+4. **Ball tracking** - Follow the orange basketball for action focus
+5. **Highlight detection** - Cluster under basket = scoring play
+6. **Real-time learning** - Update heat map during game (Skynet mode)
 
 ### What We CAN'T Test From a Desk
 
@@ -905,7 +1005,14 @@ OR use dynamic filtering (filter each detected human based on size/position, not
 - [x] Playground created for Vision experiments
 - [x] Tested VNDetectRectanglesRequest (doesn't work for courts)
 - [x] Tested VNDetectHumanBodyPoseRequest (flaky)
-- [x] Validated heat map approach (works!)
+- [x] Validated heat map approach (primary method)
 - [x] Created command-line tool (ailab.swift)
-- [x] Tested on real game footage
-- [x] Identified camera movement issue (static vs moving camera)
+- [x] Tested on real game footage (XBotGo and corner camera)
+- [x] ~~Hoop detection~~ - tried, too unreliable (false positives)
+- [x] **Stripe detection** - black/white pattern = REF jersey
+- [x] **Kid/adult classification** - size-based filtering (25%+ taller = adult)
+- [x] **Per-frame classification** - dynamic PLAYER/REF/BENCH/COACH labels
+- [x] **Action center calculation** - weighted avg (bigger box = closer = more weight)
+- [x] **Smooth easing** - 20% per frame movement toward target
+- [x] **Zoom-in-post** - `--zoom` flag outputs cropped video following action
+- [ ] **Skynet mode** - real-time learning during game (TODO)
