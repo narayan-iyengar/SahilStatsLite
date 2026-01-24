@@ -1,6 +1,6 @@
 # Sahil Stats - Project Context
 
-> **UPDATED (2026-01-23):** AI Lab planning for post-Saturday. Smart court detection, sideline filtering, audio enhancement, post-processing zoom. See "AI Lab" section for full details.
+> **UPDATED (2026-01-24):** AI Lab R&D complete. Heat map approach validated, court line detection doesn't work, command-line tool created. Ready for Saturday test, then real-world gimbal integration.
 
 ---
 
@@ -768,144 +768,122 @@ Original SahilStats had WiFi-only uploads with a queue system. This was removed 
 
 ---
 
-## AI Lab (Post-Saturday Feature Branch)
+## AI Lab (R&D Complete - 2026-01-24)
 
-> **STATUS**: Planning phase. Will implement after Saturday's game day test.
-> **Branch**: `feature/ai-lab` (to be created after Saturday)
+> **STATUS**: R&D phase complete. Tools built and validated. Ready for real-world gimbal testing after Saturday.
 
 ### Overview
-Advanced AI features to crush XBotGo and enhance game videos. All experimental features are isolated in separate services and controlled by feature flags.
+Advanced AI features to crush XBotGo and enhance game videos. Experimented with Vision framework approaches, validated heat map method.
 
 ### The XBotGo Problem
 XBotGo's auto-tracking has a critical flaw: during timeouts or dead balls, the gimbal follows sideline movement (parents, other teams walking by) instead of holding position on the court. Users are forced to manually calibrate court bounds, which is tedious and error-prone.
 
-**Our solution**: AI that learns court bounds automatically and ignores sideline activity.
+**Our solution**: AI that learns court bounds automatically from player activity (heat map) and ignores sideline activity.
 
-### Planned Features
+### R&D Results (2026-01-24)
 
-| Feature | Description | Priority |
-|---------|-------------|----------|
-| **Smart Court Detection** | Auto-detect court lines/bounds using Vision framework | High |
-| **Sideline Filtering** | Ignore motion outside learned play area | High |
-| **Game State Awareness** | Detect timeouts (hold position when play stops) | High |
-| **Audio Enhancement** | Noise reduction, focus on game sounds | Medium |
-| **Post-Processing Zoom** | Auto-zoom to basket/action in post | Medium |
+| Approach | Result | Notes |
+|----------|--------|-------|
+| **VNDetectRectanglesRequest** | ❌ Garbage | Detects windows, ceiling trusses, signs - NOT court lines |
+| **VNDetectHumanBodyPoseRequest** | ⚠️ Flaky | Works sometimes, weird diagonal lines, partial skeletons |
+| **VNDetectHumanRectanglesRequest** | ✅ Works | Reliable human bounding boxes |
+| **Heat Map (player positions)** | ✅ Works | Best approach - learns court from where players actually are |
 
-### Architecture: Branch + Feature Flags + Isolated Services
+### Heat Map Approach (Validated)
 
-```
-main branch (stable)          feature/ai-lab branch
-        │                            │
-   Saturday test                AI experiments
-   Known working                 Isolated services
-   No risk                       Feature flagged
-        │                            │
-        └──── merge when proven ─────┘
-```
-
-### File Structure (AI Lab)
+Instead of trying to detect court lines visually, we track where players cluster over time:
 
 ```
-Services/
-├── RecordingManager.swift      # UNTOUCHED
-├── GimbalTrackingManager.swift # UNTOUCHED
-├── OverlayCompositor.swift     # UNTOUCHED
-│
-└── AILab/                      # NEW - isolated experiments
-    ├── CourtDetectionService.swift    # Learn court bounds via Vision
-    ├── SmartTrackingService.swift     # Filter sideline motion
-    ├── AudioEnhancementService.swift  # Noise reduction
-    └── PostProcessingService.swift    # Auto-zoom to action
+First 60 seconds of game:
+┌─────────────────────────────────┐
+│ 0  0  0  0  0  0  0  0  0  0  │  ← Ceiling (ignore)
+│ 0  2  5  8 12 14  9  6  3  1  │  ← Players cluster here
+│ 1  4  9 15 18 20 16 11  5  2  │  ← HIGH ACTIVITY = COURT
+│ 0  3  7 13 17 19 14  8  4  1  │
+│ 2  1  0  0  0  0  0  0  1  3  │  ← Sidelines (low activity)
+└─────────────────────────────────┘
 ```
 
-### Feature Flags
+**Key insight**: We don't need to detect court lines. We just need to know where players ARE vs where they AREN'T.
+
+### Tools Created
+
+**1. Playground (for quick experiments):**
+```
+/Users/narayan/SahilStats/AILabPlayground.playground
+```
+- Visual frame analysis
+- Heat map generation
+- Skeleton/pose visualization
+- Note: Unstable with heavy video processing
+
+**2. Command-line tool (stable):**
+```
+/Users/narayan/SahilStats/ailab.swift
+
+Usage:
+swift ailab.swift <video_path> [start_seconds] [duration_seconds]
+
+Example:
+swift ailab.swift "~/game.mp4" 1470 120  # Start at 24:30, process 2 min
+```
+- Builds heat map from video samples
+- Calculates tracking region
+- Exports annotated video with:
+  - Green box = tracking region
+  - Cyan boxes = "TRACK" (players in region)
+  - Orange boxes = "IGNORE" (sideline people)
+- Output: `~/Desktop/AILab_Tracked.mp4`
+
+### Tracking Region Calculation
 
 ```swift
-// UserDefaults toggles - all OFF by default
-@AppStorage("ai_courtDetection") var courtDetection = false
-@AppStorage("ai_smartTracking") var smartTracking = false
-@AppStorage("ai_noiseReduction") var noiseReduction = false
-@AppStorage("ai_postZoom") var postProcessingZoom = false
+// From heat map, find cells above 40% of max activity
+// Skip top 30% (ceiling) and bottom 5% (camera operator)
+// Add padding for player feet
+let region = TrackingRegion(
+    minX: 0.03,   // Left bound
+    maxX: 0.97,   // Right bound
+    minY: 0.05,   // Bottom (with padding)
+    maxY: 0.70    // Top (exclude ceiling)
+)
 ```
 
-### Smart Court Detection (Technical Details)
+### Future Refinements Identified
 
-**Phase 1: Auto-Detect Court Bounds (first 30-60 seconds)**
-- Vision framework detects court lines (half-court, 3-point arc, key)
-- Build "heat map" of where gameplay activity happens
-- Most movement in center = court area. Stationary clusters on sides = spectators
+1. **Ref detection** - Striped shirts could be detected, use as game state signal
+2. **Near > Far priority** - Bigger bounding box = closer = more important to track
+3. **Dynamic filtering** - Instead of static region, filter subjects per-frame based on size/position
 
-**Phase 2: Smart Filtering**
-- Create invisible "play zone" boundary based on learned court
-- Ignore motion outside this zone (sidelines, bleachers)
-- DockKit already has `setRegionOfInterest()` - feed it smart bounds
+### Important Discovery: Camera Movement
 
-**Phase 3: Game State Detection**
-- Ball tracking (orange sphere detection) to know if play is active
-- Pose estimation to distinguish running players from standing spectators
-- When timeout detected (no ball movement, players clustered) → hold position
+Testing on XBotGo footage revealed a problem:
+- XBotGo video has **moving camera** (auto-tracking)
+- Our heat map assumes **stationary camera**
+- If camera is panning, "sideline" moves around in frame
 
-**iOS Vision APIs to Use:**
-```swift
-VNDetectHumanBodyPoseRequest  // Distinguish active players from spectators
-VNDetectRectanglesRequest     // Court line detection
-VNTrackObjectRequest          // Ball tracking
+**For real use:**
+1. First 60s: Camera stationary, build heat map
+2. Rest of game: DockKit tracks within learned region
 
-// Feed learned bounds to DockKit
-dockAccessory.setRegionOfInterest(learnedCourtBounds)
+OR use dynamic filtering (filter each detected human based on size/position, not static region).
+
+### What We CAN'T Test From a Desk
+
+- Does DockKit actually respond to our filtering?
+- Does it feel smoother than XBotGo?
+- Real-world timeout/substitution handling
+
+**These require real-world testing with gimbal at a game.**
+
+### Files
+
 ```
-
-### Why This Beats XBotGo
-
-| XBotGo | SahilStats AI |
-|--------|---------------|
-| Tracks any human movement | Learns court bounds, ignores sidelines |
-| No game state awareness | Detects timeouts, holds position |
-| Manual calibration required | Auto-learns in first minute |
-| Gets confused by parents walking | Filters out non-player motion |
-
-### Testing Without a Basketball Court
-
-| Feature | How to Test |
-|---------|-------------|
-| Court detection | Any marked area - parking lot lines, playground, backyard |
-| Smart tracking | Record family walking around, see if it ignores "sideline" movement |
-| Noise reduction | Record anything with background noise, process it |
-| Post-zoom | Use existing game footage, test zoom-to-action algorithm |
-
-### Implementation Order (After Saturday)
-
-1. **Create branch**: `git checkout -b feature/ai-lab`
-2. **Stub services**: Create empty AILab/ folder with service files
-3. **Add feature flags**: Settings UI with toggles (all off by default)
-4. **Court detection first**: Most impactful, enables smart tracking
-5. **Smart tracking**: Uses court detection output
-6. **Audio/zoom later**: Lower priority, nice-to-have
-
-### Audio Enhancement Details
-
-**Goals:**
-- Reduce crowd noise during gameplay
-- Enhance referee whistles and game sounds
-- Keep player communication audible
-
-**Approach:**
-- Use AVAudioEngine for real-time processing (or post-processing)
-- Frequency filtering to isolate game sounds
-- Possibly train CoreML model on basketball game audio
-
-### Post-Processing Zoom Details
-
-**Goals:**
-- Auto-zoom to basket when shot is taken
-- Track ball flight for exciting replays
-- Create automatic highlight clips
-
-**Approach:**
-- Analyze recorded video frame-by-frame
-- Detect ball position and trajectory
-- Apply smooth zoom/pan in post-processing
-- Could generate 15-second highlight clips automatically
+/Users/narayan/SahilStats/
+├── AILabPlayground.playground  # Visual experiments (unstable)
+├── ailab.swift                  # Command-line tool (stable)
+└── SahilStatsLite/             # Main app (untouched)
+```
 
 ---
 
@@ -919,6 +897,15 @@ dockAccessory.setRegionOfInterest(learnedCourtBounds)
 
 ### Post-Saturday (Priority 2)
 - [ ] Game editing in Game Log (edit scores/stats after game)
-- [ ] Create `feature/ai-lab` branch
-- [ ] Stub out AILab service files
-- [ ] Begin court detection experiments
+- [ ] Integrate heat map into GimbalTrackingManager
+- [ ] Test AI tracking at real game with gimbal
+- [ ] Compare tracking quality vs XBotGo
+
+### AI Lab - Completed R&D (2026-01-24)
+- [x] Playground created for Vision experiments
+- [x] Tested VNDetectRectanglesRequest (doesn't work for courts)
+- [x] Tested VNDetectHumanBodyPoseRequest (flaky)
+- [x] Validated heat map approach (works!)
+- [x] Created command-line tool (ailab.swift)
+- [x] Tested on real game footage
+- [x] Identified camera movement issue (static vs moving camera)
