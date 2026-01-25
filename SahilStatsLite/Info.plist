@@ -23,5 +23,7 @@
 	<string>Save game recordings to Photos</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Find upcoming games from your calendar</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Connect to gimbal for auto-tracking</string>
 </dict>
 </plist>

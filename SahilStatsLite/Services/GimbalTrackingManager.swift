@@ -50,25 +50,29 @@ final class GimbalTrackingManager: ObservableObject {
     private func checkDockKitAvailability() {
         #if canImport(DockKit)
         if #available(iOS 18.0, *) {
+            debugPrint("[DockKit] iOS 18+ detected, starting accessory scan...")
             Task {
                 do {
                     let manager = DockAccessoryManager.shared
+                    debugPrint("[DockKit] Got DockAccessoryManager, waiting for accessoryStateChanges...")
                     let stateChanges = try manager.accessoryStateChanges
 
                     for await stateChange in stateChanges {
+                        debugPrint("[DockKit] State change received!")
                         await MainActor.run {
                             if let accessory = stateChange.accessory {
                                 self.dockAccessory = accessory
                                 self.isDockKitAvailable = true
-                                debugPrint("Gimbal connected: \(accessory.identifier.name)")
+                                debugPrint("[DockKit] ✅ Gimbal connected: \(accessory.identifier.name)")
                             } else {
                                 self.dockAccessory = nil
                                 self.isDockKitAvailable = false
-                                debugPrint("No gimbal connected")
+                                debugPrint("[DockKit] ❌ Gimbal disconnected")
                             }
                         }
                     }
                 } catch {
+                    debugPrint("[DockKit] ❌ Error: \(error.localizedDescription)")
                     await MainActor.run {
                         self.isDockKitAvailable = false
                         self.lastError = error.localizedDescription
@@ -76,9 +80,11 @@ final class GimbalTrackingManager: ObservableObject {
                 }
             }
         } else {
+            debugPrint("[DockKit] ❌ iOS version < 18, DockKit not available")
             isDockKitAvailable = false
         }
         #else
+        debugPrint("[DockKit] ❌ DockKit framework not available (not imported)")
         isDockKitAvailable = false
         #endif
     }
