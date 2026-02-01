@@ -8,6 +8,7 @@
 
 import Foundation
 @preconcurrency import AVFoundation
+import AVKit  // Required for Camera Control overlay UI (iOS 18+)
 import UIKit
 import Photos
 import Combine
@@ -232,11 +233,12 @@ class RecordingManager: NSObject, ObservableObject {
             debugPrint("📹 Added audio data output")
         }
 
+        // Setup Camera Control button (iPhone 16+ with iOS 18+)
+        // MUST be done inside configuration block for native overlay to appear
+        setupCameraControl(session: session, device: currentVideoDevice)
+
         session.commitConfiguration()
         captureSession = session
-
-        // Setup Camera Control button (iPhone 16+ with iOS 18+)
-        setupCameraControl(session: session, device: currentVideoDevice)
 
         // Start session on background thread
         await withCheckedContinuation { continuation in
