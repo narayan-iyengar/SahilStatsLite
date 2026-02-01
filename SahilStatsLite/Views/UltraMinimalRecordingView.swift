@@ -559,6 +559,7 @@ struct UltraMinimalRecordingView: View {
         case .off: return .white.opacity(0.5)
         case .smooth: return .cyan
         case .responsive: return .mint
+        case .skynet: return .purple  // Distinct AI color
         }
     }
 
@@ -567,6 +568,7 @@ struct UltraMinimalRecordingView: View {
         case .off: return "AZ"
         case .smooth: return "SMTH"
         case .responsive: return "FAST"
+        case .skynet: return "SKY"
         }
     }
 

@@ -1,6 +1,6 @@
 # Sahil Stats - Project Context
 
-> **UPDATED (2026-02-01):** Jony Ive UI refinements - full-screen tap zones with swipe-to-subtract and pinch-to-zoom (0.5x-3.0x). Insta360 AI Tracker research complete - decision: test DockKit at game first before purchasing. AI Lab R&D complete.
+> **UPDATED (2026-02-01):** Skynet mode implemented! PersonClassifier.swift distinguishes kids/refs/adults. AutoZoomManager now has 4 modes: OFF → SMOOTH → FAST → SKYNET (purple brain icon). Skynet filters out refs and adults, tracks only players on court.
 
 ---
 
@@ -1045,7 +1045,18 @@ let region = TrackingRegion(
 └─────────────────────────────────────────────────────────────────┘
 ```
 
-### Skynet Mode (Real-time Learning) - INTEGRATION PLAN
+### Skynet Mode (Real-time Learning) - IMPLEMENTED
+
+> **STATUS**: Skynet mode is now implemented as a fourth option in AutoZoomManager. Toggle via stats overlay: OFF → SMOOTH → FAST → SKY (purple brain icon).
+
+**How It Works:**
+- Uses `PersonClassifier.swift` for smart classification:
+  - **Players (kids)**: Multiple heuristics - height ratio, absolute size, aspect ratio
+  - **Refs**: Multi-sample stripe detection (5 vertical + horizontal)
+  - **Adults/Coaches**: Filtered out, not tracked
+- Rolling heat map learns court bounds over time
+- Action center calculated from players only (refs at lower weight)
+- Zoom based on player spread, not total human count
 
 **Core Principles:**
 1. **No hardcoded assumptions** - works from center court, corner, bleachers, any angle
@@ -1083,76 +1094,61 @@ let region = TrackingRegion(
 
 **Implementation Files:**
 
-1. **SkynetTracker.swift** (NEW) - Core AI brain
+1. **PersonClassifier.swift** - Smart person classification
 ```swift
-class SkynetTracker {
-    // Rolling heat map (decays over time, recent > old)
-    private var heatMap: [[Float]]  // 20x20 grid
-    private let decayFactor: Float = 0.95  // Old data fades
+class PersonClassifier {
+    /// Classify people as player/ref/coach/spectator
+    func classifyPeople(in pixelBuffer: CVPixelBuffer) -> [ClassifiedPerson]
 
-    // Learned court bounds
-    private(set) var courtBounds: CGRect = CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8)
+    /// Calculate action center weighted by player importance
+    func calculateActionCenter(from people: [ClassifiedPerson]) -> CGPoint
 
-    // Process frame and update learning
-    func processFrame(_ pixelBuffer: CVPixelBuffer) -> TrackingResult {
-        // 1. Detect people
-        let people = detectHumans(in: pixelBuffer)
+    /// Calculate zoom based on player spread
+    func calculateZoomFactor(from people: [ClassifiedPerson], minZoom: CGFloat, maxZoom: CGFloat) -> CGFloat
 
-        // 2. Classify (kid vs adult based on size)
-        let players = people.filter { $0.height < medianHeight * 1.25 }
+    /// Update court bounds from rolling heat map
+    func updateCourtBounds(from heatMap: [[Int]], threshold: Double)
+}
 
-        // 3. Update heat map (where players are)
-        updateHeatMap(with: players)
-
-        // 4. Recalculate court bounds from heat map
-        courtBounds = calculateBoundsFromHeatMap()
-
-        // 5. Filter to on-court players only
-        let onCourtPlayers = players.filter { courtBounds.contains($0.center) }
-
-        // 6. Calculate action center
-        let actionCenter = calculateWeightedCenter(onCourtPlayers)
-
-        // 7. Calculate zoom (spread = wide, cluster = zoom)
-        let spread = calculateSpread(onCourtPlayers)
-        let zoomFactor = mapSpreadToZoom(spread, min: 1.0, max: 1.5)
-
-        return TrackingResult(
-            actionCenter: actionCenter,
-            zoomFactor: zoomFactor,
-            playerCount: onCourtPlayers.count,
-            courtBounds: courtBounds
-        )
-    }
+// Classification types:
+enum PersonType {
+    case player      // Kid on court → TRACK
+    case referee     // Striped jersey → Track but lower weight
+    case coach       // Adult on sideline → IGNORE
+    case benchPlayer // Kid on bench → IGNORE
+    case spectator   // Unknown → IGNORE
 }
 ```
 
-2. **GimbalTrackingManager.swift** - Wire in Skynet
+2. **AutoZoomManager.swift** - Skynet mode integration
 ```swift
-// Add to existing tracking:
-private let skynet = SkynetTracker()
+enum AutoZoomMode: String, CaseIterable {
+    case off = "Off"        // Manual zoom only
+    case smooth = "Smooth"  // Gentle, cinematic (all humans)
+    case responsive = "Fast" // Quick reaction (all humans)
+    case skynet = "Skynet"  // Smart: filters refs/adults, tracks players only
+}
 
-func onFrameCaptured(_ pixelBuffer: CVPixelBuffer) {
-    let result = skynet.processFrame(pixelBuffer)
+// In Skynet mode:
+private let personClassifier = PersonClassifier()
 
-    // Pan gimbal to action center
-    if let accessory = connectedAccessory {
-        accessory.setRegionOfInterest(
-            center: result.actionCenter,
-            size: CGSize(width: 0.6, height: 0.8)
-        )
-    }
+func processFrameWithSkynet(_ pixelBuffer: CVPixelBuffer) {
+    let classifiedPeople = personClassifier.classifyPeople(in: pixelBuffer)
+    let players = classifiedPeople.filter { $0.classification == .player }
+    let actionCenter = personClassifier.calculateActionCenter(from: classifiedPeople)
+    let zoom = personClassifier.calculateZoomFactor(from: classifiedPeople, ...)
+    // Apply zoom with smoothing
 }
 ```
 
-3. **RecordingManager.swift** - Real-time zoom
+3. **RecordingManager.swift** - Frame callback for AI
 ```swift
-// Add zoom control:
-func updateZoom(_ factor: CGFloat) {
-    guard let device = captureDevice else { return }
-    try? device.lockForConfiguration()
-    device.videoZoomFactor = factor.clamped(to: 1.0...1.5)
-    device.unlockForConfiguration()
+// Callback for AI processing (5 FPS)
+var onFrameForAI: ((CVPixelBuffer) -> Void)?
+
+// Called in sample buffer delegate:
+if let callback = onFrameForAI, now - lastAIFrameTime >= 0.2 {
+    callback(pixelBuffer)
 }
 ```
 
@@ -1225,12 +1221,12 @@ func updateZoom(_ factor: CGFloat) {
 
 ### Future Refinements
 
-1. ~~**Ref detection**~~ → DONE (stripe pattern detection)
-2. ~~**Dynamic filtering**~~ → DONE (per-frame classification)
+1. ~~**Ref detection**~~ → DONE (stripe pattern detection in PersonClassifier)
+2. ~~**Dynamic filtering**~~ → DONE (per-frame classification via PersonClassifier)
 3. ~~**Zoom-in-post**~~ → DONE (action center + smooth easing)
-4. **Ball tracking** - Follow the orange basketball for action focus
-5. **Highlight detection** - Cluster under basket = scoring play
-6. **Real-time learning** - Update heat map during game (Skynet mode)
+4. ~~**Real-time learning**~~ → DONE (Skynet mode in AutoZoomManager)
+5. **Ball tracking** - Follow the orange basketball for action focus
+6. **Highlight detection** - Cluster under basket = scoring play
 
 ### What We CAN'T Test From a Desk
 
@@ -1279,4 +1275,4 @@ func updateZoom(_ factor: CGFloat) {
 - [x] **Action center calculation** - weighted avg (bigger box = closer = more weight)
 - [x] **Smooth easing** - 20% per frame movement toward target
 - [x] **Zoom-in-post** - `--zoom` flag outputs cropped video following action
-- [ ] **Skynet mode** - real-time learning during game (TODO)
+- [x] **Skynet mode** - real-time learning during game (integrated into AutoZoomManager)

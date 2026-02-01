@@ -17,12 +17,14 @@ enum AutoZoomMode: String, CaseIterable, Sendable {
     case off = "Off"
     case smooth = "Smooth"
     case responsive = "Responsive"
+    case skynet = "Skynet"  // Smart mode: filters refs/adults, tracks only players
 
     var icon: String {
         switch self {
         case .off: return "viewfinder"
         case .smooth: return "viewfinder.circle"
         case .responsive: return "viewfinder.circle.fill"
+        case .skynet: return "brain.head.profile"
         }
     }
 
@@ -31,6 +33,7 @@ enum AutoZoomMode: String, CaseIterable, Sendable {
         case .off: return "Manual zoom only"
         case .smooth: return "Gentle, cinematic zoom"
         case .responsive: return "Quick follow action"
+        case .skynet: return "AI: track kids, ignore adults/refs"
         }
     }
 
@@ -40,6 +43,7 @@ enum AutoZoomMode: String, CaseIterable, Sendable {
         case .off: return 0
         case .smooth: return 0.03      // Very smooth, cinematic
         case .responsive: return 0.12  // Quick reaction
+        case .skynet: return 0.08      // Balanced - smart tracking
         }
     }
 
@@ -49,6 +53,7 @@ enum AutoZoomMode: String, CaseIterable, Sendable {
         case .off: return 999
         case .smooth: return 0.3   // Larger deadzone = less jitter
         case .responsive: return 0.15
+        case .skynet: return 0.2   // Moderate - trust AI more
         }
     }
 }
@@ -72,6 +77,10 @@ final class AutoZoomManager: ObservableObject {
     @Published var debugActionZone: CGRect = .zero
     @Published var showDebugOverlay: Bool = false
 
+    // Skynet-specific stats
+    @Published var filteredRefCount: Int = 0
+    @Published var filteredAdultCount: Int = 0
+
     // MARK: - Zoom Limits
 
     private let minZoom: CGFloat = 1.0
@@ -84,6 +93,10 @@ final class AutoZoomManager: ObservableObject {
     private var smoothZoomTimer: Timer?
     private var recentZoomTargets: [CGFloat] = []  // Rolling average for stability
     private let rollingAverageCount = 5
+
+    // MARK: - Skynet (PersonClassifier for smart tracking)
+
+    private let personClassifier = PersonClassifier()
 
     // MARK: - Vision (created fresh each time to avoid threading issues)
 
@@ -124,6 +137,20 @@ final class AutoZoomManager: ObservableObject {
         guard now - lastProcessTime >= processInterval else { return }
         lastProcessTime = now
 
+        // Check mode on main thread first
+        Task { @MainActor in
+            if self.mode == .skynet {
+                // Use PersonClassifier for smart tracking (filters refs/adults)
+                self.processFrameWithSkynet(pixelBuffer)
+            } else {
+                // Standard Vision-only mode
+                self.processFrameWithVision(pixelBuffer)
+            }
+        }
+    }
+
+    /// Standard Vision-based processing (all humans)
+    private nonisolated func processFrameWithVision(_ pixelBuffer: CVPixelBuffer) {
         // Create fresh request for this frame (thread-safe)
         let request = VNDetectHumanRectanglesRequest()
         request.upperBodyOnly = false
@@ -149,6 +176,61 @@ final class AutoZoomManager: ObservableObject {
 
         } catch {
             debugPrint("🔍 [AutoZoom] Vision error: \(error)")
+        }
+    }
+
+    /// Skynet mode: Use PersonClassifier to filter refs/adults, track only players
+    private func processFrameWithSkynet(_ pixelBuffer: CVPixelBuffer) {
+        // Run classification on background thread
+        Task.detached { [weak self] in
+            guard let self = self else { return }
+
+            // Classify all people in frame
+            let classifiedPeople = self.personClassifier.classifyPeople(in: pixelBuffer)
+
+            // Filter to only trackable people (players on court)
+            let players = classifiedPeople.filter { person in
+                person.classification == .player && person.isOnCourt
+            }
+
+            let refs = classifiedPeople.filter { $0.classification == .referee }
+            let adults = classifiedPeople.filter {
+                $0.classification == .coach || $0.classification == .spectator
+            }
+
+            // Get player bounding boxes
+            let playerBoxes = players.map { $0.boundingBox }
+
+            // Calculate action center (weighted, refs included at lower weight)
+            let actionCenter = self.personClassifier.calculateActionCenter(from: classifiedPeople)
+
+            // Calculate recommended zoom based on player spread
+            let recommendedZoom = self.personClassifier.calculateZoomFactor(
+                from: classifiedPeople,
+                minZoom: 1.0,
+                maxZoom: 2.0
+            )
+
+            await MainActor.run {
+                self.filteredRefCount = refs.count
+                self.filteredAdultCount = adults.count
+                self.actionZoneCenter = actionCenter
+
+                if playerBoxes.isEmpty {
+                    self.handleNoPlayers()
+                } else {
+                    // Use Skynet's recommended zoom directly
+                    self.detectedPlayerCount = players.count
+                    self.updateTargetZoom(recommendedZoom)
+
+                    // Update debug action zone
+                    if !playerBoxes.isEmpty {
+                        self.debugActionZone = self.calculateActionZone(playerBoxes)
+                    }
+
+                    debugPrint("🤖 [Skynet] Players: \(players.count), Refs: \(refs.count), Adults: \(adults.count) → Zoom: \(String(format: "%.1f", recommendedZoom))x")
+                }
+            }
         }
     }
 
