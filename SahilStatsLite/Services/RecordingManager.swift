@@ -23,6 +23,13 @@ class RecordingManager: NSObject, ObservableObject {
     @MainActor @Published var isSessionReady: Bool = false
     @MainActor @Published var permissionGranted: Bool = false
     @MainActor @Published var isSimulator: Bool = false
+    @MainActor @Published var currentZoomLevel: CGFloat = 1.0  // Updated by Camera Control button
+
+    // MARK: - Camera Control (iPhone 16+)
+
+    /// Callback when zoom changes from Camera Control button (for UI sync)
+    var onZoomChanged: ((CGFloat) -> Void)?
+    private let cameraControlQueue = DispatchQueue(label: "com.sahilstats.cameraControl")
 
     // MARK: - AI Frame Callback (for Skynet mode)
 
@@ -227,6 +234,9 @@ class RecordingManager: NSObject, ObservableObject {
 
         session.commitConfiguration()
         captureSession = session
+
+        // Setup Camera Control button (iPhone 16+ with iOS 18+)
+        setupCameraControl(session: session, device: currentVideoDevice)
 
         // Start session on background thread
         await withCheckedContinuation { continuation in
@@ -516,6 +526,53 @@ class RecordingManager: NSObject, ObservableObject {
         return currentVideoDevice?.videoZoomFactor ?? 1.0
     }
 
+    // MARK: - Camera Control Button (iPhone 16+)
+
+    /// Setup the physical Camera Control button for zoom (iOS 18+, iPhone 16+)
+    @MainActor
+    private func setupCameraControl(session: AVCaptureSession, device: AVCaptureDevice?) {
+        guard let device = device else {
+            debugPrint("📹 No camera device for Camera Control setup")
+            return
+        }
+
+        // Check if Camera Control is available (iOS 18+)
+        if #available(iOS 18.0, *) {
+            guard session.supportsControls else {
+                debugPrint("📹 Camera Controls not supported on this device")
+                return
+            }
+
+            // Remove any existing controls
+            for control in session.controls {
+                session.removeControl(control)
+            }
+
+            // Create zoom slider control
+            let zoomSlider = AVCaptureSystemZoomSlider(device: device) { [weak self] zoomFactor in
+                // This callback runs on cameraControlQueue
+                DispatchQueue.main.async {
+                    self?.currentZoomLevel = zoomFactor
+                    self?.onZoomChanged?(zoomFactor)
+                }
+            }
+
+            // Add the zoom control to the session
+            if session.canAddControl(zoomSlider) {
+                session.addControl(zoomSlider)
+                debugPrint("📹 ✅ Camera Control zoom slider added (iPhone 16 Camera Control button)")
+            } else {
+                debugPrint("📹 Cannot add Camera Control zoom slider")
+            }
+
+            // Set delegate for control events
+            session.setControlsDelegate(self, queue: cameraControlQueue)
+            debugPrint("📹 Camera Control delegate set")
+        } else {
+            debugPrint("📹 Camera Control requires iOS 18+ (current: \(UIDevice.current.systemVersion))")
+        }
+    }
+
     // MARK: - Save to Photos
 
     func saveToPhotoLibrary() async -> Bool {
@@ -650,5 +707,26 @@ extension RecordingManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCapt
     nonisolated private func processAudioFrame(_ sampleBuffer: CMSampleBuffer) {
         guard let audioInput = audioWriterInput, audioInput.isReadyForMoreMediaData else { return }
         audioInput.append(sampleBuffer)
+    }
+}
+
+// MARK: - Camera Control Delegate (iOS 18+, iPhone 16+)
+
+@available(iOS 18.0, *)
+extension RecordingManager: AVCaptureSessionControlsDelegate {
+    nonisolated func sessionControlsDidBecomeActive(_ session: AVCaptureSession) {
+        debugPrint("📹 Camera Control became active")
+    }
+
+    nonisolated func sessionControlsWillEnterFullscreenAppearance(_ session: AVCaptureSession) {
+        debugPrint("📹 Camera Control entering fullscreen")
+    }
+
+    nonisolated func sessionControlsWillExitFullscreenAppearance(_ session: AVCaptureSession) {
+        debugPrint("📹 Camera Control exiting fullscreen")
+    }
+
+    nonisolated func sessionControlsDidBecomeInactive(_ session: AVCaptureSession) {
+        debugPrint("📹 Camera Control became inactive")
     }
 }

@@ -617,8 +617,29 @@ Tested interactive scoreboard controls vs full-screen tap zones. Jony Ive philos
 - **Pinch** → Zoom camera 0.5x-3.0x (uses `.simultaneousGesture()`)
 - **Tap clock** → Pause/play
 
-**Why swipe LEFT instead of DOWN:**
-Pinch-to-zoom involves radial finger movement which can create vertical translation, triggering false "swipe down" detection. Horizontal swipes are unambiguous and don't conflict with pinch gestures.
+**Swipe directions (symmetric):**
+- Left half: swipe **LEFT** (away from center) to subtract
+- Right half: swipe **RIGHT** (away from center) to subtract
+- Both directions are "push away" gestures - intuitive for removing points
+
+**Camera Control button (iPhone 16+):**
+iOS 18 introduced `AVCaptureSystemZoomSlider` for the physical Camera Control button. This provides smooth, hardware-accelerated zoom that's superior to software pinch gestures.
+
+Implementation in `RecordingManager.swift`:
+```swift
+// iOS 18+ Camera Control zoom slider
+if session.supportsControls {
+    let zoomSlider = AVCaptureSystemZoomSlider(device: device) { zoomFactor in
+        DispatchQueue.main.async {
+            self.currentZoomLevel = zoomFactor
+        }
+    }
+    session.addControl(zoomSlider)
+    session.setControlsDelegate(self, queue: cameraControlQueue)
+}
+```
+
+Requires `AVCaptureSessionControlsDelegate` conformance with stub methods.
 
 **Feedback Animations:**
 - **+1 animation**: Green/orange pill with "+1" fades after 0.6s
