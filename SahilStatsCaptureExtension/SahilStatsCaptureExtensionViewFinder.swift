@@ -141,7 +141,8 @@ class CaptureViewController: UIViewController {
     private func openMainApp() {
         // Open the main SahilStatsLite app
         Task {
-            await lockedSession.openApplication()
+            let activity = NSUserActivity(activityType: NSUserActivityTypeLockedCameraCapture)
+            try? await lockedSession.openApplication(for: activity)
         }
     }
 }
