@@ -215,7 +215,7 @@ struct UltraMinimalRecordingView: View {
                 .simultaneousGesture(
                     MagnificationGesture()
                         .onChanged { scale in
-                            let baseZoom = autoZoomManager.mode != .off ? autoZoomManager.currentZoom : currentZoom
+                            let baseZoom = autoZoomManager.mode == .auto ? autoZoomManager.currentZoom : currentZoom
                             let newZoom = baseZoom * scale
                             let clampedZoom = min(max(newZoom, 0.5), 3.0)
                             _ = recordingManager.setZoom(factor: clampedZoom)
@@ -335,7 +335,7 @@ struct UltraMinimalRecordingView: View {
         .onChange(of: recordingManager.currentZoomLevel) { _, newZoom in
             currentZoom = newZoom
             // Override auto-zoom if user is manually controlling via Camera Control
-            if autoZoomManager.mode != .off {
+            if autoZoomManager.mode == .auto {
                 autoZoomManager.manualZoomOverride(newZoom)
             }
         }
@@ -532,14 +532,14 @@ struct UltraMinimalRecordingView: View {
 
     // Current zoom level (from AI or manual)
     private var displayZoom: CGFloat {
-        autoZoomManager.mode != .off ? autoZoomManager.currentZoom : currentZoom
+        autoZoomManager.mode == .auto ? autoZoomManager.currentZoom : currentZoom
     }
 
     // MARK: - Zoom Indicator (minimal, bottom-left)
 
     private var zoomIndicator: some View {
         HStack(spacing: 4) {
-            if autoZoomManager.mode != .off {
+            if autoZoomManager.mode == .auto {
                 // AI zoom active indicator
                 Circle()
                     .fill(Color.cyan)
@@ -547,7 +547,7 @@ struct UltraMinimalRecordingView: View {
             }
             Text(String(format: "%.1fx", displayZoom))
                 .font(.system(size: 13, weight: .bold, design: .monospaced))
-                .foregroundColor(autoZoomManager.mode != .off ? .cyan : .white)
+                .foregroundColor(autoZoomManager.mode == .auto ? .cyan : .white)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
@@ -557,23 +557,19 @@ struct UltraMinimalRecordingView: View {
     private var autoZoomModeColor: Color {
         switch autoZoomManager.mode {
         case .off: return .white.opacity(0.5)
-        case .smooth: return .cyan
-        case .responsive: return .mint
-        case .skynet: return .purple  // Distinct AI color
+        case .auto: return .purple  // AI tracking active
         }
     }
 
     private var autoZoomModeLabel: String {
         switch autoZoomManager.mode {
-        case .off: return "AZ"
-        case .smooth: return "SMTH"
-        case .responsive: return "FAST"
-        case .skynet: return "SKY"
+        case .off: return "ZOOM"
+        case .auto: return "AUTO"
         }
     }
 
     private func startAutoZoom() {
-        guard autoZoomManager.mode != .off else { return }
+        guard autoZoomManager.mode == .auto else { return }
 
         // Hook up frame callback for Vision processing
         recordingManager.onFrameForAI = { pixelBuffer in
@@ -1294,7 +1290,7 @@ struct UltraMinimalRecordingView: View {
 
                             Text(String(format: "%.1fx", displayZoom))
                                 .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                .foregroundColor(autoZoomManager.mode != .off ? .cyan : .primary)
+                                .foregroundColor(autoZoomManager.mode == .auto ? .cyan : .primary)
 
                             Button(action: {
                                 let newZoom = min(3.0, displayZoom + 0.5)

@@ -15,25 +15,19 @@ import Combine
 
 enum AutoZoomMode: String, CaseIterable, Sendable {
     case off = "Off"
-    case smooth = "Smooth"
-    case responsive = "Responsive"
-    case skynet = "Skynet"  // Smart mode: filters refs/adults, tracks only players
+    case auto = "Auto"  // Skynet: Kalman tracking, filters refs/adults
 
     var icon: String {
         switch self {
         case .off: return "viewfinder"
-        case .smooth: return "viewfinder.circle"
-        case .responsive: return "viewfinder.circle.fill"
-        case .skynet: return "brain.head.profile"
+        case .auto: return "brain.head.profile"
         }
     }
 
     var description: String {
         switch self {
         case .off: return "Manual zoom only"
-        case .smooth: return "Gentle, cinematic zoom"
-        case .responsive: return "Quick follow action"
-        case .skynet: return "AI: track kids, ignore adults/refs"
+        case .auto: return "AI tracks players, ignores refs/adults"
         }
     }
 
@@ -41,9 +35,7 @@ enum AutoZoomMode: String, CaseIterable, Sendable {
     var smoothingFactor: CGFloat {
         switch self {
         case .off: return 0
-        case .smooth: return 0.03      // Very smooth, cinematic
-        case .responsive: return 0.12  // Quick reaction
-        case .skynet: return 0.08      // Balanced - smart tracking
+        case .auto: return 0.08  // Balanced - Kalman handles the smoothing
         }
     }
 
@@ -51,9 +43,7 @@ enum AutoZoomMode: String, CaseIterable, Sendable {
     var hysteresis: CGFloat {
         switch self {
         case .off: return 999
-        case .smooth: return 0.3   // Larger deadzone = less jitter
-        case .responsive: return 0.15
-        case .skynet: return 0.2   // Moderate - trust AI more
+        case .auto: return 0.2
         }
     }
 }
@@ -153,49 +143,13 @@ final class AutoZoomManager: ObservableObject {
         guard now - lastProcessTime >= processInterval else { return }
         lastProcessTime = now
 
-        // Check mode on main thread first
+        // Always use Skynet (DeepTracker with Kalman filtering)
         Task { @MainActor in
-            if self.mode == .skynet {
-                // Use PersonClassifier for smart tracking (filters refs/adults)
-                self.processFrameWithSkynet(pixelBuffer)
-            } else {
-                // Standard Vision-only mode
-                self.processFrameWithVision(pixelBuffer)
-            }
+            self.processFrameWithSkynet(pixelBuffer)
         }
     }
 
-    /// Standard Vision-based processing (all humans)
-    private nonisolated func processFrameWithVision(_ pixelBuffer: CVPixelBuffer) {
-        // Create fresh request for this frame (thread-safe)
-        let request = VNDetectHumanRectanglesRequest()
-        request.upperBodyOnly = false
-
-        // Run Vision detection
-        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, orientation: .up, options: [:])
-
-        do {
-            try handler.perform([request])
-
-            guard let results = request.results, !results.isEmpty else {
-                Task { @MainActor in
-                    self.handleNoPlayers()
-                }
-                return
-            }
-
-            let boxes = results.map { $0.boundingBox }
-
-            Task { @MainActor in
-                self.analyzePlayerPositions(boxes)
-            }
-
-        } catch {
-            debugPrint("🔍 [AutoZoom] Vision error: \(error)")
-        }
-    }
-
-    /// Skynet mode: Deep Track 4.0-inspired tracking with Kalman filtering
+    /// Skynet: Deep Track 4.0-inspired tracking with Kalman filtering
     private func processFrameWithSkynet(_ pixelBuffer: CVPixelBuffer) {
         // Calculate dt for Kalman filter
         let now = CFAbsoluteTimeGetCurrent()
@@ -264,134 +218,15 @@ final class AutoZoomManager: ObservableObject {
         }
     }
 
-    // MARK: - Analysis
-
-    private func analyzePlayerPositions(_ boxes: [CGRect]) {
-        guard mode != .off else { return }
-
-        detectedPlayerCount = boxes.count
-
-        guard !boxes.isEmpty else {
-            handleNoPlayers()
-            return
-        }
-
-        // Calculate action zone - bounding box containing all players
-        let actionZone = calculateActionZone(boxes)
-        debugActionZone = actionZone
-
-        // Find centroid of all players
-        let centroid = calculateCentroid(boxes)
-        actionZoneCenter = centroid
-
-        // Calculate optimal zoom based on player spread and position
-        let optimalZoom = calculateOptimalZoom(
-            actionZone: actionZone,
-            centroid: centroid,
-            playerCount: boxes.count
-        )
-
-        // Add to rolling average for stability
-        updateTargetZoom(optimalZoom)
-    }
+    // MARK: - Helpers
 
     private func handleNoPlayers() {
         detectedPlayerCount = 0
         // When no players detected, slowly drift toward wide shot
-        // Don't immediately zoom out - might be momentary detection gap
+        // But DeepTracker's Kalman filter will maintain prediction for ~0.5s
         if recentZoomTargets.count > 3 {
             updateTargetZoom(max(minZoom, currentZoom - 0.1))
         }
-    }
-
-    private func calculateActionZone(_ boxes: [CGRect]) -> CGRect {
-        guard !boxes.isEmpty else { return CGRect(x: 0.25, y: 0.25, width: 0.5, height: 0.5) }
-
-        var minX = CGFloat.greatestFiniteMagnitude
-        var minY = CGFloat.greatestFiniteMagnitude
-        var maxX: CGFloat = 0
-        var maxY: CGFloat = 0
-
-        for box in boxes {
-            minX = min(minX, box.minX)
-            minY = min(minY, box.minY)
-            maxX = max(maxX, box.maxX)
-            maxY = max(maxY, box.maxY)
-        }
-
-        // Add margin (10% on each side)
-        let margin: CGFloat = 0.1
-        minX = max(0, minX - margin)
-        minY = max(0, minY - margin)
-        maxX = min(1, maxX + margin)
-        maxY = min(1, maxY + margin)
-
-        return CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-    }
-
-    private func calculateCentroid(_ boxes: [CGRect]) -> CGPoint {
-        guard !boxes.isEmpty else { return CGPoint(x: 0.5, y: 0.5) }
-
-        var sumX: CGFloat = 0
-        var sumY: CGFloat = 0
-
-        for box in boxes {
-            sumX += box.midX
-            sumY += box.midY
-        }
-
-        return CGPoint(
-            x: sumX / CGFloat(boxes.count),
-            y: sumY / CGFloat(boxes.count)
-        )
-    }
-
-    private func calculateOptimalZoom(actionZone: CGRect, centroid: CGPoint, playerCount: Int) -> CGFloat {
-        // Key insight: Zoom is inversely proportional to action zone size
-        // Large spread = zoom out, tight cluster = zoom in
-
-        // Use the larger dimension (usually width for basketball)
-        let spread = max(actionZone.width, actionZone.height)
-
-        // Basketball-specific logic:
-        // - Full court action (spread > 0.7) → stay wide at 1.0x
-        // - Half court (spread 0.4-0.7) → moderate zoom 1.3-1.8x
-        // - Around the key (spread < 0.4) → tighter zoom 1.8-2.5x
-
-        let optimalZoom: CGFloat
-
-        if spread > 0.7 {
-            // Wide spread - full court action
-            optimalZoom = 1.0
-        } else if spread > 0.5 {
-            // Medium spread - transition zone
-            let t = (spread - 0.5) / 0.2  // 0 to 1
-            optimalZoom = 1.5 - (t * 0.5)  // 1.5 down to 1.0
-        } else if spread > 0.3 {
-            // Moderate cluster - half court
-            let t = (spread - 0.3) / 0.2  // 0 to 1
-            optimalZoom = 2.0 - (t * 0.5)  // 2.0 down to 1.5
-        } else {
-            // Tight cluster - around the basket
-            let t = spread / 0.3  // 0 to 1
-            optimalZoom = 2.5 - (t * 0.5)  // 2.5 down to 2.0
-        }
-
-        // Player count modifier:
-        // More players usually means more action spread
-        // Fewer players = can zoom in more
-        let playerModifier: CGFloat
-        if playerCount <= 2 {
-            playerModifier = 1.15  // Zoom in more for 1-2 players
-        } else if playerCount >= 6 {
-            playerModifier = 0.9   // Zoom out a bit for many players
-        } else {
-            playerModifier = 1.0
-        }
-
-        let finalZoom = (optimalZoom * playerModifier).clamped(to: minZoom...maxZoom)
-
-        return finalZoom
     }
 
     // MARK: - Zoom Control
