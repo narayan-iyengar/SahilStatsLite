@@ -25,5 +25,9 @@
 	<string>Find upcoming games from your calendar</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>Connect to gimbal for auto-tracking</string>
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 </dict>
 </plist>

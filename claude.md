@@ -1,6 +1,6 @@
 # Sahil Stats - Project Context
 
-> **UPDATED (2026-01-24):** AI Lab R&D complete. Stripe detection (refs) + heat map (court bounds) + zoom-in-post (smooth action following) all working. Two-layer architecture ready: DockKit constraints + post-processing zoom. Next: Skynet mode (real-time learning).
+> **UPDATED (2026-02-01):** Jony Ive UI refinements - full-screen tap zones with swipe-to-subtract and pinch-to-zoom (0.5x-3.0x). Insta360 AI Tracker research complete - decision: test DockKit at game first before purchasing. AI Lab R&D complete.
 
 ---
 
@@ -47,9 +47,11 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 
 ### Apple Watch Companion (WORKING)
 - Watch app for remote scoring from sidelines
-- Tap score zones to add +1 point per tap
-- Real-time clock sync (every 1 second)
-- End game directly from Watch (saves without phone confirmation)
+- **Tap** score zones to add +1 point
+- **Swipe down** on score to subtract -1 (fix mistakes)
+- **Start game** from Watch when phone not accessible
+- Real-time two-way sync (phone ↔ watch)
+- End game directly from Watch
 - See "Apple Watch App" section below for technical details
 
 ---
@@ -301,10 +303,68 @@ The weekly view is recommended since youth player progress over a year appears f
 ## Known Issues / TODO
 1. ~~**App icon**~~ - DONE (copied from SahilStats)
 2. **Physical device testing** - Test full recording flow on iPhone with gimbal
-3. **Gimbal tracking** - DockKit integration needs real-world testing
+3. **Gimbal tracking** - DockKit has limitations (see below)
 4. **YouTube upload testing** - Test OAuth flow and actual upload to YouTube
 5. ~~**Watch app requires paid account**~~ - RESOLVED
 6. ~~**Auto expand/collapse floating bar**~~ - Not needed with Watch as primary input
+
+### Gimbal Tracking Issues (2026-01-31)
+
+**User Feedback:** Gimbal was tracking random things at game, not focused on action.
+
+**Root Cause:** DockKit uses Apple's built-in person tracking which is general-purpose, not optimized for basketball. It may:
+- Follow sideline movement (parents, other players)
+- Lose track during fast action
+- Not understand court boundaries
+
+**Limitations:**
+- Gimbal can only **physically pan/tilt** the phone
+- Gimbal **cannot control digital zoom** - that's software-only
+- DockKit's tracking algorithm is a black box
+
+**Current Approach:**
+- Added `setZoom()` for manual zoom control (pinch-to-zoom + buttons)
+- Region of interest set to court area (0.05-0.95 horizontal, 0.15-0.90 vertical)
+- Post-processing zoom (AI Lab) can salvage footage
+
+**Future Options:**
+1. **Disable DockKit tracking** - Just use gimbal for stabilization, not auto-pan
+2. **Manual pan mode** - User controls pan, AI controls zoom
+3. **Wait for better DockKit** - Apple may improve for sports use cases
+
+**For now:** Use manual zoom controls on phone + Watch for score. Gimbal provides stabilization. AI post-processing handles zoom-in-post.
+
+### Insta360 Deep Track & AI Tracker Research (2026-02-01)
+
+**Insta360 Deep Track 4.0 (from their PDF):**
+- Multi-scale correlation filter + Kalman filtering for tracking
+- Person re-identification for occlusion recovery
+- 0.3s re-acquisition time after losing subject
+- PDF explicitly states "DockKit struggles with fast motion"
+- Deep Track locked to Insta360 app ecosystem - no SDK/API access
+
+**AI Tracker Accessory ($46):**
+- Has its **own tiny camera** for independent tracking
+- Connects via **USB-C** to gimbal mount (not Bluetooth)
+- Physical **button** to activate tracking (press = "track largest subject")
+- Also supports **gesture mode** (raise hand to activate)
+- No SDK or API - pure hardware solution
+- Does NOT provide zoom control (tracking only)
+
+**AI Tracker Workflow:**
+1. Set up phone on gimbal before game
+2. Press AI Tracker button to lock onto Sahil
+3. Walk to sidelines
+4. Control recording from Watch
+5. AI Tracker follows Sahil, gimbal pans to keep him centered
+
+**Concerns:**
+- Gesture mode unreliable (refs raise hands, parents wave, etc.)
+- Button must be pressed physically - no remote activation
+- No DockKit integration - can't control from our app
+
+**Decision: Test DockKit First**
+Before buying AI Tracker, test current DockKit + our app at a real game. If tracking quality is acceptable, no need for additional hardware. If DockKit fails, AI Tracker is the fallback ($46 one-time cost).
 
 ### Recent Changes (2025-01-17)
 
@@ -527,6 +587,49 @@ logger.info("Message here")
 26. **Hidden scroll indicators**: Removed scroll bar for cleaner look.
 27. **Direct hide button**: Replaced ellipsis menu with subtle `eye.slash` icon - one tap to hide a game, no menu.
 28. **Undo toast for hide**: Shows "Game hidden" toast with Undo button for 3 seconds. Capsule design with blur background. Tap Undo to restore.
+
+### Jony Ive UI Refinements (2026-02-01)
+
+**Scoring UI (UltraMinimalRecordingView.swift):**
+
+Tested interactive scoreboard controls vs full-screen tap zones. Jony Ive philosophy: "Simplicity is the ultimate sophistication." Large tap zones are more forgiving during fast games.
+
+**Final Design - Full-Screen Tap Zones:**
+```
+┌──────────────────┬──────────────────┐
+│                  │                  │
+│   LEFT HALF      │   RIGHT HALF     │
+│   (Your Team)    │   (Opponent)     │
+│                  │                  │
+│   TAP = +1       │   TAP = +1       │
+│   SWIPE ↓ = -1   │   SWIPE ↓ = -1   │
+│   PINCH = ZOOM   │   PINCH = ZOOM   │
+│                  │                  │
+├──────────────────┴──────────────────┤
+│     [Scoreboard - Display Only]      │
+│     (clock still tappable)           │
+└──────────────────────────────────────┘
+```
+
+**Gestures:**
+- **Tap** → Add +1 point (multi-tap accumulator: 1/2/3)
+- **Swipe down** → Subtract -1 point (fix mistakes)
+- **Pinch** → Zoom camera 0.5x-3.0x (uses `.simultaneousGesture()`)
+- **Tap clock** → Pause/play
+
+**Feedback Animations:**
+- **+1 animation**: Green/orange pill with "+1" fades after 0.6s
+- **-1 animation**: Same style, shows when swiping down to subtract
+
+**Zoom Range:**
+- Changed from 1.0-3.0x to 0.5-3.0x
+- 0.5x uses ultra-wide camera on compatible iPhones
+- Zoom controls also available in stats overlay (±0.5x buttons)
+
+**Gesture Conflict Resolution:**
+- Pinch gesture on same layer as tap zones using `.simultaneousGesture()`
+- Swipe down for subtract (avoids long-press vs tap conflicts)
+- Scoreboard is display-only except clock (simplifies touch handling)
 
 ---
 

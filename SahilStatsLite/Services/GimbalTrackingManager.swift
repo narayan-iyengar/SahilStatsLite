@@ -14,12 +14,37 @@ import SwiftUI
 import DockKit
 #endif
 
+// MARK: - Gimbal Mode
+
+enum GimbalMode: String, CaseIterable {
+    case off = "Off"
+    case stabilize = "Stabilize"
+    case track = "Auto-Track"
+
+    var icon: String {
+        switch self {
+        case .off: return "iphone"
+        case .stabilize: return "gyroscope"
+        case .track: return "person.fill.viewfinder"
+        }
+    }
+
+    var description: String {
+        switch self {
+        case .off: return "Handheld, no gimbal"
+        case .stabilize: return "Gimbal smoothing, manual aim"
+        case .track: return "Auto-follow subjects"
+        }
+    }
+}
+
 @MainActor
 final class GimbalTrackingManager: ObservableObject {
     static let shared = GimbalTrackingManager()
 
     // MARK: - Published Properties
 
+    @Published var gimbalMode: GimbalMode = .track
     @Published var isTrackingActive: Bool = false
     @Published var isDockKitAvailable: Bool = false
     @Published var lastError: String?
@@ -92,6 +117,12 @@ final class GimbalTrackingManager: ObservableObject {
     // MARK: - Tracking Control
 
     func startTracking() {
+        // If mode is off, don't do anything
+        guard gimbalMode != .off else {
+            debugPrint("[Gimbal] Mode is OFF, skipping gimbal")
+            return
+        }
+
         #if canImport(DockKit)
         guard let _ = dockAccessory else {
             lastError = "No gimbal connected"
@@ -106,44 +137,51 @@ final class GimbalTrackingManager: ObservableObject {
                 do {
                     guard let accessory = dockAccessory else { return }
 
-                    // Set region of interest to court area
-                    try await accessory.setRegionOfInterest(courtRegion)
+                    // Only enable system tracking in track mode
+                    if gimbalMode == .track {
+                        // Set region of interest to court area
+                        try await accessory.setRegionOfInterest(courtRegion)
 
-                    // Enable system tracking
-                    let manager = DockAccessoryManager.shared
-                    try await manager.setSystemTrackingEnabled(true)
+                        // Enable system tracking
+                        let manager = DockAccessoryManager.shared
+                        try await manager.setSystemTrackingEnabled(true)
+                        debugPrint("[Gimbal] Auto-tracking ENABLED")
+                    } else {
+                        // Stabilize mode - gimbal is connected but no auto-tracking
+                        debugPrint("[Gimbal] Stabilize mode - tracking DISABLED, manual aim")
+                    }
 
-                    debugPrint("Gimbal tracking started")
+                    // Monitor tracking state (only in track mode)
+                    if gimbalMode == .track {
+                        trackingTask = Task {
+                            do {
+                                let trackingStates = try accessory.trackingStates
 
-                    // Monitor tracking state
-                    trackingTask = Task {
-                        do {
-                            let trackingStates = try accessory.trackingStates
+                                for try await trackingState in trackingStates {
+                                    await MainActor.run {
+                                        self.trackedSubjectCount = trackingState.trackedSubjects.count
 
-                            for try await trackingState in trackingStates {
-                                await MainActor.run {
-                                    self.trackedSubjectCount = trackingState.trackedSubjects.count
+                                        // Auto-zoom based on subject count (only in track mode)
+                                        if self.gimbalMode == .track && self.trackedSubjectCount > 0 {
+                                            let optimalZoom: CGFloat
+                                            if self.trackedSubjectCount >= 5 {
+                                                optimalZoom = 1.0
+                                            } else if self.trackedSubjectCount <= 2 {
+                                                optimalZoom = 2.0
+                                            } else {
+                                                optimalZoom = 1.5
+                                            }
 
-                                    // Auto-zoom based on subject count
-                                    if self.trackedSubjectCount > 0 {
-                                        let optimalZoom: CGFloat
-                                        if self.trackedSubjectCount >= 5 {
-                                            optimalZoom = 1.0
-                                        } else if self.trackedSubjectCount <= 2 {
-                                            optimalZoom = 2.0
-                                        } else {
-                                            optimalZoom = 1.5
-                                        }
-
-                                        let currentZoom = RecordingManager.shared.getCurrentZoom()
-                                        if abs(currentZoom - optimalZoom) > 0.3 {
-                                            _ = RecordingManager.shared.setZoom(factor: optimalZoom)
+                                            let currentZoom = RecordingManager.shared.getCurrentZoom()
+                                            if abs(currentZoom - optimalZoom) > 0.3 {
+                                                _ = RecordingManager.shared.setZoom(factor: optimalZoom)
+                                            }
                                         }
                                     }
                                 }
+                            } catch {
+                                debugPrint("Tracking state error: \(error)")
                             }
-                        } catch {
-                            debugPrint("Tracking state error: \(error)")
                         }
                     }
 

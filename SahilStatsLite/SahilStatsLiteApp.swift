@@ -43,6 +43,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 
 struct ContentView: View {
     @StateObject private var appState = AppState()
+    @ObservedObject private var watchService = WatchConnectivityService.shared
 
     var body: some View {
         NavigationStack {
@@ -66,6 +67,15 @@ struct ContentView: View {
             case .summary:
                 GameSummaryView()
                     .environmentObject(appState)
+            }
+        }
+        .onChange(of: watchService.pendingGameFromWatch) { _, newGame in
+            // Watch triggered a game start - navigate to recording
+            if let game = newGame {
+                debugPrint("[ContentView] 📱 Starting game from Watch: \(game.teamName) vs \(game.opponent)")
+                appState.startGameFromWatch(game)
+                // Clear the pending game so it doesn't re-trigger
+                watchService.pendingGameFromWatch = nil
             }
         }
     }
@@ -103,6 +113,22 @@ class AppState: ObservableObject {
     func startNewGame(opponent: String, teamName: String, location: String?) {
         currentGame = Game(opponent: opponent, teamName: teamName, location: location)
         currentScreen = .recording
+    }
+
+    @MainActor
+    func startGameFromWatch(_ watchGame: WatchGame) {
+        // Create game from Watch data
+        var game = Game(
+            opponent: watchGame.opponent,
+            teamName: watchGame.teamName,
+            location: watchGame.location.isEmpty ? nil : watchGame.location
+        )
+        game.halfLength = watchGame.halfLength
+
+        currentGame = game
+        currentScreen = .recording
+
+        debugPrint("[AppState] 📱 Started game from Watch: \(game.teamName) vs \(game.opponent), \(game.halfLength) min halves")
     }
 
     @MainActor

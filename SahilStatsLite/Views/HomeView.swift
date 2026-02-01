@@ -18,6 +18,7 @@ struct HomeView: View {
     @State private var showAllGames = false
     @State private var showSettings = false
     @State private var showUpcomingGames = false
+    @State private var showAILab = false
 
     // Undo toast state
     @State private var hiddenGameID: String? = nil
@@ -44,13 +45,27 @@ struct HomeView: View {
                 // Game Log Card
                 gameLogCard
 
-                // Settings link - subtle, at the bottom where it belongs
-                Button {
-                    showSettings = true
-                } label: {
-                    Text("Settings")
+                // Bottom links - Settings and AI Lab
+                HStack(spacing: 20) {
+                    Button {
+                        showSettings = true
+                    } label: {
+                        Text("Settings")
+                            .font(.footnote)
+                            .foregroundColor(.secondary.opacity(0.6))
+                    }
+
+                    Button {
+                        showAILab = true
+                    } label: {
+                        HStack(spacing: 4) {
+                            Image(systemName: "flask.fill")
+                                .font(.system(size: 10))
+                            Text("AI Lab")
+                        }
                         .font(.footnote)
-                        .foregroundColor(.secondary.opacity(0.6))
+                        .foregroundColor(.orange.opacity(0.7))
+                    }
                 }
                 .padding(.top, 20)
 
@@ -73,6 +88,9 @@ struct HomeView: View {
         .sheet(isPresented: $showUpcomingGames) {
             UpcomingGamesSheet(calendarManager: calendarManager, appState: appState)
         }
+        .fullScreenCover(isPresented: $showAILab) {
+            AILabView()
+        }
         .overlay(alignment: .bottom) {
             if showUndoToast {
                 undoToast
@@ -81,6 +99,10 @@ struct HomeView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: showUndoToast)
+        .onAppear {
+            // Sync calendar games to Watch when home view appears
+            WatchConnectivityService.shared.syncCalendarGames()
+        }
     }
 
     // MARK: - Undo Toast

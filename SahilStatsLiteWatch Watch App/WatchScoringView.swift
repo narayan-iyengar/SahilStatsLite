@@ -11,7 +11,7 @@ import Combine
 struct WatchScoringView: View {
     @EnvironmentObject var connectivity: WatchConnectivityClient
     @State private var showEndGame: Bool = false
-    @State private var myFeedback: Int? = nil
+    @State private var myFeedback: Int? = nil  // Positive = add, negative = subtract
     @State private var oppFeedback: Int? = nil
     @State private var colonVisible: Bool = true
 
@@ -55,15 +55,15 @@ struct WatchScoringView: View {
 
                 // Score area
                 HStack(spacing: 0) {
-                    // My team
+                    // My team (tap = +1, swipe down = -1)
                     scoreZone(
                         score: connectivity.myScore,
                         name: connectivity.teamName,
                         isMyTeam: true,
-                        feedback: myFeedback
-                    ) {
-                        handleMyTeamTap()
-                    }
+                        feedback: myFeedback,
+                        onTap: { handleMyTeamTap() },
+                        onSwipeDown: { handleMyTeamSwipeDown() }
+                    )
 
                     // Divider
                     Rectangle()
@@ -77,15 +77,15 @@ struct WatchScoringView: View {
                         .frame(width: 1)
                         .padding(.vertical, 10)
 
-                    // Opponent
+                    // Opponent (tap = +1, swipe down = -1)
                     scoreZone(
                         score: connectivity.oppScore,
                         name: connectivity.opponent,
                         isMyTeam: false,
-                        feedback: oppFeedback
-                    ) {
-                        handleOppTeamTap()
-                    }
+                        feedback: oppFeedback,
+                        onTap: { handleOppTeamTap() },
+                        onSwipeDown: { handleOppTeamSwipeDown() }
+                    )
                 }
                 .frame(maxHeight: .infinity)
 
@@ -133,24 +133,33 @@ struct WatchScoringView: View {
         name: String,
         isMyTeam: Bool,
         feedback: Int?,
-        onTap: @escaping () -> Void
+        onTap: @escaping () -> Void,
+        onSwipeDown: @escaping () -> Void
     ) -> some View {
         VStack(spacing: 4) {
             ZStack {
-                Button(action: onTap) {
-                    Text("\(score)")
-                        .font(.system(size: 42, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .frame(width: 70, height: 60)
-                        .background(Color.white.opacity(0.05))
-                        .cornerRadius(12)
-                }
-                .buttonStyle(.plain)
+                Text("\(score)")
+                    .font(.system(size: 42, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .frame(width: 70, height: 60)
+                    .background(Color.white.opacity(0.05))
+                    .cornerRadius(12)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onTap() }
+                    .gesture(
+                        DragGesture(minimumDistance: 20)
+                            .onEnded { value in
+                                // Swipe down = subtract point
+                                if value.translation.height > 20 && abs(value.translation.width) < abs(value.translation.height) {
+                                    onSwipeDown()
+                                }
+                            }
+                    )
 
                 if let points = feedback {
-                    Text("+\(points)")
+                    Text(points > 0 ? "+\(points)" : "\(points)")
                         .font(.system(size: 20, weight: .bold))
-                        .foregroundColor(.orange)
+                        .foregroundColor(points > 0 ? .orange : .red)
                         .offset(y: -30)
                         .transition(.scale.combined(with: .opacity))
                 }
@@ -280,6 +289,31 @@ struct WatchScoringView: View {
         connectivity.addScore(team: "opp", points: 1)
         withAnimation(.spring(response: 0.3)) {
             oppFeedback = 1
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            withAnimation {
+                oppFeedback = nil
+            }
+        }
+    }
+
+    // Swipe down = subtract 1 point (fix mistakes)
+    private func handleMyTeamSwipeDown() {
+        connectivity.subtractScore(team: "my", points: 1)
+        withAnimation(.spring(response: 0.3)) {
+            myFeedback = -1
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+            withAnimation {
+                myFeedback = nil
+            }
+        }
+    }
+
+    private func handleOppTeamSwipeDown() {
+        connectivity.subtractScore(team: "opp", points: 1)
+        withAnimation(.spring(response: 0.3)) {
+            oppFeedback = -1
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
             withAnimation {

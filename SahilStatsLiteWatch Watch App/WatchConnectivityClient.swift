@@ -17,12 +17,15 @@ struct WatchMessage {
     static let statUpdate = "statUpdate"
     static let gameState = "gameState"
     static let endGame = "endGame"
+    static let startGame = "startGame"
+    static let upcomingGames = "upcomingGames"
 
     // Score update keys
     static let myScore = "myScore"
     static let oppScore = "oppScore"
     static let team = "team" // "my" or "opp"
     static let points = "points"
+    static let isSubtract = "isSubtract"
 
     // Clock keys
     static let isRunning = "isRunning"
@@ -40,6 +43,43 @@ struct WatchMessage {
     static let teamName = "teamName"
     static let opponent = "opponent"
     static let halfLength = "halfLength"
+    static let location = "location"
+    static let startTime = "startTime"
+    static let gameId = "gameId"
+    static let games = "games"
+}
+
+// MARK: - Watch Game (lightweight game for Watch sync)
+
+struct WatchGame: Codable, Identifiable {
+    let id: String
+    let opponent: String
+    let teamName: String
+    let location: String
+    let startTime: Date
+    let halfLength: Int
+
+    var timeString: String {
+        let formatter = DateFormatter()
+        formatter.timeStyle = .short
+        return formatter.string(from: startTime)
+    }
+
+    var isToday: Bool {
+        Calendar.current.isDateInToday(startTime)
+    }
+
+    var dayString: String {
+        if Calendar.current.isDateInToday(startTime) {
+            return "Today"
+        } else if Calendar.current.isDateInTomorrow(startTime) {
+            return "Tomorrow"
+        } else {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "EEE"
+            return formatter.string(from: startTime)
+        }
+    }
 }
 
 @MainActor
@@ -50,6 +90,9 @@ class WatchConnectivityClient: NSObject, ObservableObject {
     @Published var isPhoneReachable: Bool = false
     @Published var hasActiveGame: Bool = false
 
+    // Upcoming games from calendar (synced from phone)
+    @Published var upcomingGames: [WatchGame] = []
+
     // Game state (received from phone)
     @Published var teamName: String = "MY TEAM"
     @Published var opponent: String = "OPP"
@@ -59,6 +102,7 @@ class WatchConnectivityClient: NSObject, ObservableObject {
     @Published var isClockRunning: Bool = false
     @Published var period: String = "1st Half"
     @Published var periodIndex: Int = 0
+    @Published var halfLength: Int = 18
 
     // Player stats (received from phone)
     @Published var fg2Made: Int = 0
@@ -108,6 +152,62 @@ class WatchConnectivityClient: NSObject, ObservableObject {
             WatchMessage.points: points
         ]
         sendMessage(message)
+    }
+
+    /// Subtract score (for fixing mistakes)
+    func subtractScore(team: String, points: Int) {
+        // Update local state immediately for responsiveness
+        if team == "my" {
+            myScore = max(0, myScore - points)
+        } else {
+            oppScore = max(0, oppScore - points)
+        }
+
+        let message: [String: Any] = [
+            WatchMessage.scoreUpdate: true,
+            WatchMessage.team: team,
+            WatchMessage.points: points,
+            WatchMessage.isSubtract: true
+        ]
+        sendMessage(message)
+    }
+
+    /// Start a new game from watch with full game details
+    func startGame(_ game: WatchGame) {
+        hasActiveGame = true
+        myScore = 0
+        oppScore = 0
+        halfLength = game.halfLength
+        remainingSeconds = game.halfLength * 60
+        isClockRunning = false
+        period = "1st Half"
+        periodIndex = 0
+        self.opponent = game.opponent
+        self.teamName = game.teamName
+
+        let message: [String: Any] = [
+            WatchMessage.startGame: true,
+            WatchMessage.gameId: game.id,
+            WatchMessage.opponent: game.opponent,
+            WatchMessage.teamName: game.teamName,
+            WatchMessage.location: game.location,
+            WatchMessage.halfLength: game.halfLength,
+            WatchMessage.startTime: game.startTime.timeIntervalSince1970
+        ]
+        sendMessage(message)
+    }
+
+    /// Start a quick game with just opponent name (fallback)
+    func startQuickGame(opponent: String = "Away") {
+        let game = WatchGame(
+            id: UUID().uuidString,
+            opponent: opponent,
+            teamName: "Home",
+            location: "",
+            startTime: Date(),
+            halfLength: 18
+        )
+        startGame(game)
     }
 
     /// Toggle clock (pause/play)
@@ -271,6 +371,21 @@ extension WatchConnectivityClient: WCSessionDelegate {
         // End game from phone
         if message[WatchMessage.endGame] != nil {
             hasActiveGame = false
+        }
+
+        // Upcoming games from phone (calendar sync)
+        if message[WatchMessage.upcomingGames] != nil,
+           let gamesString = message[WatchMessage.games] as? String,
+           let gamesData = gamesString.data(using: .utf8) {
+            do {
+                let decoder = JSONDecoder()
+                decoder.dateDecodingStrategy = .secondsSince1970
+                let games = try decoder.decode([WatchGame].self, from: gamesData)
+                upcomingGames = games
+                debugPrint("[Watch] Received \(games.count) upcoming games")
+            } catch {
+                debugPrint("[Watch] Error decoding games: \(error)")
+            }
         }
     }
 }

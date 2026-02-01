@@ -24,6 +24,14 @@ class RecordingManager: NSObject, ObservableObject {
     @MainActor @Published var permissionGranted: Bool = false
     @MainActor @Published var isSimulator: Bool = false
 
+    // MARK: - AI Frame Callback (for Skynet mode)
+
+    /// Optional callback for AI processing of video frames
+    /// Called on background queue - do NOT update UI directly
+    nonisolated(unsafe) var onFrameForAI: ((_ pixelBuffer: CVPixelBuffer) -> Void)?
+    private nonisolated(unsafe) var lastAIFrameTime: CFAbsoluteTime = 0
+    private let aiFrameInterval: CFAbsoluteTime = 0.2  // 5 FPS for AI processing
+
     // MARK: - Capture Session
 
     @MainActor private(set) var captureSession: AVCaptureSession?
@@ -80,6 +88,9 @@ class RecordingManager: NSObject, ObservableObject {
         isWriterConfigured = false
         recordingStartTime = nil
         pendingOutputURL = nil
+
+        // Ensure screen auto-lock is re-enabled
+        UIApplication.shared.isIdleTimerDisabled = false
     }
 
     /// Stop the capture session (call when leaving recording)
@@ -163,6 +174,12 @@ class RecordingManager: NSObject, ObservableObject {
                     session.addInput(videoInput)
                     debugPrint("📹 Added video input")
                 }
+
+                // Reset zoom to 1.0x (widest) on camera setup
+                try videoDevice.lockForConfiguration()
+                videoDevice.videoZoomFactor = 1.0
+                videoDevice.unlockForConfiguration()
+                debugPrint("📹 Zoom reset to 1.0x (wide angle)")
             } catch {
                 debugPrint("❌ Failed to create video input: \(error)")
                 self.error = "Failed to setup camera: \(error.localizedDescription)"
@@ -313,6 +330,10 @@ class RecordingManager: NSObject, ObservableObject {
         recordingStartTime = nil
         frameCount = 0
 
+        // CRITICAL: Keep screen on during recording to prevent interruption
+        UIApplication.shared.isIdleTimerDisabled = true
+        debugPrint("📹 Screen auto-lock DISABLED for recording")
+
         // Start duration timer
         let startTime = Date()
         recordingTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
@@ -392,6 +413,10 @@ class RecordingManager: NSObject, ObservableObject {
         recordingTimer?.invalidate()
         recordingTimer = nil
 
+        // Re-enable screen auto-lock
+        UIApplication.shared.isIdleTimerDisabled = false
+        debugPrint("📹 Screen auto-lock RE-ENABLED")
+
         finishWriting()
     }
 
@@ -404,6 +429,10 @@ class RecordingManager: NSObject, ObservableObject {
         isRecording = false
         recordingTimer?.invalidate()
         recordingTimer = nil
+
+        // Re-enable screen auto-lock
+        UIApplication.shared.isIdleTimerDisabled = false
+        debugPrint("📹 Screen auto-lock RE-ENABLED")
 
         return await withCheckedContinuation { continuation in
             self.recordingFinishedContinuation = continuation
@@ -517,7 +546,17 @@ class RecordingManager: NSObject, ObservableObject {
 extension RecordingManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCaptureAudioDataOutputSampleBufferDelegate {
 
     nonisolated func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
-        // Only process if we're supposed to be recording
+        // Handle video frames for AI processing (even when not recording)
+        if output === videoDataOutput, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
+            // Call AI callback at limited frame rate
+            let now = CFAbsoluteTimeGetCurrent()
+            if let callback = onFrameForAI, now - lastAIFrameTime >= aiFrameInterval {
+                lastAIFrameTime = now
+                callback(pixelBuffer)
+            }
+        }
+
+        // Only process for recording if we're supposed to be recording
         guard pendingOutputURL != nil || assetWriter != nil else { return }
 
         // Get presentation timestamp

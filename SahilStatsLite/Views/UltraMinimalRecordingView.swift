@@ -15,6 +15,7 @@ struct UltraMinimalRecordingView: View {
     @EnvironmentObject var appState: AppState
     @ObservedObject private var recordingManager = RecordingManager.shared
     @ObservedObject private var gimbalManager = GimbalTrackingManager.shared
+    @ObservedObject private var autoZoomManager = AutoZoomManager.shared
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
     @ObservedObject private var watchService = WatchConnectivityService.shared
     @ObservedObject private var youtubeService = YouTubeService.shared
@@ -23,6 +24,7 @@ struct UltraMinimalRecordingView: View {
     @State private var myScore: Int = 0
     @State private var opponentScore: Int = 0
     @State private var remainingSeconds: Int = 0
+    @State private var remainingTenths: Int = 0  // 0-9, for sub-minute display
     @State private var period: String = "1st Half"
     @State private var isClockRunning: Bool = false
 
@@ -46,6 +48,10 @@ struct UltraMinimalRecordingView: View {
     @State private var myTapTimer: AnyCancellable?
     @State private var oppTapTimer: AnyCancellable?
 
+    // Subtract feedback
+    @State private var showMySubtract: Bool = false
+    @State private var showOppSubtract: Bool = false
+
     // UI state
     @State private var showSahilStats: Bool = false
     @State private var showEndConfirmation: Bool = false
@@ -53,6 +59,7 @@ struct UltraMinimalRecordingView: View {
     @State private var isPortrait: Bool = true
     @State private var hasStartedRecording: Bool = false
     @State private var isPulsing: Bool = false
+    @State private var currentZoom: CGFloat = 1.0
 
     // Computed
     private var halfLength: Int {
@@ -60,17 +67,42 @@ struct UltraMinimalRecordingView: View {
     }
 
     private var clockTime: String {
-        let mins = remainingSeconds / 60
-        let secs = remainingSeconds % 60
-        return String(format: "%d:%02d", mins, secs)
+        if remainingSeconds < 60 {
+            // Under 1 minute: show "SS.t" format
+            return String(format: "%d.%d", remainingSeconds, remainingTenths)
+        } else {
+            let mins = remainingSeconds / 60
+            let secs = remainingSeconds % 60
+            return String(format: "%d:%02d", mins, secs)
+        }
+    }
+
+    private var isUnderOneMinute: Bool {
+        remainingSeconds < 60
+    }
+
+    private var clockColor: Color {
+        isUnderOneMinute ? .red : (isClockRunning ? .white : .orange)
     }
 
     private var clockMinutes: String {
-        String(remainingSeconds / 60)
+        if isUnderOneMinute {
+            // Show seconds as the "big" number when under 1 minute
+            return String(remainingSeconds)
+        }
+        return String(remainingSeconds / 60)
     }
 
     private var clockSeconds: String {
-        String(format: "%02d", remainingSeconds % 60)
+        if isUnderOneMinute {
+            // Show tenths after decimal point
+            return String(remainingTenths)
+        }
+        return String(format: "%02d", remainingSeconds % 60)
+    }
+
+    private var clockSeparator: String {
+        isUnderOneMinute ? "." : ":"
     }
 
     private var sahilPoints: Int {
@@ -78,7 +110,8 @@ struct UltraMinimalRecordingView: View {
     }
 
     private var timerInterval: TimeInterval {
-        1.0  // Always 1-second updates for smooth video overlay
+        // Under 1 minute: update every 0.1 seconds for dramatic countdown
+        isUnderOneMinute ? 0.1 : 1.0
     }
 
     // Shooting percentages
@@ -139,56 +172,109 @@ struct UltraMinimalRecordingView: View {
                 Spacer()
             }
 
-            // Smart Scoreboard at bottom-right corner (NBA style - matches video overlay)
+            // Full-screen tap zones for scoring (Jony Ive style - simple, forgiving)
+            // Left half = your team, Right half = opponent
+            // Tap to add points, Swipe DOWN to subtract, Pinch to zoom
+            if !isPortrait || recordingManager.isSimulator || appState.isStatsOnly {
+                HStack(spacing: 0) {
+                    // LEFT HALF - My team
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { handleMyTeamTap() }
+                        .gesture(
+                            DragGesture(minimumDistance: 30)
+                                .onEnded { value in
+                                    if value.translation.height > 50 {
+                                        subtractScore(isMyTeam: true)
+                                    }
+                                }
+                        )
+
+                    // RIGHT HALF - Opponent
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .onTapGesture { handleOpponentTap() }
+                        .gesture(
+                            DragGesture(minimumDistance: 30)
+                                .onEnded { value in
+                                    if value.translation.height > 50 {
+                                        subtractScore(isMyTeam: false)
+                                    }
+                                }
+                        )
+                }
+                .padding(.top, 60)      // Leave room for top bar
+                .padding(.bottom, 100)  // Leave room for scoreboard
+                // Pinch to zoom (works across both halves, 0.5x to 3.0x)
+                .simultaneousGesture(
+                    MagnificationGesture()
+                        .onChanged { scale in
+                            let baseZoom = autoZoomManager.mode != .off ? autoZoomManager.currentZoom : currentZoom
+                            let newZoom = baseZoom * scale
+                            let clampedZoom = min(max(newZoom, 0.5), 3.0)
+                            _ = recordingManager.setZoom(factor: clampedZoom)
+                            autoZoomManager.manualZoomOverride(clampedZoom)
+                        }
+                        .onEnded { _ in
+                            currentZoom = recordingManager.getCurrentZoom()
+                        }
+                )
+            }
+
+            // Scoreboard display at bottom-right (clock still tappable)
             if !isPortrait || recordingManager.isSimulator || appState.isStatsOnly {
                 VStack {
                     Spacer()
-                    HStack {
+                    HStack(alignment: .bottom) {
+                        // Subtle zoom indicator (shows when zoomed in or out from 1.0x)
+                        if (displayZoom > 1.05 || displayZoom < 0.95) && !appState.isStatsOnly {
+                            zoomIndicator
+                                .padding(.leading, 16)
+                        }
+
                         Spacer()
-                        smartScoreboard
-                            .padding(.trailing, 24)
-                            .padding(.bottom, 24)
+
+                        scoreboardDisplay
+                            .padding(.trailing, 8)
+                    }
+                    .padding(.bottom, 16)
+                }
+            }
+
+
+            // Tap feedback overlays (centered in each half) - doesn't block touches
+            HStack {
+                // Left half feedback (my team)
+                ZStack {
+                    if myTapCount > 0 {
+                        tapFeedback(count: myTapCount, color: .orange)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                    if showMySubtract {
+                        subtractFeedback(color: .orange)
+                            .transition(.scale.combined(with: .opacity))
                     }
                 }
-            }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
 
-            // Full-screen tap areas for scoring (left = my team, right = opponent)
-            if !isPortrait || recordingManager.isSimulator || appState.isStatsOnly {
-                HStack(spacing: 0) {
-                    // Left half - My team tap area (subtle orange tint)
-                    Color.orange.opacity(0.03)
-                        .contentShape(Rectangle())
-                        .onTapGesture { handleMyTeamTap() }
-
-                    // Subtle center divider
-                    Rectangle()
-                        .fill(Color.white.opacity(0.08))
-                        .frame(width: 1)
-
-                    // Right half - Opponent tap area (subtle blue tint)
-                    Color.blue.opacity(0.03)
-                        .contentShape(Rectangle())
-                        .onTapGesture { handleOpponentTap() }
+                // Right half feedback (opponent)
+                ZStack {
+                    if oppTapCount > 0 {
+                        tapFeedback(count: oppTapCount, color: .blue)
+                            .transition(.scale.combined(with: .opacity))
+                    }
+                    if showOppSubtract {
+                        subtractFeedback(color: .blue)
+                            .transition(.scale.combined(with: .opacity))
+                    }
                 }
-                .padding(.top, 60)     // Leave room for top bar (REC + menu)
-                .padding(.bottom, 100) // Leave room for scoreboard
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-
-            // Tap feedback overlays (centered in each half)
-            HStack {
-                if myTapCount > 0 {
-                    tapFeedback(count: myTapCount, color: .orange)
-                        .transition(.scale.combined(with: .opacity))
-                }
-                Spacer()
-                if oppTapCount > 0 {
-                    tapFeedback(count: oppTapCount, color: .blue)
-                        .transition(.scale.combined(with: .opacity))
-                }
-            }
-            .padding(.horizontal, 60)
+            .allowsHitTesting(false)
             .animation(.spring(response: 0.2), value: myTapCount)
             .animation(.spring(response: 0.2), value: oppTapCount)
+            .animation(.spring(response: 0.2), value: showMySubtract)
+            .animation(.spring(response: 0.2), value: showOppSubtract)
 
             // Stats overlay
             if showSahilStats {
@@ -228,12 +314,14 @@ struct UltraMinimalRecordingView: View {
                     updateOverlayState()
                     recordingManager.startRecording()
                     gimbalManager.startTracking()
+                    startAutoZoom()
                 }
             }
         }
         .onDisappear {
             if !appState.isStatsOnly {
                 stopRecording()
+                stopAutoZoom()
                 recordingManager.stopSession()
             }
         }
@@ -244,6 +332,7 @@ struct UltraMinimalRecordingView: View {
 
     private func initializeGameState() {
         remainingSeconds = halfLength * 60
+        remainingTenths = 0
         setupWatchCallbacks()
         sendGameStateToWatch()
     }
@@ -251,12 +340,20 @@ struct UltraMinimalRecordingView: View {
     // MARK: - Watch Connectivity
 
     private func setupWatchCallbacks() {
-        // Handle score updates from watch
-        watchService.onScoreUpdate = { [self] team, points in
-            if team == "my" {
-                myScore += points
+        // Handle score updates from watch (add or subtract)
+        watchService.onScoreUpdate = { [self] team, points, isSubtract in
+            if isSubtract {
+                if team == "my" {
+                    myScore = max(0, myScore - points)
+                } else {
+                    opponentScore = max(0, opponentScore - points)
+                }
             } else {
-                opponentScore += points
+                if team == "my" {
+                    myScore += points
+                } else {
+                    opponentScore += points
+                }
             }
             updateOverlayState()
             sendScoreToWatch()
@@ -273,19 +370,15 @@ struct UltraMinimalRecordingView: View {
         }
 
         // Handle stat updates from watch
+        // NOTE: Stats are tracked separately from game score
+        // Use score buttons for game score changes
         watchService.onStatUpdate = { [self] statType, value in
             switch statType {
-            case "fg2Made":
-                fg2Made += value
-                myScore += 2
+            case "fg2Made": fg2Made += value
             case "fg2Att": fg2Att += value
-            case "fg3Made":
-                fg3Made += value
-                myScore += 3
+            case "fg3Made": fg3Made += value
             case "fg3Att": fg3Att += value
-            case "ftMade":
-                ftMade += value
-                myScore += 1
+            case "ftMade": ftMade += value
             case "ftAtt": ftAtt += value
             case "assists": playerStats.assists += value
             case "rebounds": playerStats.rebounds += value
@@ -294,8 +387,7 @@ struct UltraMinimalRecordingView: View {
             case "turnovers": playerStats.turnovers += value
             default: break
             }
-            updateOverlayState()
-            sendScoreToWatch()
+            // Stats don't affect game score - no sendScoreToWatch() needed
         }
 
         // Handle end game from watch - end and save directly
@@ -391,6 +483,7 @@ struct UltraMinimalRecordingView: View {
         }
     }
 
+
     // MARK: - REC Indicator
 
     private var recIndicator: some View {
@@ -423,106 +516,182 @@ struct UltraMinimalRecordingView: View {
         }
     }
 
-    // MARK: - Smart Scoreboard (NBA Corner Style - matches video overlay)
+    // Current zoom level (from AI or manual)
+    private var displayZoom: CGFloat {
+        autoZoomManager.mode != .off ? autoZoomManager.currentZoom : currentZoom
+    }
 
-    private var smartScoreboard: some View {
+    // MARK: - Zoom Indicator (minimal, bottom-left)
+
+    private var zoomIndicator: some View {
+        HStack(spacing: 4) {
+            if autoZoomManager.mode != .off {
+                // AI zoom active indicator
+                Circle()
+                    .fill(Color.cyan)
+                    .frame(width: 6, height: 6)
+            }
+            Text(String(format: "%.1fx", displayZoom))
+                .font(.system(size: 13, weight: .bold, design: .monospaced))
+                .foregroundColor(autoZoomManager.mode != .off ? .cyan : .white)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
+        .background(Capsule().fill(.ultraThinMaterial))
+    }
+
+    private var autoZoomModeColor: Color {
+        switch autoZoomManager.mode {
+        case .off: return .white.opacity(0.5)
+        case .smooth: return .cyan
+        case .responsive: return .mint
+        }
+    }
+
+    private var autoZoomModeLabel: String {
+        switch autoZoomManager.mode {
+        case .off: return "AZ"
+        case .smooth: return "SMTH"
+        case .responsive: return "FAST"
+        }
+    }
+
+    private func startAutoZoom() {
+        guard autoZoomManager.mode != .off else { return }
+
+        // Hook up frame callback for Vision processing
+        recordingManager.onFrameForAI = { pixelBuffer in
+            autoZoomManager.processFrame(pixelBuffer)
+        }
+        autoZoomManager.start()
+        debugPrint("🔍 [AutoZoom] Activated in \(autoZoomManager.mode.rawValue) mode")
+    }
+
+    private func stopAutoZoom() {
+        autoZoomManager.stop()
+        recordingManager.onFrameForAI = nil
+    }
+
+    // MARK: - Mode Labels and Colors
+
+    private var gimbalModeColor: Color {
+        switch gimbalManager.gimbalMode {
+        case .off: return .white.opacity(0.5)
+        case .stabilize: return .yellow
+        case .track: return .green
+        }
+    }
+
+    private var gimbalModeLabel: String {
+        switch gimbalManager.gimbalMode {
+        case .off: return "OFF"
+        case .stabilize: return "STAB"
+        case .track: return "TRACK"
+        }
+    }
+
+    // MARK: - Interactive Scoreboard (Jony Ive Style - scoreboard IS the control)
+    // Tap team row = add points (multi-tap: 1, 2, or 3)
+    // Long press team row = subtract 1 point
+    // Tap clock = pause/play
+    // Tap period = advance period
+
+    // MARK: - Scoreboard Display (clean, minimal - only clock is tappable)
+
+    private var scoreboardDisplay: some View {
         VStack(spacing: 0) {
-            // HOME ROW (top)
+            // HOME ROW
             HStack(spacing: 0) {
-                // Color bar
                 Rectangle()
                     .fill(Color.orange)
-                    .frame(width: 5)
+                    .frame(width: 6)
 
-                // Team name (4 chars)
                 Text((appState.currentGame?.teamName ?? "HOME").prefix(4).uppercased())
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundColor(.white)
-                    .frame(width: 44, alignment: .leading)
-                    .padding(.leading, 6)
+                    .frame(width: 54, alignment: .leading)
+                    .padding(.leading, 8)
 
-                // Score
                 Text("\(myScore)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
-                    .frame(width: 32, alignment: .trailing)
+                    .frame(width: 40, alignment: .trailing)
 
-                // Divider
                 Rectangle()
                     .fill(Color.white.opacity(0.2))
-                    .frame(width: 1, height: 22)
-                    .padding(.horizontal, 6)
+                    .frame(width: 1, height: 28)
+                    .padding(.horizontal, 8)
 
-                // Period
                 Text(period)
-                    .font(.system(size: 9, weight: .semibold))
+                    .font(.system(size: 12, weight: .semibold))
                     .foregroundColor(.white.opacity(0.7))
-                    .frame(width: 52, alignment: .center)
+                    .frame(width: 64, alignment: .center)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .padding(.trailing, 4)
+                    .padding(.trailing, 6)
             }
-            .frame(height: 28)
+            .frame(height: 36)
 
-            // Row separator
             Rectangle()
                 .fill(Color.white.opacity(0.15))
                 .frame(height: 1)
-                .padding(.leading, 5)
+                .padding(.leading, 6)
 
-            // AWAY ROW (bottom)
+            // AWAY ROW
             HStack(spacing: 0) {
-                // Color bar
                 Rectangle()
                     .fill(Color.blue)
-                    .frame(width: 5)
+                    .frame(width: 6)
 
-                // Team name (4 chars)
                 Text((appState.currentGame?.opponent ?? "AWAY").prefix(4).uppercased())
-                    .font(.system(size: 12, weight: .bold))
+                    .font(.system(size: 15, weight: .bold))
                     .foregroundColor(.white)
-                    .frame(width: 44, alignment: .leading)
-                    .padding(.leading, 6)
+                    .frame(width: 54, alignment: .leading)
+                    .padding(.leading, 8)
 
-                // Score
                 Text("\(opponentScore)")
-                    .font(.system(size: 18, weight: .bold, design: .rounded))
+                    .font(.system(size: 24, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
-                    .frame(width: 32, alignment: .trailing)
+                    .frame(width: 40, alignment: .trailing)
 
-                // Divider
                 Rectangle()
                     .fill(Color.white.opacity(0.2))
-                    .frame(width: 1, height: 22)
-                    .padding(.horizontal, 6)
+                    .frame(width: 1, height: 28)
+                    .padding(.horizontal, 8)
 
-                // Clock (tap to pause/play) - colon blinks when running
+                // Clock (tap to pause/play)
                 HStack(spacing: 0) {
                     Text(clockMinutes)
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundColor(isClockRunning ? .white : .orange)
-                    BlinkingColon(
-                        isRunning: isClockRunning,
-                        font: .system(size: 14, weight: .bold, design: .monospaced),
-                        runningColor: .white,
-                        pausedColor: .orange
-                    )
+                        .font(.system(size: 18, weight: .bold, design: .monospaced))
+                        .foregroundColor(clockColor)
+                    if isUnderOneMinute {
+                        Text(".")
+                            .font(.system(size: 18, weight: .bold, design: .monospaced))
+                            .foregroundColor(clockColor)
+                    } else {
+                        BlinkingColon(
+                            isRunning: isClockRunning,
+                            font: .system(size: 18, weight: .bold, design: .monospaced),
+                            runningColor: isUnderOneMinute ? .red : .white,
+                            pausedColor: isUnderOneMinute ? .red : .orange
+                        )
+                    }
                     Text(clockSeconds)
-                        .font(.system(size: 14, weight: .bold, design: .monospaced))
-                        .foregroundColor(isClockRunning ? .white : .orange)
+                        .font(.system(size: 18, weight: .bold, design: .monospaced))
+                        .foregroundColor(clockColor)
                 }
-                .frame(width: 52, alignment: .center)
+                .frame(width: 64, alignment: .center)
                 .contentShape(Rectangle())
                 .onTapGesture { toggleClock() }
-                .padding(.trailing, 4)
+                .padding(.trailing, 6)
             }
-            .frame(height: 28)
+            .frame(height: 36)
         }
-        .fixedSize()  // Prevent expansion
+        .fixedSize()
         .background(Color(white: 0.08, opacity: 0.88))
-        .cornerRadius(8)
+        .cornerRadius(10)
         .overlay(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
     }
@@ -533,22 +702,33 @@ struct UltraMinimalRecordingView: View {
     private func tapFeedback(count: Int, color: Color) -> some View {
         VStack(spacing: 4) {
             Text("+\(count)")
-                .font(.system(size: 36, weight: .bold, design: .rounded))
+                .font(.system(size: 44, weight: .bold, design: .rounded))
                 .foregroundColor(color)
 
-            HStack(spacing: 4) {
+            HStack(spacing: 6) {
                 ForEach(1...3, id: \.self) { i in
                     Circle()
                         .fill(i <= count ? color : Color.gray.opacity(0.3))
-                        .frame(width: 8, height: 8)
+                        .frame(width: 10, height: 10)
                 }
             }
         }
         .padding(.vertical, 16)
-        .padding(.horizontal, 20)
+        .padding(.horizontal, 24)
         .background(.regularMaterial)
         .cornerRadius(16)
-        .shadow(color: Color.black.opacity(0.1), radius: 10)
+        .shadow(color: Color.black.opacity(0.15), radius: 10)
+    }
+
+    private func subtractFeedback(color: Color) -> some View {
+        Text("-1")
+            .font(.system(size: 44, weight: .bold, design: .rounded))
+            .foregroundColor(color.opacity(0.8))
+            .padding(.vertical, 16)
+            .padding(.horizontal, 28)
+            .background(.regularMaterial)
+            .cornerRadius(16)
+            .shadow(color: Color.black.opacity(0.15), radius: 10)
     }
 
     // MARK: - Tap Handling
@@ -608,6 +788,31 @@ struct UltraMinimalRecordingView: View {
         impact.impactOccurred()
     }
 
+    private func subtractScore(isMyTeam: Bool) {
+        if isMyTeam {
+            myScore = max(0, myScore - 1)
+            // Show feedback
+            showMySubtract = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                showMySubtract = false
+            }
+        } else {
+            opponentScore = max(0, opponentScore - 1)
+            // Show feedback
+            showOppSubtract = true
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                showOppSubtract = false
+            }
+        }
+
+        updateOverlayState()
+        sendScoreToWatch()
+
+        // Different haptic for subtract
+        let impact = UIImpactFeedbackGenerator(style: .light)
+        impact.impactOccurred()
+    }
+
     // MARK: - Clock
 
     private func toggleClock() {
@@ -631,8 +836,8 @@ struct UltraMinimalRecordingView: View {
 
     private func scheduleNextTick() {
         timer?.cancel()
-        guard isClockRunning, remainingSeconds > 0 else {
-            if remainingSeconds == 0 {
+        guard isClockRunning, (remainingSeconds > 0 || remainingTenths > 0) else {
+            if remainingSeconds == 0 && remainingTenths == 0 {
                 isClockRunning = false
                 sendClockToWatch()
             }
@@ -643,18 +848,35 @@ struct UltraMinimalRecordingView: View {
             .autoconnect()
             .first()
             .sink { _ in
-                // Last minute runs 2x faster (2 seconds per real second)
-                let decrement = self.remainingSeconds <= 60 ? 2 : 1
-                if self.remainingSeconds > decrement {
-                    self.remainingSeconds -= decrement
+                if self.isUnderOneMinute {
+                    // Under 1 minute: decrement tenths (real-time countdown)
+                    if self.remainingTenths > 0 {
+                        self.remainingTenths -= 1
+                    } else if self.remainingSeconds > 0 {
+                        self.remainingSeconds -= 1
+                        self.remainingTenths = 9
+                    } else {
+                        // Time's up
+                        self.remainingSeconds = 0
+                        self.remainingTenths = 0
+                        self.isClockRunning = false
+                    }
                 } else {
-                    self.remainingSeconds = 0
-                    self.isClockRunning = false
+                    // Over 1 minute: decrement seconds normally
+                    if self.remainingSeconds > 1 {
+                        self.remainingSeconds -= 1
+                    } else {
+                        // Entering final minute - start tenths countdown
+                        self.remainingSeconds = 59
+                        self.remainingTenths = 9
+                    }
                 }
                 self.updateOverlayState()
 
-                // Send clock update to watch every second for real-time sync
-                self.sendClockToWatch()
+                // Send clock update to watch (less frequently when in tenths mode)
+                if !self.isUnderOneMinute || self.remainingTenths == 0 {
+                    self.sendClockToWatch()
+                }
 
                 if self.isClockRunning {
                     self.scheduleNextTick()
@@ -717,6 +939,7 @@ struct UltraMinimalRecordingView: View {
                 updateOverlayState()  // Set initial overlay state (paused clock at full time)
                 recordingManager.startRecording()
                 gimbalManager.startTracking()
+                startAutoZoom()
             }
         }
 
@@ -827,20 +1050,36 @@ struct UltraMinimalRecordingView: View {
         } else {
             // Recording mode: stop recording and save
             gimbalManager.stopTracking()
+            stopAutoZoom()
 
             Task {
                 let videoURL = await recordingManager.stopRecordingAndWait()
+
+                // Log video details
+                if let url = videoURL {
+                    let exists = FileManager.default.fileExists(atPath: url.path)
+                    let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0
+                    debugPrint("📹 Video file: \(url.lastPathComponent)")
+                    debugPrint("📹 Video exists: \(exists), size: \(size / 1_000_000) MB")
+                } else {
+                    debugPrint("📹 WARNING: No video URL returned from recording!")
+                }
 
                 // Save to persistence
                 if let game = appState.currentGame {
                     persistenceManager.saveGame(game)
                 }
 
-                // Auto-save video to Photos
+                // Process video: Save to Photos, upload to YouTube, then cleanup
                 if let url = videoURL {
-                    saveVideoToPhotos(url: url)
+                    var photosSaved = false
 
-                    // Upload to YouTube (non-blocking)
+                    // 1. Save to Photos (WAIT for completion)
+                    debugPrint("📹 Starting save to Photos...")
+                    photosSaved = await saveVideoToPhotosAsync(url: url)
+                    debugPrint("📹 Photos save: \(photosSaved ? "SUCCESS" : "FAILED")")
+
+                    // 2. Upload to YouTube (WAIT for completion)
                     if youtubeService.isEnabled && youtubeService.isAuthorized {
                         let title = "\(appState.currentGame?.teamName ?? "Game") vs \(appState.currentGame?.opponent ?? "Opponent") - \(formattedDate())"
                         let description = """
@@ -850,9 +1089,23 @@ struct UltraMinimalRecordingView: View {
                         Recorded with Sahil Stats
                         """
 
-                        Task.detached {
-                            _ = await YouTubeService.shared.uploadVideo(url: url, title: title, description: description)
+                        debugPrint("📺 Starting YouTube upload...")
+                        let videoId = await youtubeService.uploadVideo(url: url, title: title, description: description)
+                        debugPrint("📺 YouTube upload: \(videoId != nil ? "SUCCESS (\(videoId!))" : "FAILED")")
+                    } else {
+                        debugPrint("📺 YouTube upload skipped (not enabled/authorized)")
+                    }
+
+                    // 3. Auto-cleanup: Delete local file if saved to Photos successfully
+                    if photosSaved {
+                        do {
+                            try FileManager.default.removeItem(at: url)
+                            debugPrint("🗑️ Video cleaned up from Documents folder")
+                        } catch {
+                            debugPrint("🗑️ Cleanup failed: \(error.localizedDescription)")
                         }
+                    } else {
+                        debugPrint("⚠️ Keeping video in Documents (Photos save failed)")
                     }
                 }
 
@@ -864,20 +1117,30 @@ struct UltraMinimalRecordingView: View {
         }
     }
 
-    private func saveVideoToPhotos(url: URL) {
-        PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
-            guard status == .authorized || status == .limited else {
-                debugPrint("📹 Photo library access denied")
-                return
-            }
+    private func saveVideoToPhotosAsync(url: URL) async -> Bool {
+        // First check if file exists
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            debugPrint("📹 Video file doesn't exist at: \(url.path)")
+            return false
+        }
 
-            PHPhotoLibrary.shared().performChanges {
-                PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
-            } completionHandler: { success, error in
-                if success {
-                    debugPrint("📹 Video saved to Photos")
-                } else if let error = error {
-                    debugPrint("📹 Failed to save video: \(error.localizedDescription)")
+        return await withCheckedContinuation { continuation in
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+                guard status == .authorized || status == .limited else {
+                    debugPrint("📹 Photo library access denied: \(status.rawValue)")
+                    continuation.resume(returning: false)
+                    return
+                }
+
+                PHPhotoLibrary.shared().performChanges {
+                    PHAssetChangeRequest.creationRequestForAssetFromVideo(atFileURL: url)
+                } completionHandler: { success, error in
+                    if success {
+                        debugPrint("📹 Video saved to Photos successfully")
+                    } else if let error = error {
+                        debugPrint("📹 Failed to save video: \(error.localizedDescription)")
+                    }
+                    continuation.resume(returning: success)
                 }
             }
         }
@@ -951,6 +1214,90 @@ struct UltraMinimalRecordingView: View {
                 }
 
                 Divider()
+
+                // Camera Controls (Gimbal + Zoom)
+                if !appState.isStatsOnly {
+                    HStack(spacing: 10) {
+                        // Gimbal mode
+                        Button(action: {
+                            let modes = GimbalMode.allCases
+                            if let currentIndex = modes.firstIndex(of: gimbalManager.gimbalMode) {
+                                let nextIndex = (currentIndex + 1) % modes.count
+                                gimbalManager.gimbalMode = modes[nextIndex]
+                            }
+                        }) {
+                            VStack(spacing: 4) {
+                                Image(systemName: gimbalManager.gimbalMode.icon)
+                                    .font(.system(size: 16))
+                                Text(gimbalModeLabel)
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundColor(gimbalModeColor)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.gray.opacity(0.1))
+                            .cornerRadius(10)
+                        }
+
+                        // Auto-zoom mode
+                        Button(action: {
+                            let modes = AutoZoomMode.allCases
+                            if let currentIndex = modes.firstIndex(of: autoZoomManager.mode) {
+                                let nextIndex = (currentIndex + 1) % modes.count
+                                autoZoomManager.mode = modes[nextIndex]
+                                if autoZoomManager.mode == .off {
+                                    autoZoomManager.stop()
+                                } else if hasStartedRecording {
+                                    startAutoZoom()
+                                }
+                            }
+                        }) {
+                            VStack(spacing: 4) {
+                                Image(systemName: autoZoomManager.mode.icon)
+                                    .font(.system(size: 16))
+                                Text(autoZoomModeLabel)
+                                    .font(.system(size: 10, weight: .medium))
+                            }
+                            .foregroundColor(autoZoomModeColor)
+                            .frame(maxWidth: .infinity)
+                            .padding(.vertical, 12)
+                            .background(Color.gray.opacity(0.1))
+                            .cornerRadius(10)
+                        }
+
+                        // Zoom level with +/- controls (0.5x to 3.0x)
+                        HStack(spacing: 8) {
+                            Button(action: {
+                                let newZoom = max(0.5, displayZoom - 0.5)
+                                currentZoom = recordingManager.setZoom(factor: newZoom)
+                                autoZoomManager.manualZoomOverride(newZoom)
+                            }) {
+                                Image(systemName: "minus")
+                                    .font(.system(size: 14, weight: .bold))
+                            }
+
+                            Text(String(format: "%.1fx", displayZoom))
+                                .font(.system(size: 14, weight: .bold, design: .monospaced))
+                                .foregroundColor(autoZoomManager.mode != .off ? .cyan : .primary)
+
+                            Button(action: {
+                                let newZoom = min(3.0, displayZoom + 0.5)
+                                currentZoom = recordingManager.setZoom(factor: newZoom)
+                                autoZoomManager.manualZoomOverride(newZoom)
+                            }) {
+                                Image(systemName: "plus")
+                                    .font(.system(size: 14, weight: .bold))
+                            }
+                        }
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 12)
+                        .background(Color.gray.opacity(0.1))
+                        .cornerRadius(10)
+                    }
+
+                    Divider()
+                }
 
                 // Game Controls
                 HStack(spacing: 10) {
@@ -1029,18 +1376,21 @@ struct UltraMinimalRecordingView: View {
         case "1st Half":
             period = "2nd Half"
             remainingSeconds = halfLength * 60
+            remainingTenths = 0
             isClockRunning = false
             stopTimer()
         case "2nd Half":
             // Go to OT
             period = "OT"
             remainingSeconds = 60  // 1 minute OT
+            remainingTenths = 0
             isClockRunning = false
             stopTimer()
         default:
             // Already in OT - add another minute
             if period.hasPrefix("OT") {
                 remainingSeconds += 60
+                remainingTenths = 0
                 // Don't change period name, just add time
             }
         }
@@ -1051,6 +1401,7 @@ struct UltraMinimalRecordingView: View {
     private func addOvertime() {
         period = "OT"
         remainingSeconds += 60
+        remainingTenths = 0
         if !isClockRunning {
             isClockRunning = true
             startTimerIfNeeded()
@@ -1071,11 +1422,12 @@ struct UltraMinimalRecordingView: View {
                 .foregroundColor(.primary)
 
             HStack(spacing: 6) {
+                // Made shot - only tracks stats, does NOT add to game score
+                // Use tap scoring for game score changes
                 Button(action: {
                     made.wrappedValue += 1
                     att.wrappedValue += 1
-                    myScore += pts
-                    addScore(points: 0, isMyTeam: true) // Log event (score already added)
+                    // NOTE: No longer adds to myScore - use score screen for that
                 }) {
                     Image(systemName: "checkmark")
                         .font(.system(size: 11, weight: .bold))
@@ -1085,6 +1437,7 @@ struct UltraMinimalRecordingView: View {
                         .cornerRadius(6)
                 }
 
+                // Missed shot
                 Button(action: { att.wrappedValue += 1 }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 11, weight: .bold))
@@ -1229,7 +1582,13 @@ class CameraPreviewUIView: UIView {
     }
 }
 
-#Preview {
+#Preview("Portrait") {
     UltraMinimalRecordingView()
         .environmentObject(AppState())
+}
+
+#Preview("Landscape") {
+    UltraMinimalRecordingView()
+        .environmentObject(AppState())
+        .previewInterfaceOrientation(.landscapeRight)
 }
