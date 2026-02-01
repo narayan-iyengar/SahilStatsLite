@@ -624,24 +624,14 @@ Tested interactive scoreboard controls vs full-screen tap zones. Jony Ive philos
 - Right half: swipe **RIGHT** (away from center) to subtract
 - Both directions are "push away" gestures - intuitive for removing points
 
-**Camera Control button (iPhone 16+):**
-iOS 18 introduced `AVCaptureSystemZoomSlider` for the physical Camera Control button. This provides smooth, hardware-accelerated zoom that's superior to software pinch gestures.
+**Camera Control button (iPhone 16+) - REMOVED:**
+We explored adding Camera Control support but removed it because:
+- Camera Control button is ON THE PHONE
+- User's workflow: set up gimbal → walk to sidelines → use Watch to score
+- You're not near the phone during the game, so the button is useless
+- Required 3 extension targets (Capture Extension, Widget Extension, CameraCaptureIntent) = bloat
 
-Implementation in `RecordingManager.swift`:
-```swift
-// iOS 18+ Camera Control zoom slider
-if session.supportsControls {
-    let zoomSlider = AVCaptureSystemZoomSlider(device: device) { zoomFactor in
-        DispatchQueue.main.async {
-            self.currentZoomLevel = zoomFactor
-        }
-    }
-    session.addControl(zoomSlider)
-    session.setControlsDelegate(self, queue: cameraControlQueue)
-}
-```
-
-Requires `AVCaptureSessionControlsDelegate` conformance with stub methods.
+**Decision:** Keep it simple. Watch + pinch zoom before walking away + overlay buttons are sufficient. Jony would approve.
 
 **Feedback Animations:**
 - **+1 animation**: Green/orange pill with "+1" fades after 0.6s
@@ -1176,6 +1166,62 @@ func updateZoom(_ factor: CGFloat) {
 | No zoom intelligence | Smart zoom on clusters |
 | Gets lost on timeouts | Holds position (learned sideline) |
 | One angle only | Works from any angle |
+
+### Self-Learning / Self-Correcting Mode
+
+**The Key Insight:** Gimbal can only pan/tilt (physical movement). Zoom is software-only. So Skynet controls BOTH:
+- **DockKit** → Physical pan/tilt to keep action in frame
+- **AVCaptureDevice.videoZoomFactor** → Software zoom based on player spread
+
+**Self-Correcting Feedback Loop:**
+```
+┌─────────────────────────────────────────────────────────────┐
+│                 SKYNET SELF-CORRECTION                       │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  1. OBSERVE: Sample frame every 0.5 sec                     │
+│     └─→ Detect all humans (VNDetectHumanRectanglesRequest)  │
+│                                                              │
+│  2. CLASSIFY: Who's who?                                    │
+│     ├─→ Size filter: Kids (players) vs Adults (coaches)     │
+│     ├─→ Position filter: On-court vs sideline               │
+│     └─→ Stripe filter: Refs (black/white jersey)            │
+│                                                              │
+│  3. LEARN: Update rolling heat map                          │
+│     ├─→ Where players cluster = COURT (track here)          │
+│     ├─→ Where adults stand = SIDELINE (ignore)              │
+│     └─→ Decay old data (0.95x) so it adapts to game flow    │
+│                                                              │
+│  4. CORRECT: Adjust tracking                                │
+│     ├─→ IF tracking outside heat map → snap back to court   │
+│     ├─→ IF players spread wide → zoom OUT (1.0x)            │
+│     ├─→ IF players cluster → zoom IN (up to 1.5x)           │
+│     └─→ IF timeout (all players at edges) → HOLD position   │
+│                                                              │
+│  5. SMOOTH: No jumpy movements                              │
+│     └─→ Ease toward target (20% per frame)                  │
+│                                                              │
+│  REPEAT every 0.5 sec throughout entire game                │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Self-Correcting Behaviors:**
+
+| Situation | Detection | Correction |
+|-----------|-----------|------------|
+| Gimbal tracking parent on sideline | Adult outside heat map | Snap back to court center |
+| Fast break across court | Action center moved >30% | Smooth pan to follow |
+| Under-basket play | Players clustered tight | Zoom in to 1.3-1.5x |
+| Full-court press | Players spread wide | Zoom out to 1.0x |
+| Timeout | All players at edges | Hold position, no panic |
+| Halftime | Court empty | Hold last position |
+| Ref running through | Striped jersey detected | Filter out, don't follow |
+
+**Why No Manual Calibration:**
+- Heat map LEARNS court bounds from where players actually play
+- First 30-60 seconds: rapid learning as players run around
+- After that: continuous refinement throughout game
+- Works from ANY camera angle (center court, corner, bleachers)
 
 ### Future Refinements
 
