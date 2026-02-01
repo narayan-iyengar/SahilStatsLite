@@ -6,8 +6,8 @@
 //
 
 import SwiftUI
-import UIKit
 import AVFoundation
+import AVKit
 import LockedCameraCapture
 
 struct SahilStatsCaptureExtensionViewFinder: UIViewControllerRepresentable {
@@ -32,7 +32,6 @@ class CaptureViewController: UIViewController {
     private var captureSession: AVCaptureSession?
     private var previewLayer: AVCaptureVideoPreviewLayer?
     private var videoDevice: AVCaptureDevice?
-    private var captureInteraction: AVCaptureEventInteraction?
 
     private let controlQueue = DispatchQueue(label: "com.sahilstats.captureControl")
 
@@ -135,42 +134,15 @@ class CaptureViewController: UIViewController {
     // MARK: - Setup Capture Interaction (Camera Control button)
 
     private func setupCaptureInteraction() {
-        if #available(iOS 17.2, *) {
-            let interaction = AVCaptureEventInteraction { [weak self] event in
-                // Primary action (full press) - could trigger recording
-                self?.handleCaptureEvent(event)
-            } secondary: { [weak self] event in
-                // Secondary action
-                self?.handleSecondaryCaptureEvent(event)
-            }
-
-            view.addInteraction(interaction)
-            captureInteraction = interaction
-        }
-    }
-
-    private func handleCaptureEvent(_ event: AVCaptureEvent) {
-        switch event.phase {
-        case .began:
-            print("Capture began")
-        case .ended:
-            print("Capture ended")
-            // Could open main app here
-            openMainApp()
-        case .cancelled:
-            print("Capture cancelled")
-        @unknown default:
-            break
-        }
-    }
-
-    private func handleSecondaryCaptureEvent(_ event: AVCaptureEvent) {
-        // Secondary actions if needed
+        // Use SwiftUI's onCameraCaptureEvent or handle via delegate
+        // The AVCaptureSessionControlsDelegate handles Camera Control interactions
     }
 
     private func openMainApp() {
         // Open the main SahilStatsLite app
-        lockedSession.openApplication()
+        Task {
+            await lockedSession.openApplication()
+        }
     }
 }
 
