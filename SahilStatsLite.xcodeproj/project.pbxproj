@@ -77,13 +77,6 @@
 			);
 			target = 8B4AE4282F141E81005F206B /* SahilStatsLite */;
 		};
-		8BD424EC2F2F589E004B02F3 /* Exceptions for "SahilStatsCaptureExtension" folder in "SahilStatsCaptureExtension" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Info.plist,
-			);
-			target = 8BD424DD2F2F589E004B02F3 /* SahilStatsCaptureExtension */;
-		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -102,9 +95,6 @@
 		};
 		8BD424DF2F2F589E004B02F3 /* SahilStatsCaptureExtension */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
-			exceptions = (
-				8BD424EC2F2F589E004B02F3 /* Exceptions for "SahilStatsCaptureExtension" folder in "SahilStatsCaptureExtension" target */,
-			);
 			path = SahilStatsCaptureExtension;
 			sourceTree = "<group>";
 		};
