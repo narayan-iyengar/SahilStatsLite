@@ -602,7 +602,7 @@ Tested interactive scoreboard controls vs full-screen tap zones. Jony Ive philos
 │   (Your Team)    │   (Opponent)     │
 │                  │                  │
 │   TAP = +1       │   TAP = +1       │
-│   SWIPE ↓ = -1   │   SWIPE ↓ = -1   │
+│   SWIPE ← = -1   │   SWIPE ← = -1   │
 │   PINCH = ZOOM   │   PINCH = ZOOM   │
 │                  │                  │
 ├──────────────────┴──────────────────┤
@@ -613,9 +613,12 @@ Tested interactive scoreboard controls vs full-screen tap zones. Jony Ive philos
 
 **Gestures:**
 - **Tap** → Add +1 point (multi-tap accumulator: 1/2/3)
-- **Swipe down** → Subtract -1 point (fix mistakes)
+- **Swipe LEFT** → Subtract -1 point (fix mistakes) - horizontal swipe doesn't conflict with pinch
 - **Pinch** → Zoom camera 0.5x-3.0x (uses `.simultaneousGesture()`)
 - **Tap clock** → Pause/play
+
+**Why swipe LEFT instead of DOWN:**
+Pinch-to-zoom involves radial finger movement which can create vertical translation, triggering false "swipe down" detection. Horizontal swipes are unambiguous and don't conflict with pinch gestures.
 
 **Feedback Animations:**
 - **+1 animation**: Green/orange pill with "+1" fades after 0.6s

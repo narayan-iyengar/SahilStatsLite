@@ -174,7 +174,7 @@ struct UltraMinimalRecordingView: View {
 
             // Full-screen tap zones for scoring (Jony Ive style - simple, forgiving)
             // Left half = your team, Right half = opponent
-            // Tap to add points, Swipe DOWN to subtract, Pinch to zoom
+            // Tap to add points, Swipe LEFT to subtract (doesn't conflict with pinch), Pinch to zoom
             if !isPortrait || recordingManager.isSimulator || appState.isStatsOnly {
                 HStack(spacing: 0) {
                     // LEFT HALF - My team
@@ -182,9 +182,12 @@ struct UltraMinimalRecordingView: View {
                         .contentShape(Rectangle())
                         .onTapGesture { handleMyTeamTap() }
                         .gesture(
-                            DragGesture(minimumDistance: 30)
+                            DragGesture(minimumDistance: 40)
                                 .onEnded { value in
-                                    if value.translation.height > 50 {
+                                    // Swipe LEFT to subtract (horizontal, won't conflict with pinch)
+                                    // Must be predominantly horizontal (width > height) and leftward
+                                    if value.translation.width < -60 &&
+                                       abs(value.translation.width) > abs(value.translation.height) {
                                         subtractScore(isMyTeam: true)
                                     }
                                 }
@@ -195,9 +198,11 @@ struct UltraMinimalRecordingView: View {
                         .contentShape(Rectangle())
                         .onTapGesture { handleOpponentTap() }
                         .gesture(
-                            DragGesture(minimumDistance: 30)
+                            DragGesture(minimumDistance: 40)
                                 .onEnded { value in
-                                    if value.translation.height > 50 {
+                                    // Swipe LEFT to subtract (horizontal, won't conflict with pinch)
+                                    if value.translation.width < -60 &&
+                                       abs(value.translation.width) > abs(value.translation.height) {
                                         subtractScore(isMyTeam: false)
                                     }
                                 }
