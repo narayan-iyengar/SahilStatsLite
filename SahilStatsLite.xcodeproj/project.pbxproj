@@ -16,6 +16,7 @@
 		8B4AE4A02F2057DF005F206B /* SahilStatsLiteWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 8B4AE4962F2057DD005F206B /* SahilStatsLiteWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8B4AE4A72F20581C005F206B /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B4AE4A62F20581C005F206B /* WatchConnectivity.framework */; };
 		8B4AE4B32F205878005F206B /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B4AE4B22F205878005F206B /* WatchConnectivity.framework */; };
+		8BD424E72F2F589E004B02F3 /* SahilStatsCaptureExtension.appex in Embed ExtensionKit Extensions */ = {isa = PBXBuildFile; fileRef = 8BD424DE2F2F589E004B02F3 /* SahilStatsCaptureExtension.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -25,6 +26,13 @@
 			proxyType = 1;
 			remoteGlobalIDString = 8B4AE4952F2057DD005F206B;
 			remoteInfo = "SahilStatsLiteWatch Watch App";
+		};
+		8BD424E52F2F589E004B02F3 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 8B4AE4212F141E81005F206B /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 8BD424DD2F2F589E004B02F3;
+			remoteInfo = SahilStatsCaptureExtension;
 		};
 /* End PBXContainerItemProxy section */
 
@@ -40,6 +48,17 @@
 			name = "Embed Watch Content";
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8BD424E82F2F589E004B02F3 /* Embed ExtensionKit Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "$(EXTENSIONS_FOLDER_PATH)";
+			dstSubfolderSpec = 16;
+			files = (
+				8BD424E72F2F589E004B02F3 /* SahilStatsCaptureExtension.appex in Embed ExtensionKit Extensions */,
+			);
+			name = "Embed ExtensionKit Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
@@ -47,6 +66,7 @@
 		8B4AE4962F2057DD005F206B /* SahilStatsLiteWatch Watch App.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "SahilStatsLiteWatch Watch App.app"; sourceTree = BUILT_PRODUCTS_DIR; };
 		8B4AE4A62F20581C005F206B /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = System/Library/Frameworks/WatchConnectivity.framework; sourceTree = SDKROOT; };
 		8B4AE4B22F205878005F206B /* WatchConnectivity.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = WatchConnectivity.framework; path = Platforms/WatchOS.platform/Developer/SDKs/WatchOS26.2.sdk/System/Library/Frameworks/WatchConnectivity.framework; sourceTree = DEVELOPER_DIR; };
+		8BD424DE2F2F589E004B02F3 /* SahilStatsCaptureExtension.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.extensionkit-extension"; includeInIndex = 0; path = SahilStatsCaptureExtension.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -56,6 +76,13 @@
 				Info.plist,
 			);
 			target = 8B4AE4282F141E81005F206B /* SahilStatsLite */;
+		};
+		8BD424EC2F2F589E004B02F3 /* Exceptions for "SahilStatsCaptureExtension" folder in "SahilStatsCaptureExtension" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				Info.plist,
+			);
+			target = 8BD424DD2F2F589E004B02F3 /* SahilStatsCaptureExtension */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -71,6 +98,14 @@
 		8B4AE4972F2057DD005F206B /* SahilStatsLiteWatch Watch App */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = "SahilStatsLiteWatch Watch App";
+			sourceTree = "<group>";
+		};
+		8BD424DF2F2F589E004B02F3 /* SahilStatsCaptureExtension */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				8BD424EC2F2F589E004B02F3 /* Exceptions for "SahilStatsCaptureExtension" folder in "SahilStatsCaptureExtension" target */,
+			);
+			path = SahilStatsCaptureExtension;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -98,6 +133,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8BD424DB2F2F589E004B02F3 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -106,6 +148,7 @@
 			children = (
 				8B4AE42B2F141E81005F206B /* SahilStatsLite */,
 				8B4AE4972F2057DD005F206B /* SahilStatsLiteWatch Watch App */,
+				8BD424DF2F2F589E004B02F3 /* SahilStatsCaptureExtension */,
 				8B4AE4A52F20581B005F206B /* Frameworks */,
 				8B4AE42A2F141E81005F206B /* Products */,
 			);
@@ -116,6 +159,7 @@
 			children = (
 				8B4AE4292F141E81005F206B /* SahilStatsLite.app */,
 				8B4AE4962F2057DD005F206B /* SahilStatsLiteWatch Watch App.app */,
+				8BD424DE2F2F589E004B02F3 /* SahilStatsCaptureExtension.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -140,11 +184,13 @@
 				8B4AE4262F141E81005F206B /* Frameworks */,
 				8B4AE4272F141E81005F206B /* Resources */,
 				8B4AE4A42F2057DF005F206B /* Embed Watch Content */,
+				8BD424E82F2F589E004B02F3 /* Embed ExtensionKit Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
 				8B4AE49F2F2057DF005F206B /* PBXTargetDependency */,
+				8BD424E62F2F589E004B02F3 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				8B4AE42B2F141E81005F206B /* SahilStatsLite */,
@@ -184,6 +230,28 @@
 			productReference = 8B4AE4962F2057DD005F206B /* SahilStatsLiteWatch Watch App.app */;
 			productType = "com.apple.product-type.application";
 		};
+		8BD424DD2F2F589E004B02F3 /* SahilStatsCaptureExtension */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 8BD424EB2F2F589E004B02F3 /* Build configuration list for PBXNativeTarget "SahilStatsCaptureExtension" */;
+			buildPhases = (
+				8BD424DA2F2F589E004B02F3 /* Sources */,
+				8BD424DB2F2F589E004B02F3 /* Frameworks */,
+				8BD424DC2F2F589E004B02F3 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				8BD424DF2F2F589E004B02F3 /* SahilStatsCaptureExtension */,
+			);
+			name = SahilStatsCaptureExtension;
+			packageProductDependencies = (
+			);
+			productName = SahilStatsCaptureExtension;
+			productReference = 8BD424DE2F2F589E004B02F3 /* SahilStatsCaptureExtension.appex */;
+			productType = "com.apple.product-type.extensionkit-extension";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -198,6 +266,9 @@
 						CreatedOnToolsVersion = 26.2;
 					};
 					8B4AE4952F2057DD005F206B = {
+						CreatedOnToolsVersion = 26.2;
+					};
+					8BD424DD2F2F589E004B02F3 = {
 						CreatedOnToolsVersion = 26.2;
 					};
 				};
@@ -222,6 +293,7 @@
 			targets = (
 				8B4AE4282F141E81005F206B /* SahilStatsLite */,
 				8B4AE4952F2057DD005F206B /* SahilStatsLiteWatch Watch App */,
+				8BD424DD2F2F589E004B02F3 /* SahilStatsCaptureExtension */,
 			);
 		};
 /* End PBXProject section */
@@ -235,6 +307,13 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 		8B4AE4942F2057DD005F206B /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8BD424DC2F2F589E004B02F3 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -258,6 +337,13 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		8BD424DA2F2F589E004B02F3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -265,6 +351,11 @@
 			isa = PBXTargetDependency;
 			target = 8B4AE4952F2057DD005F206B /* SahilStatsLiteWatch Watch App */;
 			targetProxy = 8B4AE49E2F2057DF005F206B /* PBXContainerItemProxy */;
+		};
+		8BD424E62F2F589E004B02F3 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = 8BD424DD2F2F589E004B02F3 /* SahilStatsCaptureExtension */;
+			targetProxy = 8BD424E52F2F589E004B02F3 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -536,6 +627,62 @@
 			};
 			name = Release;
 		};
+		8BD424E92F2F589E004B02F3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TTV9QQRD5H;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SahilStatsCaptureExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SahilStatsCaptureExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.narayan.SahilStats.SahilStatsCaptureExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		8BD424EA2F2F589E004B02F3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = TTV9QQRD5H;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = SahilStatsCaptureExtension/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = SahilStatsCaptureExtension;
+				INFOPLIST_KEY_NSHumanReadableCopyright = "";
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.narayan.SahilStats.SahilStatsCaptureExtension;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SKIP_INSTALL = YES;
+				STRING_CATALOG_GENERATE_SYMBOLS = YES;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_EMIT_LOC_STRINGS = YES;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -562,6 +709,15 @@
 			buildConfigurations = (
 				8B4AE4A22F2057DF005F206B /* Debug */,
 				8B4AE4A32F2057DF005F206B /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		8BD424EB2F2F589E004B02F3 /* Build configuration list for PBXNativeTarget "SahilStatsCaptureExtension" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8BD424E92F2F589E004B02F3 /* Debug */,
+				8BD424EA2F2F589E004B02F3 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
