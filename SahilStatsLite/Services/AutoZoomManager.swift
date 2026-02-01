@@ -94,9 +94,18 @@ final class AutoZoomManager: ObservableObject {
     private var recentZoomTargets: [CGFloat] = []  // Rolling average for stability
     private let rollingAverageCount = 5
 
-    // MARK: - Skynet (PersonClassifier for smart tracking)
+    // MARK: - Skynet (Deep Track 4.0-inspired tracking)
 
     private let personClassifier = PersonClassifier()
+    private let deepTracker = DeepTracker()
+
+    // Skynet tracking stats
+    @Published var trackingReliability: Float = 0
+    @Published var isInRecoveryMode: Bool = false
+    @Published var confirmedTracks: Int = 0
+
+    // Frame timing for Kalman dt
+    private nonisolated(unsafe) var lastFrameTime: CFAbsoluteTime = 0
 
     // MARK: - Vision (created fresh each time to avoid threading issues)
 
@@ -126,6 +135,13 @@ final class AutoZoomManager: ObservableObject {
         isProcessing = false
         smoothZoomTimer?.invalidate()
         smoothZoomTimer = nil
+
+        // Reset DeepTracker for next session
+        deepTracker.reset()
+        trackingReliability = 0
+        isInRecoveryMode = false
+        confirmedTracks = 0
+
         debugPrint("🔍 [AutoZoom] Stopped")
     }
 
@@ -179,56 +195,70 @@ final class AutoZoomManager: ObservableObject {
         }
     }
 
-    /// Skynet mode: Use PersonClassifier to filter refs/adults, track only players
+    /// Skynet mode: Deep Track 4.0-inspired tracking with Kalman filtering
     private func processFrameWithSkynet(_ pixelBuffer: CVPixelBuffer) {
-        // Run classification on background thread
+        // Calculate dt for Kalman filter
+        let now = CFAbsoluteTimeGetCurrent()
+        let dt = lastFrameTime > 0 ? now - lastFrameTime : 1.0/30.0
+        lastFrameTime = now
+
+        // Run classification and tracking on background thread
         Task.detached { [weak self] in
             guard let self = self else { return }
 
-            // Classify all people in frame
+            // 1. Classify all people in frame (PersonClassifier)
             let classifiedPeople = self.personClassifier.classifyPeople(in: pixelBuffer)
 
-            // Filter to only trackable people (players on court)
-            let players = classifiedPeople.filter { person in
-                person.classification == .player && person.isOnCourt
-            }
+            // 2. Update DeepTracker with new detections (SORT-style tracking)
+            let activeTracks = self.deepTracker.update(detections: classifiedPeople, dt: dt)
 
+            // 3. Get Kalman-filtered action center (much smoother than raw detection)
+            let actionCenter = self.deepTracker.getActionCenter(filterPlayers: true)
+
+            // 4. Get group bounding box for debug visualization
+            let groupBox = self.deepTracker.getGroupBoundingBox(filterPlayers: true)
+
+            // 5. Calculate zoom with recovery awareness (zoom out if lost)
+            let recommendedZoom = self.deepTracker.calculateZoom(minZoom: 1.0, maxZoom: 2.0)
+
+            // Count by classification
+            let players = classifiedPeople.filter { $0.classification == .player && $0.isOnCourt }
             let refs = classifiedPeople.filter { $0.classification == .referee }
             let adults = classifiedPeople.filter {
                 $0.classification == .coach || $0.classification == .spectator
             }
 
-            // Get player bounding boxes
-            let playerBoxes = players.map { $0.boundingBox }
-
-            // Calculate action center (weighted, refs included at lower weight)
-            let actionCenter = self.personClassifier.calculateActionCenter(from: classifiedPeople)
-
-            // Calculate recommended zoom based on player spread
-            let recommendedZoom = self.personClassifier.calculateZoomFactor(
-                from: classifiedPeople,
-                minZoom: 1.0,
-                maxZoom: 2.0
-            )
+            // Get tracking stats
+            let reliability = self.deepTracker.averageReliability
+            let inRecovery = self.deepTracker.isInRecoveryMode
+            let confirmed = self.deepTracker.confirmedTrackCount
 
             await MainActor.run {
-                self.filteredRefCount = refs.count
+                // Update detection counts
+                self.detectedPlayerCount = self.deepTracker.playerTrackCount
+                self.filteredRefCount = self.deepTracker.refTrackCount
                 self.filteredAdultCount = adults.count
+
+                // Update tracking stats
+                self.trackingReliability = reliability
+                self.isInRecoveryMode = inRecovery
+                self.confirmedTracks = confirmed
+
+                // Update action center (Kalman-smoothed)
                 self.actionZoneCenter = actionCenter
 
-                if playerBoxes.isEmpty {
+                // Update debug visualization
+                self.debugActionZone = groupBox
+
+                if activeTracks.isEmpty {
                     self.handleNoPlayers()
                 } else {
-                    // Use Skynet's recommended zoom directly
-                    self.detectedPlayerCount = players.count
+                    // Use DeepTracker's Kalman-filtered zoom
                     self.updateTargetZoom(recommendedZoom)
 
-                    // Update debug action zone
-                    if !playerBoxes.isEmpty {
-                        self.debugActionZone = self.calculateActionZone(playerBoxes)
-                    }
-
-                    debugPrint("🤖 [Skynet] Players: \(players.count), Refs: \(refs.count), Adults: \(adults.count) → Zoom: \(String(format: "%.1f", recommendedZoom))x")
+                    // Log with tracking info
+                    let status = inRecovery ? "🔍 RECOVERY" : "✅ TRACKING"
+                    debugPrint("🤖 [Skynet] \(status) | Tracks: \(confirmed) | Players: \(players.count) Refs: \(refs.count) | Reliability: \(String(format: "%.0f%%", reliability * 100)) | Zoom: \(String(format: "%.1f", recommendedZoom))x")
                 }
             }
         }
