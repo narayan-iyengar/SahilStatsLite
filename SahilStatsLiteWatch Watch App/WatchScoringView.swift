@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import WatchKit
 
 struct WatchScoringView: View {
     @EnvironmentObject var connectivity: WatchConnectivityClient
@@ -141,20 +142,30 @@ struct WatchScoringView: View {
                 Text("\(score)")
                     .font(.system(size: 42, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
-                    .frame(width: 70, height: 60)
+                    .frame(width: 80, height: 70)  // Larger touch target
                     .background(Color.white.opacity(0.05))
                     .cornerRadius(12)
                     .contentShape(Rectangle())
-                    .onTapGesture { onTap() }
-                    .gesture(
-                        DragGesture(minimumDistance: 20)
+                    // Use highPriorityGesture for swipe so it takes precedence
+                    .highPriorityGesture(
+                        DragGesture(minimumDistance: 35)  // Higher threshold to avoid accidental swipes
                             .onEnded { value in
                                 // Swipe down = subtract point
-                                if value.translation.height > 20 && abs(value.translation.width) < abs(value.translation.height) {
+                                // Require significant vertical movement and mostly vertical direction
+                                let isVertical = abs(value.translation.height) > abs(value.translation.width) * 1.5
+                                let isDownward = value.translation.height > 40
+                                if isDownward && isVertical {
+                                    // Haptic feedback for swipe
+                                    WKInterfaceDevice.current().play(.click)
                                     onSwipeDown()
                                 }
                             }
                     )
+                    .onTapGesture {
+                        // Haptic feedback for tap
+                        WKInterfaceDevice.current().play(.click)
+                        onTap()
+                    }
 
                 if let points = feedback {
                     Text(points > 0 ? "+\(points)" : "\(points)")

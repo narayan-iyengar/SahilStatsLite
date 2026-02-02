@@ -1617,6 +1617,8 @@ struct SettingsView: View {
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
     @ObservedObject private var calendarManager = GameCalendarManager.shared
     @ObservedObject private var youtubeService = YouTubeService.shared
+    @ObservedObject private var autoZoomManager = AutoZoomManager.shared
+    @ObservedObject private var gimbalManager = GimbalTrackingManager.shared
     @Environment(\.dismiss) private var dismiss
 
     @State private var newTeamName: String = ""
@@ -1625,6 +1627,61 @@ struct SettingsView: View {
     var body: some View {
         NavigationView {
             List {
+                // Recording Section (Skynet, Gimbal)
+                Section {
+                    // Skynet (AI Tracking)
+                    Toggle(isOn: Binding(
+                        get: { autoZoomManager.mode == .auto },
+                        set: { autoZoomManager.mode = $0 ? .auto : .off }
+                    )) {
+                        HStack(spacing: 12) {
+                            Image(systemName: "brain.head.profile")
+                                .font(.title2)
+                                .foregroundColor(.purple)
+                                .frame(width: 32)
+
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("Skynet AI Tracking")
+                                    .font(.body)
+                                Text("Auto-zoom follows players, ignores refs")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                        }
+                    }
+                    .tint(.purple)
+
+                    // Gimbal Tracking
+                    HStack {
+                        Image(systemName: gimbalManager.gimbalMode.icon)
+                            .font(.title2)
+                            .foregroundColor(gimbalManager.gimbalMode == .track ? .green : .secondary)
+                            .frame(width: 32)
+
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Gimbal Mode")
+                                .font(.body)
+                            Text(gimbalManager.gimbalMode.description)
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+
+                        Spacer()
+
+                        Picker("", selection: $gimbalManager.gimbalMode) {
+                            ForEach(GimbalMode.allCases, id: \.self) { mode in
+                                Text(mode.rawValue).tag(mode)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .labelsHidden()
+                    }
+                } header: {
+                    Text("Recording")
+                } footer: {
+                    Text("Skynet uses AI to track players and adjust zoom automatically. These settings apply to all recordings.")
+                }
+
                 // YouTube Section
                 Section {
                     Toggle("Auto-upload to YouTube", isOn: $youtubeService.isEnabled)

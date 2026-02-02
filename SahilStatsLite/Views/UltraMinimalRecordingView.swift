@@ -554,20 +554,6 @@ struct UltraMinimalRecordingView: View {
         .background(Capsule().fill(.ultraThinMaterial))
     }
 
-    private var autoZoomModeColor: Color {
-        switch autoZoomManager.mode {
-        case .off: return .white.opacity(0.5)
-        case .auto: return .purple  // AI tracking active
-        }
-    }
-
-    private var autoZoomModeLabel: String {
-        switch autoZoomManager.mode {
-        case .off: return "ZOOM"
-        case .auto: return "AUTO"
-        }
-    }
-
     private func startAutoZoom() {
         guard autoZoomManager.mode == .auto else { return }
 
@@ -582,24 +568,6 @@ struct UltraMinimalRecordingView: View {
     private func stopAutoZoom() {
         autoZoomManager.stop()
         recordingManager.onFrameForAI = nil
-    }
-
-    // MARK: - Mode Labels and Colors
-
-    private var gimbalModeColor: Color {
-        switch gimbalManager.gimbalMode {
-        case .off: return .white.opacity(0.5)
-        case .stabilize: return .yellow
-        case .track: return .green
-        }
-    }
-
-    private var gimbalModeLabel: String {
-        switch gimbalManager.gimbalMode {
-        case .off: return "OFF"
-        case .stabilize: return "STAB"
-        case .track: return "TRACK"
-        }
     }
 
     // MARK: - Interactive Scoreboard (Jony Ive Style - scoreboard IS the control)
@@ -1227,90 +1195,6 @@ struct UltraMinimalRecordingView: View {
 
                 Divider()
 
-                // Camera Controls (Gimbal + Zoom)
-                if !appState.isStatsOnly {
-                    HStack(spacing: 10) {
-                        // Gimbal mode
-                        Button(action: {
-                            let modes = GimbalMode.allCases
-                            if let currentIndex = modes.firstIndex(of: gimbalManager.gimbalMode) {
-                                let nextIndex = (currentIndex + 1) % modes.count
-                                gimbalManager.gimbalMode = modes[nextIndex]
-                            }
-                        }) {
-                            VStack(spacing: 4) {
-                                Image(systemName: gimbalManager.gimbalMode.icon)
-                                    .font(.system(size: 16))
-                                Text(gimbalModeLabel)
-                                    .font(.system(size: 10, weight: .medium))
-                            }
-                            .foregroundColor(gimbalModeColor)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(10)
-                        }
-
-                        // Auto-zoom mode
-                        Button(action: {
-                            let modes = AutoZoomMode.allCases
-                            if let currentIndex = modes.firstIndex(of: autoZoomManager.mode) {
-                                let nextIndex = (currentIndex + 1) % modes.count
-                                autoZoomManager.mode = modes[nextIndex]
-                                if autoZoomManager.mode == .off {
-                                    autoZoomManager.stop()
-                                } else if hasStartedRecording {
-                                    startAutoZoom()
-                                }
-                            }
-                        }) {
-                            VStack(spacing: 4) {
-                                Image(systemName: autoZoomManager.mode.icon)
-                                    .font(.system(size: 16))
-                                Text(autoZoomModeLabel)
-                                    .font(.system(size: 10, weight: .medium))
-                            }
-                            .foregroundColor(autoZoomModeColor)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 12)
-                            .background(Color.gray.opacity(0.1))
-                            .cornerRadius(10)
-                        }
-
-                        // Zoom level with +/- controls (0.5x to 3.0x)
-                        HStack(spacing: 8) {
-                            Button(action: {
-                                let newZoom = max(0.5, displayZoom - 0.5)
-                                currentZoom = recordingManager.setZoom(factor: newZoom)
-                                autoZoomManager.manualZoomOverride(newZoom)
-                            }) {
-                                Image(systemName: "minus")
-                                    .font(.system(size: 14, weight: .bold))
-                            }
-
-                            Text(String(format: "%.1fx", displayZoom))
-                                .font(.system(size: 14, weight: .bold, design: .monospaced))
-                                .foregroundColor(autoZoomManager.mode == .auto ? .cyan : .primary)
-
-                            Button(action: {
-                                let newZoom = min(3.0, displayZoom + 0.5)
-                                currentZoom = recordingManager.setZoom(factor: newZoom)
-                                autoZoomManager.manualZoomOverride(newZoom)
-                            }) {
-                                Image(systemName: "plus")
-                                    .font(.system(size: 14, weight: .bold))
-                            }
-                        }
-                        .foregroundColor(.secondary)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 12)
-                        .background(Color.gray.opacity(0.1))
-                        .cornerRadius(10)
-                    }
-
-                    Divider()
-                }
-
                 // Game Controls
                 HStack(spacing: 10) {
                     // Next Period
@@ -1599,8 +1483,7 @@ class CameraPreviewUIView: UIView {
         .environmentObject(AppState())
 }
 
-#Preview("Landscape") {
+#Preview("Landscape", traits: .landscapeRight) {
     UltraMinimalRecordingView()
         .environmentObject(AppState())
-        .previewInterfaceOrientation(.landscapeRight)
 }
