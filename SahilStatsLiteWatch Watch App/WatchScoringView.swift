@@ -377,17 +377,20 @@ struct WatchScoringView: View {
 #Preview("Series 8 — 45mm (TinyPod)") {
     WatchConnectivityClient.configureForPreview()
     return WatchScoringView(layout: .preview45mm)
+        .previewDevice(PreviewDevice(rawValue: "Apple Watch Series 9 (45mm)"))
         .environmentObject(WatchConnectivityClient.shared)
 }
 
 #Preview("Ultra 2 — 49mm (PodX)") {
     WatchConnectivityClient.configureForPreview()
     return WatchScoringView(layout: .preview49mm)
+        .previewDevice(PreviewDevice(rawValue: "Apple Watch Ultra 2"))
         .environmentObject(WatchConnectivityClient.shared)
 }
 
 #Preview("Compact — 41mm") {
     WatchConnectivityClient.configureForPreview()
     return WatchScoringView(layout: .preview41mm)
+        .previewDevice(PreviewDevice(rawValue: "Apple Watch Series 9 (41mm)"))
         .environmentObject(WatchConnectivityClient.shared)
 }
