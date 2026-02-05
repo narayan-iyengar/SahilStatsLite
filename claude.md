@@ -442,16 +442,23 @@ Falls back to `UIDevice.current.orientation` if window scene unavailable. This s
 ## Apple Watch App
 
 ### Overview
-The Watch app allows Narayan to control scoring remotely while the iPhone records on the gimbal. Two usage modes:
-1. **On wrist (Ultra 2)**: Score from your wrist during games
-2. **Dedicated remote (Series 8 in TinyPod/RePod case)**: Pocket-sized scoring device, pull-tap-pocket
+The Watch app allows Narayan to control scoring remotely while the iPhone records on the gimbal. Two devices:
+- **Ultra 2 (49mm) in PodX Adventure Classic**: Daily watch + game day scorer
+- **Series 8 (45mm) in TinyPod Standard**: Dedicated scoring remote, backup
 
-### Dedicated Scoring Remote (Series 8 Upcycle)
-Repurpose an old Apple Watch Series 8 (45mm) as a standalone scoring device:
-- **Case**: RePod C1 (~$50, aluminum, in stock) or TinyPod Lite ($30, silicone, often sold out)
-- **Setup**: Disable Wrist Detection, flip orientation for case
-- **Connectivity**: Bluetooth to iPhone (~30-100ft, covers a basketball court)
-- **Advantage**: Always-on screen, palm-able, hand off to assistant coach
+### Multi-Watch Setup
+- Both watches paired to iPhone, **auto-switch OFF**
+- Before game: manually switch to scoring watch in Watch app on iPhone
+- After game: switch back to daily watch (or put Ultra 2 on wrist with auto-switch)
+- Only one watch active at a time (Apple limitation)
+
+### Hardware
+| Watch | Case | Role |
+|-------|------|------|
+| Ultra 2 (49mm) | PodX Adventure Classic ($60) | Primary — daily wear + games |
+| Series 8 (45mm) | TinyPod Standard ($80) | Backup — dedicated remote |
+
+**Connectivity**: Bluetooth to iPhone (~30-100ft, covers a basketball court)
 
 ### Adaptive Layout (WatchLayout.swift)
 The Watch UI auto-detects screen size via `WKInterfaceDevice.current().screenBounds`:
