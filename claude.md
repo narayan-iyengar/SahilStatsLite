@@ -442,17 +442,43 @@ Falls back to `UIDevice.current.orientation` if window scene unavailable. This s
 ## Apple Watch App
 
 ### Overview
-The Watch app allows Narayan to control scoring from his wrist while the iPhone records on the gimbal. This is the key UX improvement - hands-free recording with remote score control.
+The Watch app allows Narayan to control scoring remotely while the iPhone records on the gimbal. Two usage modes:
+1. **On wrist (Ultra 2)**: Score from your wrist during games
+2. **Dedicated remote (Series 8 in TinyPod/RePod case)**: Pocket-sized scoring device, pull-tap-pocket
+
+### Dedicated Scoring Remote (Series 8 Upcycle)
+Repurpose an old Apple Watch Series 8 (45mm) as a standalone scoring device:
+- **Case**: RePod C1 (~$50, aluminum, in stock) or TinyPod Lite ($30, silicone, often sold out)
+- **Setup**: Disable Wrist Detection, flip orientation for case
+- **Connectivity**: Bluetooth to iPhone (~30-100ft, covers a basketball court)
+- **Advantage**: Always-on screen, palm-able, hand off to assistant coach
+
+### Adaptive Layout (WatchLayout.swift)
+The Watch UI auto-detects screen size via `WKInterfaceDevice.current().screenBounds`:
+- **Ultra (49mm, 205x251pt)**: Full layout - separate live/period lines, swipe hint, clock helper text
+- **Regular (45mm, 198x242pt)**: Compact layout - combined live+period header, larger score zones, no hints
+- **Compact (40-41mm)**: Even tighter - smaller fonts, maximum score zone area
+
+Key dimensions by size:
+| Element | Compact (41mm) | Regular (45mm) | Ultra (49mm) |
+|---------|---------------|----------------|--------------|
+| Score font | 34pt | 38pt | 42pt |
+| Clock font | 15pt | 17pt | 20pt |
+| Header | Combined | Combined | Separate lines |
+| Swipe hint | Hidden | Hidden | Shown |
+| Clock helper | Hidden | Hidden | "running"/"hold to end" |
 
 ### Watch App Structure
 ```
 SahilStatsLite/SahilStatsLite/SahilStatsLiteWatch Watch App/
-├── SahilStatsLiteWatchApp.swift    # Watch app entry point
-├── WatchContentView.swift          # Main navigation view
-├── WatchScoringView.swift          # Score buttons (+1, +2, +3)
-├── WatchStatsView.swift            # Stats display
-├── WatchConnectivityClient.swift   # Watch-side WCSession handling
-└── Assets.xcassets/                # Watch app icons
+├── SahilStatsLiteWatchApp.swift       # Watch app entry point
+├── WatchContentView.swift             # Main navigation view
+├── WatchScoringView.swift             # Adaptive scoring (tap +1, swipe -1)
+├── WatchStatsView.swift               # Individual player stats
+├── WatchGameConfirmationView.swift    # Pre-game confirmation screen
+├── WatchLayout.swift                  # Auto-detect watch size, adaptive dimensions
+├── WatchConnectivityClient.swift      # Watch-side WCSession handling
+└── Assets.xcassets/                   # Watch app icons
 ```
 
 ### iOS App Watch Support

@@ -2,7 +2,8 @@
 //  WatchScoringView.swift
 //  SahilStatsLiteWatch
 //
-//  Main scoring screen - tap scores to add points, tap clock to pause/play
+//  Main scoring screen - tap scores to add points, swipe down to subtract.
+//  Auto-adapts between Series 8 (45mm) and Ultra 2 (49mm).
 //
 
 import SwiftUI
@@ -12,15 +13,11 @@ import WatchKit
 struct WatchScoringView: View {
     @EnvironmentObject var connectivity: WatchConnectivityClient
     @State private var showEndGame: Bool = false
-    @State private var myFeedback: Int? = nil  // Positive = add, negative = subtract
+    @State private var myFeedback: Int? = nil
     @State private var oppFeedback: Int? = nil
     @State private var colonVisible: Bool = true
 
-    private var clockTime: String {
-        let mins = connectivity.remainingSeconds / 60
-        let secs = connectivity.remainingSeconds % 60
-        return String(format: "%d:%02d", mins, secs)
-    }
+    private let layout = WatchLayout.current
 
     private var clockMinutes: String {
         String(connectivity.remainingSeconds / 60)
@@ -35,28 +32,20 @@ struct WatchScoringView: View {
             Color.black.ignoresSafeArea()
 
             VStack(spacing: 0) {
-                // Live indicator
-                liveIndicator
-                    .padding(.top, 4)
-
-                // Period (tap to advance)
-                Button {
-                    connectivity.advancePeriod()
-                } label: {
-                    Text(connectivity.period)
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundColor(.white.opacity(0.5))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 4)
-                        .background(Color.white.opacity(0.08))
-                        .cornerRadius(8)
+                // Header: combined on smaller screens, separate on Ultra
+                if layout.combinedHeader {
+                    compactHeader
+                        .padding(.top, 4)
+                } else {
+                    liveIndicator
+                        .padding(.top, 4)
+                    periodButton
+                        .padding(.top, 2)
                 }
-                .buttonStyle(.plain)
-                .padding(.top, 2)
 
-                // Score area
+                // Score area - takes all remaining space
                 HStack(spacing: 0) {
-                    // My team (tap = +1, swipe down = -1)
+                    // My team
                     scoreZone(
                         score: connectivity.myScore,
                         name: connectivity.teamName,
@@ -66,7 +55,7 @@ struct WatchScoringView: View {
                         onSwipeDown: { handleMyTeamSwipeDown() }
                     )
 
-                    // Divider
+                    // Center divider
                     Rectangle()
                         .fill(
                             LinearGradient(
@@ -78,7 +67,7 @@ struct WatchScoringView: View {
                         .frame(width: 1)
                         .padding(.vertical, 10)
 
-                    // Opponent (tap = +1, swipe down = -1)
+                    // Opponent
                     scoreZone(
                         score: connectivity.oppScore,
                         name: connectivity.opponent,
@@ -90,12 +79,14 @@ struct WatchScoringView: View {
                 }
                 .frame(maxHeight: .infinity)
 
-                // Clock area
+                // Clock
                 clockArea
 
-                // Swipe hint
-                swipeHint
-                    .padding(.bottom, 4)
+                // Swipe hint (Ultra only - extra room)
+                if layout.showSwipeHint {
+                    swipeHint
+                        .padding(.bottom, 4)
+                }
             }
 
             // End game confirmation
@@ -104,7 +95,6 @@ struct WatchScoringView: View {
             }
         }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
-            // Blink colon when clock is running
             if connectivity.isClockRunning {
                 colonVisible.toggle()
             } else {
@@ -113,7 +103,39 @@ struct WatchScoringView: View {
         }
     }
 
-    // MARK: - Live Indicator
+    // MARK: - Compact Header (Series 8 / smaller - live + period on one line)
+
+    private var compactHeader: some View {
+        HStack {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(connectivity.isClockRunning ? Color.green : Color.orange)
+                    .frame(width: 6, height: 6)
+
+                Text(connectivity.isClockRunning ? "LIVE" : "PAUSED")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(connectivity.isClockRunning ? .green : .orange)
+            }
+
+            Spacer()
+
+            Button {
+                connectivity.advancePeriod()
+            } label: {
+                Text(connectivity.period)
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundColor(.white.opacity(0.5))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .background(Color.white.opacity(0.08))
+                    .cornerRadius(6)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 16)
+    }
+
+    // MARK: - Live Indicator (Ultra - separate line)
 
     private var liveIndicator: some View {
         HStack(spacing: 4) {
@@ -127,7 +149,24 @@ struct WatchScoringView: View {
         }
     }
 
-    // MARK: - Score Zone
+    // MARK: - Period Button (Ultra - separate line)
+
+    private var periodButton: some View {
+        Button {
+            connectivity.advancePeriod()
+        } label: {
+            Text(connectivity.period)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundColor(.white.opacity(0.5))
+                .padding(.horizontal, 12)
+                .padding(.vertical, 4)
+                .background(Color.white.opacity(0.08))
+                .cornerRadius(8)
+        }
+        .buttonStyle(.plain)
+    }
+
+    // MARK: - Score Zone (adaptive)
 
     private func scoreZone(
         score: Int,
@@ -137,80 +176,76 @@ struct WatchScoringView: View {
         onTap: @escaping () -> Void,
         onSwipeDown: @escaping () -> Void
     ) -> some View {
-        VStack(spacing: 4) {
+        VStack(spacing: layout.scoreZoneSpacing) {
             ZStack {
                 Text("\(score)")
-                    .font(.system(size: 42, weight: .bold, design: .rounded))
+                    .font(.system(size: layout.scoreFontSize, weight: .bold, design: .rounded))
                     .foregroundColor(.white)
-                    .frame(width: 80, height: 70)  // Larger touch target
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color.white.opacity(0.05))
                     .cornerRadius(12)
                     .contentShape(Rectangle())
-                    // Use highPriorityGesture for swipe so it takes precedence
                     .highPriorityGesture(
-                        DragGesture(minimumDistance: 35)  // Higher threshold to avoid accidental swipes
+                        DragGesture(minimumDistance: 35)
                             .onEnded { value in
-                                // Swipe down = subtract point
-                                // Require significant vertical movement and mostly vertical direction
                                 let isVertical = abs(value.translation.height) > abs(value.translation.width) * 1.5
                                 let isDownward = value.translation.height > 40
                                 if isDownward && isVertical {
-                                    // Haptic feedback for swipe
                                     WKInterfaceDevice.current().play(.click)
                                     onSwipeDown()
                                 }
                             }
                     )
                     .onTapGesture {
-                        // Haptic feedback for tap
                         WKInterfaceDevice.current().play(.click)
                         onTap()
                     }
 
                 if let points = feedback {
                     Text(points > 0 ? "+\(points)" : "\(points)")
-                        .font(.system(size: 20, weight: .bold))
+                        .font(.system(size: layout.feedbackFontSize, weight: .bold))
                         .foregroundColor(points > 0 ? .orange : .red)
                         .offset(y: -30)
                         .transition(.scale.combined(with: .opacity))
                 }
             }
 
-            // Truncate team name for watch display
             Text(String(name.prefix(4)).uppercased())
-                .font(.system(size: 10, weight: .semibold))
+                .font(.system(size: layout.teamNameFontSize, weight: .semibold))
                 .foregroundColor(isMyTeam ? .orange : .white.opacity(0.5))
         }
         .frame(maxWidth: .infinity)
     }
 
-    // MARK: - Clock Area
+    // MARK: - Clock Area (adaptive)
 
     private var clockArea: some View {
-        VStack(spacing: 4) {
+        VStack(spacing: layout.showClockHelper ? 4 : 2) {
             clockButton
 
-            Text(connectivity.isClockRunning ? "running" : "hold to end")
-                .font(.system(size: 9, weight: .medium))
-                .foregroundColor(.white.opacity(0.3))
-                .allowsHitTesting(false)
+            if layout.showClockHelper {
+                Text(connectivity.isClockRunning ? "running" : "hold to end")
+                    .font(.system(size: 9, weight: .medium))
+                    .foregroundColor(.white.opacity(0.3))
+                    .allowsHitTesting(false)
+            }
         }
-        .padding(.vertical, 6)
+        .padding(.vertical, layout.clockVerticalPadding)
     }
 
     private var clockButton: some View {
         HStack(spacing: 0) {
             Text(clockMinutes)
-                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                .font(.system(size: layout.clockFontSize, weight: .semibold, design: .monospaced))
             Text(":")
-                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                .font(.system(size: layout.clockFontSize, weight: .semibold, design: .monospaced))
                 .opacity(connectivity.isClockRunning ? (colonVisible ? 1.0 : 0.0) : 1.0)
             Text(clockSeconds)
-                .font(.system(size: 20, weight: .semibold, design: .monospaced))
+                .font(.system(size: layout.clockFontSize, weight: .semibold, design: .monospaced))
         }
         .foregroundColor(connectivity.isClockRunning ? .white : .orange)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 5)
         .background(Color.white.opacity(0.1))
         .cornerRadius(8)
         .onTapGesture {
@@ -308,7 +343,6 @@ struct WatchScoringView: View {
         }
     }
 
-    // Swipe down = subtract 1 point (fix mistakes)
     private func handleMyTeamSwipeDown() {
         connectivity.subtractScore(team: "my", points: 1)
         withAnimation(.spring(response: 0.3)) {
