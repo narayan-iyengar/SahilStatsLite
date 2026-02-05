@@ -17,7 +17,11 @@ struct WatchScoringView: View {
     @State private var oppFeedback: Int? = nil
     @State private var colonVisible: Bool = true
 
-    private let layout = WatchLayout.current
+    private let layout: WatchLayout
+
+    init(layout: WatchLayout = .current) {
+        self.layout = layout
+    }
 
     private var clockMinutes: String {
         String(connectivity.remainingSeconds / 60)
@@ -368,7 +372,22 @@ struct WatchScoringView: View {
     }
 }
 
-#Preview {
-    WatchScoringView()
+// MARK: - Previews (compare both sizes in Xcode Canvas)
+
+#Preview("Series 8 — 45mm (TinyPod)") {
+    WatchConnectivityClient.configureForPreview()
+    return WatchScoringView(layout: .preview45mm)
+        .environmentObject(WatchConnectivityClient.shared)
+}
+
+#Preview("Ultra 2 — 49mm (PodX)") {
+    WatchConnectivityClient.configureForPreview()
+    return WatchScoringView(layout: .preview49mm)
+        .environmentObject(WatchConnectivityClient.shared)
+}
+
+#Preview("Compact — 41mm") {
+    WatchConnectivityClient.configureForPreview()
+    return WatchScoringView(layout: .preview41mm)
         .environmentObject(WatchConnectivityClient.shared)
 }

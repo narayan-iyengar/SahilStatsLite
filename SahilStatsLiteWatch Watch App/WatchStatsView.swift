@@ -264,7 +264,14 @@ struct WatchStatsView: View {
     }
 }
 
-#Preview {
-    WatchStatsView()
+#Preview("Stats — 45mm") {
+    WatchConnectivityClient.configureForPreview()
+    return WatchStatsView()
+        .environmentObject(WatchConnectivityClient.shared)
+}
+
+#Preview("Stats — 49mm") {
+    WatchConnectivityClient.configureForPreview()
+    return WatchStatsView()
         .environmentObject(WatchConnectivityClient.shared)
 }

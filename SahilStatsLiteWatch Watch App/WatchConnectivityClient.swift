@@ -124,6 +124,29 @@ class WatchConnectivityClient: NSObject, ObservableObject {
         setupSession()
     }
 
+    /// Configure shared instance with sample data for Xcode Canvas previews
+    static func configureForPreview() {
+        let client = shared
+        client.hasActiveGame = true
+        client.teamName = "LAVA"
+        client.opponent = "WARRIORS"
+        client.myScore = 42
+        client.oppScore = 38
+        client.remainingSeconds = 7 * 60 + 34  // 7:34
+        client.isClockRunning = true
+        client.period = "2nd Half"
+        client.periodIndex = 1
+        client.fg2Made = 3
+        client.fg2Att = 5
+        client.fg3Made = 1
+        client.fg3Att = 4
+        client.ftMade = 2
+        client.ftAtt = 3
+        client.assists = 2
+        client.rebounds = 4
+        client.steals = 1
+    }
+
     private func setupSession() {
         guard WCSession.isSupported() else {
             debugPrint("[Watch] WCSession not supported")

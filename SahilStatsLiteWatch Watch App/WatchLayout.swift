@@ -107,4 +107,15 @@ struct WatchLayout {
 
     /// Show swipe hint to Stats tab
     var showSwipeHint: Bool { isUltra }
+
+    // MARK: - Preview Helpers
+
+    /// Series 8 45mm layout (for Xcode Canvas previews)
+    static let preview45mm = WatchLayout(size: .regular, screenWidth: 198, screenHeight: 242)
+
+    /// Ultra 2 49mm layout (for Xcode Canvas previews)
+    static let preview49mm = WatchLayout(size: .ultra, screenWidth: 205, screenHeight: 251)
+
+    /// Compact 41mm layout (for Xcode Canvas previews)
+    static let preview41mm = WatchLayout(size: .compact, screenWidth: 176, screenHeight: 215)
 }
