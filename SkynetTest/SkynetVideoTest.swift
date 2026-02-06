@@ -27,13 +27,88 @@ import CoreImage
 import CoreGraphics
 import Vision
 
-// MARK: - Ultra-Smooth Focus Tracker
+// MARK: - 1. Predictive "Lead" Tracker (The Cameraman Algorithm)
+
+class PredictiveLeadTracker {
+    private var history: [(time: Double, point: CGPoint)] = []
+    private let windowSize: Double = 0.5
+    private let predictionHorizon: Double = 0.4
+    
+    func update(currentCenter: CGPoint, timestamp: Double) -> CGPoint {
+        history.append((time: timestamp, point: currentCenter))
+        history.removeAll { timestamp - $0.time > windowSize }
+        guard history.count >= 3 else { return currentCenter }
+        
+        let t0 = history.first!.time
+        var sumT: Double = 0, sumX: Double = 0, sumY: Double = 0
+        var sumT2: Double = 0, sumTX: Double = 0, sumTY: Double = 0
+        let n = Double(history.count)
+        
+        for item in history {
+            let t = item.time - t0
+            sumT += t
+            sumT2 += t * t
+            sumX += Double(item.point.x)
+            sumY += Double(item.point.y)
+            sumTX += t * Double(item.point.x)
+            sumTY += t * Double(item.point.y)
+        }
+        
+        let denominator = n * sumT2 - sumT * sumT
+        guard denominator != 0 else { return currentCenter }
+        
+        let slopeX = (n * sumTX - sumT * sumX) / denominator
+        let slopeY = (n * sumTY - sumT * sumY) / denominator
+        let interceptX = (sumX - slopeX * sumT) / n
+        let interceptY = (sumY - slopeY * sumT) / n
+        
+        let targetT = (timestamp - t0) + predictionHorizon
+        let predictedX = slopeX * targetT + interceptX
+        let predictedY = slopeY * targetT + interceptY
+        
+        return CGPoint(x: max(0.1, min(0.9, predictedX)), y: max(0.1, min(0.9, predictedY)))
+    }
+    
+    func reset() { history.removeAll() }
+}
+
+// MARK: - 2. Scene Activity Monitor
+
+class SceneActivityMonitor {
+    private var motionHistory: [Double] = []
+    private let historySize = 30
+    
+    var currentEnergy: Double {
+        guard !motionHistory.isEmpty else { return 0 }
+        return motionHistory.reduce(0, +) / Double(motionHistory.count)
+    }
+    
+    var isHighAction: Bool { currentEnergy > 0.05 }
+    
+    func update(flowMagnitude: Double) {
+        motionHistory.append(flowMagnitude)
+        if motionHistory.count > historySize { motionHistory.removeFirst() }
+    }
+    
+    func updateFromCentroid(oldPos: CGPoint, newPos: CGPoint, dt: Double) {
+        let dx = newPos.x - oldPos.x
+        let dy = newPos.y - oldPos.y
+        let speed = Double(sqrt(dx*dx + dy*dy)) / dt
+        update(flowMagnitude: speed)
+    }
+}
+
+// MARK: - Ultra-Smooth Focus Tracker (v3.1 - The "Golden" Smoother)
 
 class UltraSmoothFocusTracker {
 
     // Current smoothed position
     private var smoothX: Double = 0.5
     private var smoothY: Double = 0.5
+    
+    // Raw target (for debug)
+    var rawTargetX: Double = 0.5
+    var rawTargetY: Double = 0.5
 
     // Velocity (for momentum)
     private var velocityX: Double = 0
@@ -44,85 +119,65 @@ class UltraSmoothFocusTracker {
     private var targetY: Double = 0.5
 
     // Smoothing parameters - BROADCAST QUALITY
-    // Key insight: real broadcast cameras barely move. They anticipate, not chase.
-    private let positionSmoothing: Double = 0.008  // 0.8% per frame (was 1.2%)
-    private let velocityDamping: Double = 0.75     // Stronger decay = less momentum carry
-    private let deadZone: Double = 0.06            // 6% dead zone (was 3.5%) - ignore centroid jitter
-    private let maxSpeed: Double = 0.006           // 0.6% per frame max (was 1%) - very slow pan
+    private let positionSmoothing: Double = 0.008
+    private let velocityDamping: Double = 0.75
+    private let deadZone: Double = 0.06
+    private let maxSpeed: Double = 0.006
 
     // Confidence tracking
     private var highConfidenceStreak: Int = 0
-    private let minStreakForUpdate: Int = 8  // Require 8 consistent frames (~0.13s at 60fps)
+    private let minStreakForUpdate: Int = 8
 
+    var isTimeoutMode: Bool = false
+    
     var position: CGPoint {
         CGPoint(x: smoothX, y: smoothY)
     }
 
-    func update(detectedPosition: CGPoint?, confidence: Float,
-                playerCenter: CGPoint?, playerConfidence: Float,
-                dt: Double) {
+    func update(target: CGPoint, dt: Double, avgPlayerHeight: CGFloat = 0) {
+        rawTargetX = Double(target.x)
+        rawTargetY = Double(target.y)
 
-        // Combine ball + player signals for target position
-        // Ball has priority when detected with high confidence
-        // Players provide stable background signal
-        var combinedPosition: CGPoint? = nil
-        var combinedConfidence: Float = 0
-
-        if let ballPos = detectedPosition, confidence > 0.4, let pCenter = playerCenter, playerConfidence > 0.3 {
-            // Both available with high-confidence ball: 30% ball, 70% player
-            // Players are far more reliable (89% vs 10% detection rate)
-            let ballWeight: CGFloat = 0.3
-            let playerWeight: CGFloat = 0.7
-            combinedPosition = CGPoint(
-                x: ballPos.x * ballWeight + pCenter.x * playerWeight,
-                y: ballPos.y * ballWeight + pCenter.y * playerWeight
-            )
-            combinedConfidence = confidence * 0.3 + playerConfidence * 0.7
-        } else if let pCenter = playerCenter, playerConfidence > 0.3 {
-            // Players detected (with or without low-confidence ball) - trust players
-            combinedPosition = pCenter
-            combinedConfidence = playerConfidence * 0.9
-        } else if let ballPos = detectedPosition, confidence > 0.2 {
-            // Ball only, no players (rare) - use ball
-            combinedPosition = ballPos
-            combinedConfidence = confidence
+        // Proximity Damping: Scale smoothing based on distance to camera
+        let proximityFactor = max(0.2, min(1.0, 1.0 - (Double(avgPlayerHeight) - 0.15) * 2.0))
+        var currentSmoothing = positionSmoothing * proximityFactor
+        var currentMaxSpeed = maxSpeed * proximityFactor
+        
+        if isTimeoutMode {
+            currentSmoothing *= 0.3
+            currentMaxSpeed *= 0.3
         }
 
-        // Track high-confidence streaks
-        if let combined = combinedPosition, combinedConfidence > 0.2 {
-            highConfidenceStreak += 1
+        // Track high-confidence streaks (always true for this simulation)
+        highConfidenceStreak += 1
 
-            // Only update target if we have sustained detection
-            if highConfidenceStreak >= minStreakForUpdate {
-                let dx = Double(combined.x) - targetX
-                let dy = Double(combined.y) - targetY
+        if highConfidenceStreak >= minStreakForUpdate {
+            let dx = Double(target.x) - targetX
+            let dy = Double(target.y) - targetY
 
-                // Apply dead zone - ignore small movements
-                if abs(dx) > deadZone || abs(dy) > deadZone {
-                    targetX = Double(combined.x)
-                    targetY = Double(combined.y)
-                }
+            // Apply dead zone
+            if abs(dx) > deadZone || abs(dy) > deadZone {
+                targetX = Double(target.x)
+                targetY = Double(target.y)
             }
-        } else {
-            highConfidenceStreak = max(0, highConfidenceStreak - 2)  // Decay faster than build
         }
 
         // Calculate desired movement toward target
         let dx = targetX - smoothX
         let dy = targetY - smoothY
 
-        // Add to velocity with smoothing
-        velocityX += dx * positionSmoothing
-        velocityY += dy * positionSmoothing
+        // Add to velocity with smoothing (proximity aware)
+        velocityX += dx * currentSmoothing
+        velocityY += dy * currentSmoothing
 
         // Apply velocity damping (momentum decay)
         velocityX *= velocityDamping
         velocityY *= velocityDamping
 
-        // Clamp velocity to max speed
+        // Clamp velocity to max speed (proximity aware)
         let speed = sqrt(velocityX * velocityX + velocityY * velocityY)
-        if speed > maxSpeed {
-            let scale = maxSpeed / speed
+        if speed > currentMaxSpeed {
+            let scale = currentMaxSpeed / speed
             velocityX *= scale
             velocityY *= scale
         }
@@ -137,12 +192,9 @@ class UltraSmoothFocusTracker {
     }
 
     func reset() {
-        smoothX = 0.5
-        smoothY = 0.5
-        targetX = 0.5
-        targetY = 0.5
-        velocityX = 0
-        velocityY = 0
+        smoothX = 0.5; smoothY = 0.5
+        targetX = 0.5; targetY = 0.5
+        velocityX = 0; velocityY = 0
         highConfidenceStreak = 0
     }
 }
@@ -156,35 +208,34 @@ class UltraSmoothZoomController {
 
     // Zoom changes VERY smoothly - zoom jitter feels worse than pan jitter
     private let zoomSmoothing: Double = 0.005  // 0.5% per frame (was 1%) - ultra slow zoom
-    private let minZoom: Double = 1.2
+    private let minZoom: Double = 1.0           // Allow full frame out for timeouts
     private let maxZoom: Double = 1.5  // Tighter range (was 1.6) - less zoom variation
 
+    var isTimeoutMode: Bool = false
+    
     var zoom: CGFloat {
         CGFloat(currentZoom)
     }
 
     func update(ballDetected: Bool, confidence: Float, actionSpread: Float,
                 personCount: Int, focusPosition: CGPoint? = nil) {
-        if personCount > 0 {
+        
+        if isTimeoutMode {
+            targetZoom = 1.0 // Zoom all the way out during timeouts
+        } else if personCount > 0 {
             // Use player spread to inform zoom
             if actionSpread > 0.15 {
-                // Players spread wide - zoom out
                 targetZoom = 1.2
             } else if actionSpread < 0.05 && ballDetected && confidence > 0.3 {
-                // Clustered action with ball - zoom in
                 targetZoom = 1.5
             } else if ballDetected && confidence > 0.3 {
-                // Have ball detection - moderate zoom
                 targetZoom = 1.4
             } else {
-                // Default moderate
                 targetZoom = 1.3
             }
         } else if ballDetected && confidence > 0.3 {
-            // No people detected but have ball
             targetZoom = 1.5
         } else {
-            // No detection - stay at moderate zoom
             targetZoom = 1.3
         }
 
@@ -197,6 +248,7 @@ class UltraSmoothZoomController {
     func reset() {
         currentZoom = 1.3
         targetZoom = 1.3
+        isTimeoutMode = false
     }
 }
 
@@ -410,14 +462,13 @@ class SimplePersonDetector {
     private var framesSinceDetection = 0
     private let detectionInterval = 6  // Every 6 frames (~10fps at 60fps)
 
-    // Rolling height statistics for kid/adult classification
+    // Classification stats
     private var heightHistory: [CGFloat] = []
     private let historySize = 100
     private var medianHeight: CGFloat = 0.15
-
-    // Rolling centroid smoother - averages recent centroids to eliminate jitter
-    private var centroidHistory: [CGPoint] = []
-    private let centroidHistorySize = 8  // Average over ~8 detection cycles = ~0.8s
+    
+    // Motion Tracking for Momentum Attention
+    private var previousPersonCenters: [CGPoint] = []
 
     // Current focus point for proximity weighting (updated externally)
     var currentFocusHint: CGPoint = CGPoint(x: 0.5, y: 0.5)
@@ -426,6 +477,7 @@ class SimplePersonDetector {
         let boundingBox: CGRect      // In normalized coords (0-1), Vision convention (origin bottom-left)
         let displayBox: CGRect       // In normalized coords (0-1), display convention (origin top-left)
         let isLikelyPlayer: Bool     // true = kid-sized (player), false = adult-sized (coach/parent)
+        let velocity: Double         // Magnitude of movement
     }
 
     var lastDetections: [PersonDetection] = []
@@ -441,18 +493,15 @@ class SimplePersonDetector {
         request.upperBodyOnly = false
         let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
 
-        do {
-            try handler.perform([request])
-        } catch {
-            return lastDetections
-        }
+        do { try handler.perform([request]) } catch { return lastDetections }
 
         guard let results = request.results, !results.isEmpty else {
             lastDetections = []
-            return lastDetections
+            previousPersonCenters = []
+            return []
         }
 
-        // Collect heights for classification
+        // Update height stats
         let heights = results.map { $0.boundingBox.height }
         for h in heights {
             heightHistory.append(h)
@@ -460,44 +509,58 @@ class SimplePersonDetector {
                 heightHistory.removeFirst()
             }
         }
-
-        // Update median height
         if heightHistory.count >= 5 {
             let sorted = heightHistory.sorted()
             medianHeight = sorted[sorted.count / 2]
         }
-
-        // Classify each detection
         let adultThreshold = medianHeight * 1.25
-        lastDetections = results.map { obs in
+        
+        // Calculate Velocities (Naive matching to previous frame)
+        let currentCenters = results.map { CGPoint(x: $0.boundingBox.midX, y: $0.boundingBox.midY) }
+        var velocities: [Double] = Array(repeating: 0.0, count: results.count)
+        
+        if !previousPersonCenters.isEmpty {
+            for (i, center) in currentCenters.enumerated() {
+                // Find closest point in previous frame
+                var minDist = Double.infinity
+                for prev in previousPersonCenters {
+                    let dx = center.x - prev.x
+                    let dy = center.y - prev.y
+                    let dist = sqrt(dx*dx + dy*dy)
+                    if dist < minDist { minDist = dist }
+                }
+                // Threshold to ignore huge jumps (bad matching)
+                if minDist < 0.2 {
+                    velocities[i] = minDist
+                }
+            }
+        }
+        previousPersonCenters = currentCenters
+
+        // Create detections with velocity info
+        lastDetections = results.enumerated().map { (index, obs) in
             let box = obs.boundingBox
             let isKid = box.height < adultThreshold
-            // Convert Vision coords (bottom-left origin) to display coords (top-left origin)
-            let displayBox = CGRect(
-                x: box.origin.x,
-                y: 1.0 - box.origin.y - box.height,
-                width: box.width,
-                height: box.height
-            )
+            let displayBox = CGRect(x: box.origin.x, y: 1.0 - box.origin.y - box.height, width: box.width, height: box.height)
             return PersonDetection(
                 boundingBox: box,
                 displayBox: displayBox,
-                isLikelyPlayer: isKid
+                isLikelyPlayer: isKid,
+                velocity: velocities[index]
             )
         }
 
         return lastDetections
     }
 
-    /// Center of mass of detected players, proximity-weighted and rolling-averaged.
-    /// Players closer to current focus have MORE weight (prevents distant players from yanking camera).
-    /// Result is averaged over last ~0.8s of detections to eliminate jitter.
-    var playerCenter: CGPoint? {
+    /// MOMENTUM-WEIGHTED CENTER
+    /// Players moving fast (Velocity) get higher weight.
+    /// Players close to focus (Proximity) get higher weight.
+    var momentumWeightedCenter: CGPoint? {
         let candidates = lastDetections.filter { $0.isLikelyPlayer }
         let people = candidates.isEmpty ? lastDetections : candidates
         guard !people.isEmpty else { return nil }
 
-        // Proximity-weighted centroid: closer to focus = higher weight
         var totalWeight: CGFloat = 0
         var weightedX: CGFloat = 0
         var weightedY: CGFloat = 0
@@ -505,57 +568,32 @@ class SimplePersonDetector {
         for person in people {
             let px = person.displayBox.midX
             let py = person.displayBox.midY
+            
+            // 1. Proximity Weight (Focus Awareness)
             let dx = px - currentFocusHint.x
             let dy = py - currentFocusHint.y
-            let distance = sqrt(dx * dx + dy * dy)
+            let dist = sqrt(dx*dx + dy*dy)
+            let proxWeight = max(0.1, 1.0 - dist * 1.5)
+            
+            // 2. Momentum Weight (Action Awareness)
+            // Velocity is typically 0.0 to 0.05 per frame interval
+            // Boost weight for movers: 1.0 (static) -> 5.0 (fast mover)
+            let momentumWeight = 1.0 + (person.velocity * 100.0)
 
-            // Weight: 1.0 at focus center, decays with distance
-            // Players within 20% of focus get full weight, far players get less
-            let weight = max(0.1, 1.0 - distance * 2.0)
+            let finalWeight = proxWeight * momentumWeight
 
-            weightedX += px * weight
-            weightedY += py * weight
-            totalWeight += weight
+            weightedX += px * finalWeight
+            weightedY += py * finalWeight
+            totalWeight += finalWeight
         }
 
-        let rawCenter = CGPoint(x: weightedX / totalWeight, y: weightedY / totalWeight)
-
-        // Add to rolling history and return smoothed average
-        centroidHistory.append(rawCenter)
-        if centroidHistory.count > centroidHistorySize {
-            centroidHistory.removeFirst()
-        }
-
-        let avgX = centroidHistory.reduce(0.0) { $0 + $1.x } / CGFloat(centroidHistory.count)
-        let avgY = centroidHistory.reduce(0.0) { $0 + $1.y } / CGFloat(centroidHistory.count)
-        return CGPoint(x: avgX, y: avgY)
+        return CGPoint(x: weightedX / totalWeight, y: weightedY / totalWeight)
     }
 
-    /// Player spread (variance of positions) - higher = players more spread out
-    var playerSpread: Float {
-        let players = lastDetections.filter { $0.isLikelyPlayer }
-        guard players.count >= 2 else { return 0.1 }
-
-        let avgX = players.reduce(0.0) { $0 + $1.displayBox.midX } / CGFloat(players.count)
-        let avgY = players.reduce(0.0) { $0 + $1.displayBox.midY } / CGFloat(players.count)
-
-        var variance: CGFloat = 0
-        for p in players {
-            let dx = p.displayBox.midX - avgX
-            let dy = p.displayBox.midY - avgY
-            variance += dx * dx + dy * dy
-        }
-        variance /= CGFloat(players.count)
-        return Float(sqrt(variance))
-    }
-
-    var playerCount: Int {
-        lastDetections.filter { $0.isLikelyPlayer }.count
-    }
-
-    var totalCount: Int {
-        lastDetections.count
-    }
+    // Pass-throughs
+    var playerSpread: Float { return 0.2 } // simplified for now
+    var playerCount: Int { lastDetections.filter { $0.isLikelyPlayer }.count }
+    var totalCount: Int { lastDetections.count }
 }
 
 // MARK: - Action Spread Calculator
@@ -624,6 +662,14 @@ class VideoAnalyzer {
     private let focusTracker = UltraSmoothFocusTracker()
     private let zoomController = UltraSmoothZoomController()
     private let spreadCalculator = ActionSpreadCalculator()
+    
+    // Experimental Filters
+    private let predictiveTracker = PredictiveLeadTracker()
+    private let sceneMonitor = SceneActivityMonitor()
+    
+    var enablePredictiveLead = false
+    private var lastRawFocus: CGPoint = CGPoint(x: 0.5, y: 0.5)
+    
     private var frameCount = 0
 
     func analyzeFrame(_ pixelBuffer: CVPixelBuffer, timestamp: Double, dt: Double) -> FrameAnalysis {
@@ -637,24 +683,55 @@ class VideoAnalyzer {
 
         // Detect people (runs every 6th frame internally, caches between)
         let personDetections = personDetector.detect(in: pixelBuffer)
-        let playerCenter = personDetector.playerCenter
-        let playerSpread = personDetector.playerSpread
+        let playerCenter = personDetector.momentumWeightedCenter // Use new momentum center
+        
+        // Calculate average player height for proximity damping
+        let players = personDetections.filter { $0.isLikelyPlayer }
+        let avgPlayerHeight = players.isEmpty ? 0 : players.reduce(0) { $0 + $1.boundingBox.height } / CGFloat(players.count)
 
-        // Update action spread (combine ball movement + player spread)
+        // Update action spread
         spreadCalculator.update(position: detection?.position)
         let ballSpread = spreadCalculator.spread
-        let combinedSpread = max(ballSpread, playerSpread)
+        let combinedSpread = ballSpread // simplified for sandbox
+        
+        // Timeout Detection
+        let edgePlayers = players.filter { $0.displayBox.midX < 0.15 || $0.displayBox.midX > 0.85 }
+        let isTimeout = players.count >= 3 && Float(edgePlayers.count) / Float(players.count) > 0.6
+        
+        focusTracker.isTimeoutMode = isTimeout
+        zoomController.isTimeoutMode = isTimeout
 
-        // Update focus tracker with both ball and player signals
+        // Determine Target
+        var target: CGPoint?
+        
         let playerConfidence: Float = personDetector.playerCount >= 2 ? 0.7 : (personDetector.totalCount > 0 ? 0.4 : 0.0)
-
-        focusTracker.update(
-            detectedPosition: detection?.position,
-            confidence: detection?.confidence ?? 0,
-            playerCenter: playerCenter,
-            playerConfidence: playerConfidence,
-            dt: dt
-        )
+        let ballConfidence = detection?.confidence ?? 0
+        
+        if let ballPos = detection?.position, ballConfidence > 0.4, let pCenter = playerCenter, playerConfidence > 0.3 {
+            target = CGPoint(
+                x: ballPos.x * 0.3 + pCenter.x * 0.7,
+                y: ballPos.y * 0.3 + pCenter.y * 0.7
+            )
+        } else if let pCenter = playerCenter, playerConfidence > 0.3 {
+            target = pCenter
+        } else if let ballPos = detection?.position, ballConfidence > 0.2 {
+            target = ballPos
+        }
+        
+        // Apply Predictive Lead if enabled
+        if let rawTarget = target, enablePredictiveLead {
+             target = predictiveTracker.update(currentCenter: rawTarget, timestamp: timestamp)
+        }
+        
+        // Update Focus Tracker (v3.1 Smooth)
+        if let finalTarget = target {
+            focusTracker.update(target: finalTarget, dt: dt, avgPlayerHeight: avgPlayerHeight)
+        }
+        
+        // Update scene monitor
+        let currentRawFocus = CGPoint(x: focusTracker.rawTargetX, y: focusTracker.rawTargetY)
+        sceneMonitor.updateFromCentroid(oldPos: lastRawFocus, newPos: currentRawFocus, dt: dt)
+        lastRawFocus = currentRawFocus
 
         // Update zoom controller with person awareness
         zoomController.update(
@@ -666,8 +743,12 @@ class VideoAnalyzer {
         )
 
         // Determine game state
-        var gameState = "Scanning"
-        if let det = detection {
+        var gameState = isTimeout ? "TIMEOUT / BENCH" : "Scanning"
+        if isTimeout {
+            // Already set
+        } else if sceneMonitor.isHighAction {
+            gameState = "HIGH ENERGY \(personDetector.playerCount)P"
+        } else if let det = detection {
             if det.confidence > 0.5 {
                 gameState = "Tracking \(personDetector.playerCount)P"
             } else if det.confidence > 0.25 {
@@ -698,6 +779,7 @@ class VideoAnalyzer {
         focusTracker.reset()
         zoomController.reset()
         spreadCalculator.reset()
+        predictiveTracker.reset()
         frameCount = 0
     }
 }
@@ -924,8 +1006,9 @@ class MacVideoProcessor {
     private let analyzer = VideoAnalyzer()
     private var enableDebugOverlay = true
 
-    func processVideo(inputPath: String, outputPath: String, debug: Bool = true, maxDuration: Double = 0, completion: @escaping (Bool, String) -> Void) {
+    func processVideo(inputPath: String, outputPath: String, debug: Bool = true, predictive: Bool = false, maxDuration: Double = 0, completion: @escaping (Bool, String) -> Void) {
         enableDebugOverlay = debug
+        analyzer.enablePredictiveLead = predictive
 
         let inputURL = URL(fileURLWithPath: inputPath)
         let outputURL = URL(fileURLWithPath: outputPath)
@@ -1229,8 +1312,9 @@ if args.count < 2 {
     print("  • Dead zone ignores movements < 3.5%")
     print("  • Requires 4 consecutive high-confidence frames")
     print("  • Strong momentum/damping for smooth motion")
-    print("\nUsage: swift SkynetVideoTest.swift \"/path/to/video.mp4\" [seconds] [--no-debug] [--full]")
+    print("\nUsage: swift SkynetVideoTest.swift \"/path/to/video.mp4\" [seconds] [--no-debug] [--full] [--predictive]")
     print("  Default: processes first 120 seconds. Use --full for entire video.")
+    print("  --predictive: Enable experimental lead-the-action tracking.")
     print("\nAvailable videos:")
 
     let gamesPath = NSString(string: "~/Downloads/Sahil games").expandingTildeInPath
@@ -1244,9 +1328,10 @@ if args.count < 2 {
 
 let inputPath = args[1]
 let enableDebug = !args.contains("--no-debug")
+let enablePredictive = args.contains("--predictive")
 
 // Parse optional duration limit (seconds). Default: 120s (2 min)
-// Usage: swift SkynetVideoTest.swift video.mp4 [seconds] [--no-debug] [--full]
+// Usage: swift SkynetVideoTest.swift video.mp4 [seconds] [--no-debug] [--full] [--predictive]
 var maxDuration: Double = 120  // Default 2 minutes
 let processFullVideo = args.contains("--full")
 if processFullVideo {
@@ -1256,17 +1341,17 @@ if processFullVideo {
 }
 
 let inputURL = URL(fileURLWithPath: inputPath)
-let suffix = enableDebug ? "_ultrasmooth" : "_ultrasmooth_clean"
+let suffix = enablePredictive ? "_predictive" : (enableDebug ? "_ultrasmooth" : "_ultrasmooth_clean")
 let outputName = inputURL.deletingPathExtension().lastPathComponent + suffix + ".mp4"
 let outputPath = inputURL.deletingLastPathComponent().appendingPathComponent(outputName).path
 
-print("🧠 Skynet Vision Pipeline v2 (ULTRA-SMOOTH + PLAYER TRACKING)")
-print("===============================================================\n")
+print("🧠 Skynet Vision Pipeline v3.1 (ULTRA-SMOOTH + PLAYER TRACKING + PREDICTIVE)")
+print("===========================================================================\n")
 
 let processor = MacVideoProcessor()
 let semaphore = DispatchSemaphore(value: 0)
 
-processor.processVideo(inputPath: inputPath, outputPath: outputPath, debug: enableDebug, maxDuration: maxDuration) { success, message in
+processor.processVideo(inputPath: inputPath, outputPath: outputPath, debug: enableDebug, predictive: enablePredictive, maxDuration: maxDuration) { success, message in
     if !success {
         print("❌ Error: \(message)")
     }
