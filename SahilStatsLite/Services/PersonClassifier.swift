@@ -6,6 +6,7 @@
 //  - Kid vs Adult: Multiple heuristics, not just median height
 //  - Ref detection: Multi-sample stripe analysis
 //  - Court position: Heat map based filtering
+//  - Momentum Attention (v3.1): Moving players weighted higher via Kalman velocity
 //
 
 import Foundation
@@ -69,17 +70,17 @@ class PersonClassifier {
 
     // MARK: - Main Classification
 
+    /// Classify people from a CVPixelBuffer (convenience overload)
     func classifyPeople(in pixelBuffer: CVPixelBuffer) -> [ClassifiedPerson] {
-        // Convert to CGImage for Vision
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         let context = CIContext()
         guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
             return []
         }
-
         return classifyPeople(in: cgImage)
     }
 
+    /// Classify people from a CGImage (primary method, supports low-res AI input)
     func classifyPeople(in image: CGImage) -> [ClassifiedPerson] {
         // Detect all humans
         let request = VNDetectHumanRectanglesRequest()
@@ -428,27 +429,72 @@ class PersonClassifier {
     }
 }
 
-// MARK: - Action Center Calculator
+// MARK: - Action Center Calculators
 
 extension PersonClassifier {
 
-    /// Calculate weighted center of trackable people (players + refs on court)
-    /// Uses proximity weighting (players near current focus weigh more) and
-    /// rolling centroid averaging to eliminate jitter from detection flickering.
+    /// v3.1: Calculate action center from Kalman-filtered TrackedObjects with Momentum Attention
+    /// Uses DeepTracker's Kalman velocity instead of naive frame-to-frame matching.
+    /// Moving players are weighted 1x-3x higher than stationary ones.
+    func calculateActionCenter(from tracks: [TrackedObject]) -> CGPoint {
+        let trackable = tracks.filter { $0.classification == .player || $0.classification == .referee }
+        guard !trackable.isEmpty else { return CGPoint(x: 0.5, y: 0.5) }
+
+        var totalWeight: CGFloat = 0
+        var weightedX: CGFloat = 0
+        var weightedY: CGFloat = 0
+
+        for track in trackable {
+            // Base weight: bounding box area (bigger = closer = more important)
+            var weight = track.boundingBox.width * track.boundingBox.height * 100
+
+            // Ref penalty
+            if track.classification == .referee { weight *= 0.3 }
+
+            // Reliability from Kalman filter (replaces raw confidence)
+            weight *= CGFloat(track.reliabilityScore)
+
+            // Proximity weighting: players near current focus weigh more
+            let box = track.predictedBoundingBox
+            let dx = box.midX - currentFocusHint.x
+            let dy = box.midY - currentFocusHint.y
+            let proxWeight = max(0.1, 1.0 - sqrt(dx * dx + dy * dy) * 2.0)
+            weight *= proxWeight
+
+            // Momentum Attention: moving players are 1x-3x more important
+            // Uses Kalman-filtered velocity (much smoother than naive matching)
+            let vel = track.kalman.velocity
+            let velocityMag = sqrt(vel.x * vel.x + vel.y * vel.y)
+            let momentumWeight = min(3.0, 1.0 + velocityMag * 20.0)
+            weight *= CGFloat(momentumWeight)
+
+            weightedX += box.midX * weight
+            weightedY += box.midY * weight
+            totalWeight += weight
+        }
+
+        guard totalWeight > 0 else { return CGPoint(x: 0.5, y: 0.5) }
+
+        let rawCenter = CGPoint(x: weightedX / totalWeight, y: weightedY / totalWeight)
+
+        // Rolling centroid average to smooth out detection flickering
+        centroidHistory.append(rawCenter)
+        if centroidHistory.count > centroidHistorySize { centroidHistory.removeFirst() }
+
+        let avgX = centroidHistory.reduce(0.0) { $0 + $1.x } / CGFloat(centroidHistory.count)
+        let avgY = centroidHistory.reduce(0.0) { $0 + $1.y } / CGFloat(centroidHistory.count)
+        return CGPoint(x: avgX, y: avgY)
+    }
+
+    /// v3: Calculate action center from raw ClassifiedPerson detections (no Kalman velocity)
+    /// Used when TrackedObjects aren't available (e.g., standalone testing)
     func calculateActionCenter(from people: [ClassifiedPerson]) -> CGPoint {
         let trackable = people.filter { person in
-            switch person.classification {
-            case .player:
-                return true
-            case .referee:
-                return true  // Include refs but with lower weight
-            default:
-                return false
-            }
+            person.classification == .player || person.classification == .referee
         }
 
         guard !trackable.isEmpty else {
-            return CGPoint(x: 0.5, y: 0.5)  // Default to center
+            return CGPoint(x: 0.5, y: 0.5)
         }
 
         var totalWeight: CGFloat = 0
@@ -456,19 +502,10 @@ extension PersonClassifier {
         var weightedY: CGFloat = 0
 
         for person in trackable {
-            // Weight by bounding box area (bigger = closer = more important)
             var weight = person.boundingBox.width * person.boundingBox.height * 100
-
-            // Reduce ref weight (they run around but aren't the action)
-            if person.classification == .referee {
-                weight *= 0.3
-            }
-
-            // Boost high-confidence detections
+            if person.classification == .referee { weight *= 0.3 }
             weight *= CGFloat(person.confidence)
 
-            // Proximity weighting: players closer to current focus get MORE weight.
-            // This prevents distant players from yanking the camera around.
             let dx = person.boundingBox.midX - currentFocusHint.x
             let dy = person.boundingBox.midY - currentFocusHint.y
             let distance = sqrt(dx * dx + dy * dy)
@@ -480,20 +517,12 @@ extension PersonClassifier {
             totalWeight += weight
         }
 
-        guard totalWeight > 0 else {
-            return CGPoint(x: 0.5, y: 0.5)
-        }
+        guard totalWeight > 0 else { return CGPoint(x: 0.5, y: 0.5) }
 
-        let rawCenter = CGPoint(
-            x: weightedX / totalWeight,
-            y: weightedY / totalWeight
-        )
+        let rawCenter = CGPoint(x: weightedX / totalWeight, y: weightedY / totalWeight)
 
-        // Rolling centroid average to smooth out detection flickering
         centroidHistory.append(rawCenter)
-        if centroidHistory.count > centroidHistorySize {
-            centroidHistory.removeFirst()
-        }
+        if centroidHistory.count > centroidHistorySize { centroidHistory.removeFirst() }
 
         let avgX = centroidHistory.reduce(0.0) { $0 + $1.x } / CGFloat(centroidHistory.count)
         let avgY = centroidHistory.reduce(0.0) { $0 + $1.y } / CGFloat(centroidHistory.count)

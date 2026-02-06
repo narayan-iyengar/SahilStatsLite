@@ -46,6 +46,13 @@ class RecordingManager: NSObject, ObservableObject {
     private nonisolated(unsafe) var videoDataOutput: AVCaptureVideoDataOutput?
     private nonisolated(unsafe) var audioDataOutput: AVCaptureAudioDataOutput?
     private var currentVideoDevice: AVCaptureDevice?
+    
+    // MARK: - AI Downscaler (Low-Res AI, High-Res Record)
+    
+    private nonisolated(unsafe) var aiContext = CIContext(options: [.useSoftwareRenderer: false])
+    private nonisolated(unsafe) var aiPixelBufferPool: CVPixelBufferPool?
+    private let aiTargetWidth = 640
+    private let aiTargetHeight = 360
 
     // MARK: - Asset Writer (for recording with overlay - accessed from processing queue)
 
@@ -162,10 +169,13 @@ class RecordingManager: NSObject, ObservableObject {
         let session = AVCaptureSession()
         session.beginConfiguration()
 
-        // Set quality - prefer 1080p for real-time processing (4K is too heavy)
-        if session.canSetSessionPreset(.hd1920x1080) {
+        // Set quality - 4K for recording (AI will downscale its own path)
+        if session.canSetSessionPreset(.hd4K3840x2160) {
+            session.sessionPreset = .hd4K3840x2160
+            debugPrint("📹 Using 4K (2160p) preset")
+        } else if session.canSetSessionPreset(.hd1920x1080) {
             session.sessionPreset = .hd1920x1080
-            debugPrint("📹 Using 1080p preset")
+            debugPrint("📹 Using 1080p preset fallback")
         } else if session.canSetSessionPreset(.hd1280x720) {
             session.sessionPreset = .hd1280x720
             debugPrint("📹 Using 720p preset")
@@ -607,11 +617,18 @@ extension RecordingManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCapt
     nonisolated func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
         // Handle video frames for AI processing (even when not recording)
         if output === videoDataOutput, let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) {
-            // Call AI callback at limited frame rate
+            
             let now = CFAbsoluteTimeGetCurrent()
             if let callback = onFrameForAI, now - lastAIFrameTime >= aiFrameInterval {
                 lastAIFrameTime = now
-                callback(pixelBuffer)
+                
+                // Downscale for Vision (640x360)
+                if let lowResBuffer = downscaleForAI(pixelBuffer) {
+                    callback(lowResBuffer)
+                } else {
+                    // Fallback to full res if downscale fails
+                    callback(pixelBuffer)
+                }
             }
         }
 
@@ -669,6 +686,37 @@ extension RecordingManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCapt
             guard let writer = assetWriter, writer.status == .writing else { return }
             processAudioFrame(sampleBuffer)
         }
+    }
+
+    nonisolated private func downscaleForAI(_ pixelBuffer: CVPixelBuffer) -> CVPixelBuffer? {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
+        let scaleX = CGFloat(aiTargetWidth) / CGFloat(CVPixelBufferGetWidth(pixelBuffer))
+        let scaleY = CGFloat(aiTargetHeight) / CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+        
+        let resized = ciImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+        
+        // Setup pool lazily
+        if aiPixelBufferPool == nil {
+            let attrs: [String: Any] = [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey as String: aiTargetWidth,
+                kCVPixelBufferHeightKey as String: aiTargetHeight,
+                kCVPixelBufferIOSurfacePropertiesKey as String: [:]
+            ]
+            CVPixelBufferPoolCreate(kCFAllocatorDefault, nil, attrs as CFDictionary, &aiPixelBufferPool)
+        }
+        
+        var outputBuffer: CVPixelBuffer?
+        if let pool = aiPixelBufferPool {
+            CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &outputBuffer)
+        }
+        
+        if let output = outputBuffer {
+            aiContext.render(resized, to: output)
+            return output
+        }
+        
+        return nil
     }
 
     nonisolated private func processVideoFrame(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
