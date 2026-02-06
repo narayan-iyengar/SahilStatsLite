@@ -2,12 +2,13 @@
 //  DeepTracker.swift
 //  SahilStatsLite
 //
-//  Deep Track 4.0-inspired tracking system
-//  Implements: Kalman filtering, SORT-style tracking, reliability scoring, recovery strategies
+//  Deep Track 4.0-inspired tracking system with OC-SORT enhancements
+//  Implements: Kalman filtering, OC-SORT tracking, reliability scoring, recovery strategies
 //
 //  References:
 //  - Insta360 patents US11509824B2, JP2021527865A
 //  - SORT: Simple Online and Realtime Tracking (Bewley et al.)
+//  - OC-SORT: Observation-Centric SORT (Cao et al., CVPR 2023)
 //  - Kalman Filter for visual tracking
 //
 
@@ -20,6 +21,10 @@ import Accelerate
 /// Kalman filter for tracking a single object's position and velocity
 /// State: [x, y, vx, vy] (position and velocity)
 /// Measurement: [x, y] (position only from detection)
+/// Tuned for basketball player tracking:
+/// - Players have continuous motion with gradual acceleration
+/// - Detection jitter from Apple Vision is moderate (~1-2%)
+/// - Players rarely exceed ~0.5 screen widths per second
 class KalmanFilter2D {
 
     // State vector: [x, y, vx, vy]
@@ -28,10 +33,10 @@ class KalmanFilter2D {
     // State covariance matrix (4x4)
     private var P: [[Double]]
 
-    // Process noise covariance
-    private let Q: [[Double]]
+    // Process noise covariance (tuned for player motion)
+    private var Q: [[Double]]
 
-    // Measurement noise covariance
+    // Measurement noise covariance (tuned for Vision API)
     private let R: [[Double]]
 
     // State transition matrix (constant velocity model)
@@ -55,25 +60,30 @@ class KalmanFilter2D {
             Double(initialVelocity.y)
         ]
 
-        // Initial covariance (high uncertainty in velocity)
+        // Initial covariance
+        // Low position uncertainty (detection is accurate)
+        // High velocity uncertainty (unknown initial motion)
         P = [
-            [1, 0, 0, 0],
-            [0, 1, 0, 0],
-            [0, 0, 100, 0],
-            [0, 0, 0, 100]
+            [0.01, 0, 0, 0],
+            [0, 0.01, 0, 0],
+            [0, 0, 0.5, 0],
+            [0, 0, 0, 0.5]
         ]
 
-        // Process noise (models acceleration uncertainty)
-        let q = 0.01  // Tune based on expected motion
+        // Process noise (tuned for player motion)
+        // Players accelerate gradually - lower noise than ball
+        // Horizontal: running, cutting (~0.02 acceleration noise)
+        // Vertical: jumping, less common (~0.015)
         Q = [
-            [q, 0, 0, 0],
-            [0, q, 0, 0],
-            [0, 0, q * 10, 0],
-            [0, 0, 0, q * 10]
+            [0.0002, 0, 0, 0],    // Position noise
+            [0, 0.0002, 0, 0],
+            [0, 0, 0.02, 0],      // Velocity noise (horizontal)
+            [0, 0, 0, 0.015]      // Velocity noise (vertical - less jumping)
         ]
 
-        // Measurement noise (detection uncertainty)
-        let r = 0.005  // ~0.5% of frame = typical detection jitter
+        // Measurement noise (Apple Vision API detection uncertainty)
+        // Vision API has good accuracy but some jitter between frames
+        let r = 0.004  // ~0.4% of frame = typical Vision API jitter
         R = [
             [r, 0],
             [0, r]
@@ -105,6 +115,11 @@ class KalmanFilter2D {
         let FT = transpose(F)
         let FPFT = matMul(FP, FT)
         P = matAdd(FPFT, Q)
+
+        // Clamp covariance to prevent numerical explosion
+        for i in 0..<4 {
+            P[i][i] = min(P[i][i], i < 2 ? 0.5 : 2.0)
+        }
 
         return CGPoint(x: state[0], y: state[1])
     }
@@ -235,7 +250,7 @@ class KalmanFilter2D {
 
 // MARK: - Tracked Object
 
-/// A single tracked object with Kalman filter and reliability scoring
+/// A single tracked object with Kalman filter and OC-SORT enhancements
 class TrackedObject {
     let id: Int
     let kalman: KalmanFilter2D
@@ -249,6 +264,18 @@ class TrackedObject {
 
     // For re-identification (simple color histogram)
     var colorHistogram: [Float]?
+
+    // OC-SORT: Observation-Centric Momentum (OCM)
+    // Store last observed positions instead of relying solely on Kalman predictions
+    // This handles camera motion better than pure Kalman prediction
+    private var observationHistory: [CGPoint] = []
+    private let observationHistorySize = 5
+    var lastObservedPosition: CGPoint?
+    var observationMomentum: CGPoint = .zero  // Velocity from observations, not Kalman
+
+    // Virtual trajectory for recovery (OC-SORT)
+    // When track is lost, continue along observation momentum
+    var virtualTrajectory: [CGPoint] = []
 
     // Track state
     enum State {
@@ -273,9 +300,12 @@ class TrackedObject {
 
         let center = CGPoint(x: detection.boundingBox.midX, y: detection.boundingBox.midY)
         self.kalman = KalmanFilter2D(initialPosition: center)
+        self.lastObservedPosition = center
+        self.observationHistory = [center]
     }
 
     /// Predict position for next frame
+    /// OC-SORT enhancement: Uses observation momentum when available
     func predict(dt: Double = 1.0/30.0) -> CGPoint {
         missStreak += 1
         hitStreak = 0
@@ -291,10 +321,24 @@ class TrackedObject {
             state = .deleted
         }
 
-        return kalman.predict(dt: dt)
+        let kalmanPrediction = kalman.predict(dt: dt)
+
+        // OC-SORT: Generate virtual trajectory point when lost
+        // Uses observation momentum instead of Kalman prediction
+        if state == .lost, let lastObs = lastObservedPosition {
+            let virtualPoint = CGPoint(
+                x: lastObs.x + observationMomentum.x * Double(missStreak) * dt,
+                y: lastObs.y + observationMomentum.y * Double(missStreak) * dt
+            )
+            virtualTrajectory.append(virtualPoint)
+            return virtualPoint
+        }
+
+        return kalmanPrediction
     }
 
     /// Update with matched detection
+    /// OC-SORT enhancement: Updates observation history and momentum
     func update(detection: ClassifiedPerson) {
         let center = CGPoint(x: detection.boundingBox.midX, y: detection.boundingBox.midY)
         _ = kalman.update(measurement: center)
@@ -302,6 +346,24 @@ class TrackedObject {
         boundingBox = detection.boundingBox
         classification = detection.classification
         lastSeen = Date()
+
+        // OC-SORT: Update observation history and calculate momentum
+        if let lastObs = lastObservedPosition {
+            // Calculate observation-based velocity (handles camera motion better)
+            observationMomentum = CGPoint(
+                x: (center.x - lastObs.x) / (1.0 / 30.0),  // Velocity per second
+                y: (center.y - lastObs.y) / (1.0 / 30.0)
+            )
+        }
+
+        lastObservedPosition = center
+        observationHistory.append(center)
+        if observationHistory.count > observationHistorySize {
+            observationHistory.removeFirst()
+        }
+
+        // Clear virtual trajectory on successful match
+        virtualTrajectory.removeAll()
 
         hitStreak += 1
         missStreak = 0
@@ -317,9 +379,33 @@ class TrackedObject {
         }
     }
 
+    /// OC-SORT: Get observation-centric bounding box for matching
+    /// Uses observation momentum instead of Kalman prediction for better camera motion handling
+    var observationCentricBox: CGRect {
+        guard let lastObs = lastObservedPosition else {
+            return predictedBoundingBox
+        }
+
+        // Predict position using observation momentum
+        let dt = 1.0 / 30.0
+        let predictedCenter = CGPoint(
+            x: lastObs.x + observationMomentum.x * dt,
+            y: lastObs.y + observationMomentum.y * dt
+        )
+
+        return CGRect(
+            x: predictedCenter.x - Double(boundingBox.width / 2),
+            y: predictedCenter.y - Double(boundingBox.height / 2),
+            width: Double(boundingBox.width),
+            height: Double(boundingBox.height)
+        )
+    }
+
     /// Calculate IoU with a detection for matching
-    func iou(with detection: ClassifiedPerson) -> Float {
-        let predicted = predictedBoundingBox
+    /// OC-SORT enhancement: Uses observation-centric box when available
+    func iou(with detection: ClassifiedPerson, useObservationCentric: Bool = true) -> Float {
+        // OC-SORT: Use observation-centric box for better camera motion handling
+        let predicted = useObservationCentric ? observationCentricBox : predictedBoundingBox
         let detected = detection.boundingBox
 
         let intersection = predicted.intersection(detected)
@@ -330,6 +416,27 @@ class TrackedObject {
                        detected.width * detected.height - intersectionArea
 
         return Float(intersectionArea / unionArea)
+    }
+
+    /// OC-SORT: Calculate velocity consistency score
+    /// Higher score if detection's velocity matches track's observation momentum
+    func velocityConsistency(with detection: ClassifiedPerson, previousDetection: CGPoint?) -> Float {
+        guard let prevDet = previousDetection else { return 0.5 }
+
+        let detectedCenter = CGPoint(x: detection.boundingBox.midX, y: detection.boundingBox.midY)
+        let detectionVelocity = CGPoint(
+            x: (detectedCenter.x - prevDet.x) * 30.0,  // Per second
+            y: (detectedCenter.y - prevDet.y) * 30.0
+        )
+
+        // Compare with observation momentum
+        let vDiff = hypot(
+            detectionVelocity.x - observationMomentum.x,
+            detectionVelocity.y - observationMomentum.y
+        )
+
+        // Normalize: 0 diff = 1.0 score, large diff = 0.0 score
+        return Float(max(0, 1.0 - vDiff / 2.0))
     }
 
     /// Predicted bounding box based on Kalman position
@@ -348,10 +455,98 @@ class TrackedObject {
     }
 }
 
-// MARK: - Deep Tracker (SORT-style)
+// MARK: - Hungarian Algorithm (Kuhn-Munkres)
 
-/// Multi-object tracker using SORT algorithm with Kalman filtering
-/// Inspired by Deep Track 4.0's architecture
+/// Optimal assignment solver for detection-to-track matching
+/// O(n^3) complexity but handles typical basketball tracking (< 20 objects) easily
+struct HungarianAlgorithm {
+
+    /// Solve the linear assignment problem
+    /// - Parameter costMatrix: n x m matrix where costMatrix[i][j] is cost of assigning row i to col j
+    /// - Returns: Array of (row, col) assignments that minimize total cost
+    static func solve(costMatrix: [[Float]]) -> [(row: Int, col: Int)] {
+        guard !costMatrix.isEmpty, !costMatrix[0].isEmpty else { return [] }
+
+        let n = costMatrix.count
+        let m = costMatrix[0].count
+        let size = max(n, m)
+
+        // Pad to square matrix with high costs
+        var cost = [[Float]](repeating: [Float](repeating: Float.greatestFiniteMagnitude / 2, count: size), count: size)
+        for i in 0..<n {
+            for j in 0..<m {
+                cost[i][j] = costMatrix[i][j]
+            }
+        }
+
+        // Hungarian algorithm state
+        var u = [Float](repeating: 0, count: size + 1)
+        var v = [Float](repeating: 0, count: size + 1)
+        var p = [Int](repeating: 0, count: size + 1)  // p[j] = row assigned to col j
+        var way = [Int](repeating: 0, count: size + 1)
+
+        for i in 1...size {
+            p[0] = i
+            var j0 = 0
+            var minv = [Float](repeating: Float.greatestFiniteMagnitude, count: size + 1)
+            var used = [Bool](repeating: false, count: size + 1)
+
+            repeat {
+                used[j0] = true
+                let i0 = p[j0]
+                var delta = Float.greatestFiniteMagnitude
+                var j1 = 0
+
+                for j in 1...size {
+                    if !used[j] {
+                        let cur = cost[i0 - 1][j - 1] - u[i0] - v[j]
+                        if cur < minv[j] {
+                            minv[j] = cur
+                            way[j] = j0
+                        }
+                        if minv[j] < delta {
+                            delta = minv[j]
+                            j1 = j
+                        }
+                    }
+                }
+
+                for j in 0...size {
+                    if used[j] {
+                        u[p[j]] += delta
+                        v[j] -= delta
+                    } else {
+                        minv[j] -= delta
+                    }
+                }
+
+                j0 = j1
+            } while p[j0] != 0
+
+            // Trace back
+            repeat {
+                let j1 = way[j0]
+                p[j0] = p[j1]
+                j0 = j1
+            } while j0 != 0
+        }
+
+        // Extract assignments
+        var assignments: [(row: Int, col: Int)] = []
+        for j in 1...size {
+            if p[j] > 0 && p[j] <= n && j <= m {
+                assignments.append((p[j] - 1, j - 1))
+            }
+        }
+
+        return assignments
+    }
+}
+
+// MARK: - Deep Tracker (OC-SORT enhanced)
+
+/// Multi-object tracker using OC-SORT algorithm with Kalman filtering
+/// Inspired by Deep Track 4.0's architecture with OC-SORT enhancements
 class DeepTracker {
 
     // All tracked objects
@@ -361,6 +556,9 @@ class DeepTracker {
     // Configuration
     private let iouThreshold: Float = 0.3  // Minimum IoU for matching
     private let maxTracks = 20             // Maximum simultaneous tracks
+
+    // OC-SORT: Previous frame detections for velocity matching
+    private var previousDetections: [Int: CGPoint] = [:]  // trackId -> last position
 
     // Recovery state
     private(set) var isInRecoveryMode = false
@@ -381,7 +579,7 @@ class DeepTracker {
             _ = track.predict(dt: dt)
         }
 
-        // 2. Match detections to tracks using Hungarian algorithm (simplified greedy)
+        // 2. Match detections to tracks using Hungarian algorithm with OC-SORT
         let (matched, unmatchedTracks, unmatchedDetections) = matchDetectionsToTracks(detections)
 
         // 3. Update matched tracks
@@ -407,18 +605,29 @@ class DeepTracker {
             }
         }
 
-        // 6. Remove deleted tracks
+        // 6. Remove deleted tracks and update previous detections
+        let deletedIds = Set(tracks.filter { $0.state == .deleted }.map { $0.id })
+        for id in deletedIds {
+            previousDetections.removeValue(forKey: id)
+        }
         tracks.removeAll { $0.state == .deleted }
 
-        // 7. Update recovery mode
+        // 7. OC-SORT: Store current positions for next frame's velocity matching
+        for track in tracks where track.isTrackable {
+            if let lastObs = track.lastObservedPosition {
+                previousDetections[track.id] = lastObs
+            }
+        }
+
+        // 8. Update recovery mode
         updateRecoveryMode()
 
-        // 8. Return active tracks
+        // 9. Return active tracks
         return tracks.filter { $0.isTrackable }
                      .sorted { $0.reliabilityScore > $1.reliabilityScore }
     }
 
-    // MARK: - Detection Matching (Greedy approximation of Hungarian)
+    // MARK: - Detection Matching (Hungarian Algorithm with OC-SORT)
 
     private func matchDetectionsToTracks(_ detections: [ClassifiedPerson])
         -> (matched: [(Int, Int)], unmatchedTracks: [Int], unmatchedDetections: [Int]) {
@@ -427,41 +636,70 @@ class DeepTracker {
             return ([], Array(tracks.indices), Array(detections.indices))
         }
 
-        // Build cost matrix (negative IoU for minimization)
-        var costMatrix = [[Float]](repeating: [Float](repeating: 0, count: detections.count), count: tracks.count)
+        // Build cost matrix using OC-SORT-style scoring
+        // Cost = 1 - (IoU + velocity_consistency + class_match) / 3
+        var costMatrix = [[Float]](repeating: [Float](repeating: 1.0, count: detections.count), count: tracks.count)
 
         for i in tracks.indices {
             for j in detections.indices {
-                let iouScore = tracks[i].iou(with: detections[j])
-                // Also consider classification match
-                let classMatch: Float = tracks[i].classification == detections[j].classification ? 0.1 : 0
-                costMatrix[i][j] = -(iouScore + classMatch)  // Negative for minimization
+                // OC-SORT: Use observation-centric IoU
+                let iouScore = tracks[i].iou(with: detections[j], useObservationCentric: true)
+
+                // Velocity consistency (OC-SORT enhancement)
+                let prevDetPos = previousDetections[tracks[i].id]
+                let velocityScore = tracks[i].velocityConsistency(with: detections[j], previousDetection: prevDetPos)
+
+                // Classification match bonus
+                let classMatch: Float = tracks[i].classification == detections[j].classification ? 0.2 : 0
+
+                // Combined score (higher is better, convert to cost)
+                let combinedScore = (iouScore * 0.5) + (velocityScore * 0.3) + classMatch
+                costMatrix[i][j] = 1.0 - combinedScore
             }
         }
 
-        // Greedy matching (simplified Hungarian)
+        // Use Hungarian algorithm for optimal assignment
+        let assignments = HungarianAlgorithm.solve(costMatrix: costMatrix)
+
+        // Filter by threshold and classify matches
         var matched: [(Int, Int)] = []
         var usedTracks = Set<Int>()
         var usedDetections = Set<Int>()
 
-        // Sort all pairs by IoU (descending)
-        var pairs: [(track: Int, detection: Int, iou: Float)] = []
-        for i in tracks.indices {
-            for j in detections.indices {
-                let iou = tracks[i].iou(with: detections[j])
-                if iou >= iouThreshold {
-                    pairs.append((i, j, iou))
-                }
+        for (trackIdx, detectionIdx) in assignments {
+            // Only accept if IoU meets threshold
+            let iou = tracks[trackIdx].iou(with: detections[detectionIdx], useObservationCentric: true)
+            if iou >= iouThreshold {
+                matched.append((trackIdx, detectionIdx))
+                usedTracks.insert(trackIdx)
+                usedDetections.insert(detectionIdx)
             }
         }
-        pairs.sort { $0.iou > $1.iou }
 
-        // Greedily assign best matches
-        for pair in pairs {
-            if !usedTracks.contains(pair.track) && !usedDetections.contains(pair.detection) {
-                matched.append((pair.track, pair.detection))
-                usedTracks.insert(pair.track)
-                usedDetections.insert(pair.detection)
+        // OC-SORT: Second pass - try matching lost tracks with virtual trajectories
+        let unmatchedTrackIndices = tracks.indices.filter { !usedTracks.contains($0) }
+        let unmatchedDetectionIndices = detections.indices.filter { !usedDetections.contains($0) }
+
+        // Try to recover lost tracks using virtual trajectory
+        for trackIdx in unmatchedTrackIndices {
+            let track = tracks[trackIdx]
+            if track.state == .lost && !track.virtualTrajectory.isEmpty {
+                // Find detection near virtual trajectory endpoint
+                for detIdx in unmatchedDetectionIndices where !usedDetections.contains(detIdx) {
+                    let detection = detections[detIdx]
+                    let detCenter = CGPoint(x: detection.boundingBox.midX, y: detection.boundingBox.midY)
+
+                    // Check distance to last virtual position
+                    if let virtualPos = track.virtualTrajectory.last {
+                        let distance = hypot(detCenter.x - virtualPos.x, detCenter.y - virtualPos.y)
+                        if distance < 0.1 {  // Within 10% of frame
+                            matched.append((trackIdx, detIdx))
+                            usedTracks.insert(trackIdx)
+                            usedDetections.insert(detIdx)
+                            break
+                        }
+                    }
+                }
             }
         }
 
@@ -638,5 +876,6 @@ class DeepTracker {
         primaryTrackId = nil
         isInRecoveryMode = false
         recoveryStartTime = nil
+        previousDetections.removeAll()
     }
 }

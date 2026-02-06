@@ -7,6 +7,8 @@
 //  - Circular contour detection
 //  - Kalman filter for smooth tracking + prediction
 //  - Online color adaptation to gym lighting
+//  - Trajectory-based validation (physics-aware filtering)
+//  - Motion history for false positive rejection
 //
 
 import Foundation
@@ -26,6 +28,15 @@ struct BallDetection {
     let isTracked: Bool         // True if Kalman is tracking, false if new detection
 }
 
+// MARK: - Trajectory Point (for motion history)
+
+struct TrajectoryPoint {
+    let position: CGPoint
+    let timestamp: Double
+    let radius: CGFloat
+    let confidence: Float
+}
+
 // MARK: - Ball Detector
 
 class BallDetector {
@@ -35,6 +46,12 @@ class BallDetector {
     private var kalman: BallKalmanFilter?
     private var consecutiveMisses: Int = 0
     private let maxMissesBeforeReset = 15  // ~0.5s at 30fps
+
+    // MARK: - Trajectory History (for motion-based validation)
+
+    private var trajectoryHistory: [TrajectoryPoint] = []
+    private let maxTrajectoryHistory = 20  // ~0.7s at 30fps
+    private var lastProcessedTime: Double = 0
 
     // MARK: - Color Thresholds (HSV)
 
@@ -66,6 +83,12 @@ class BallDetector {
     private var recentDetectionPositions: [CGPoint] = []
     private let motionHistorySize = 10
 
+    // MARK: - Physics Constants (normalized to frame coordinates)
+
+    // Gravity acceleration in normalized units (based on typical game footage)
+    private let gravity: CGFloat = 0.5  // ~0.5 frame heights per second^2
+    private let maxReasonableSpeed: CGFloat = 2.0  // Max 2x frame width per second
+
     // MARK: - Detection
 
     /// Detect the basketball in a frame
@@ -74,8 +97,14 @@ class BallDetector {
     ///   - dt: Time since last frame (for Kalman prediction)
     /// - Returns: Ball detection if found, nil otherwise
     func detectBall(in pixelBuffer: CVPixelBuffer, dt: Double = 1.0/30.0) -> BallDetection? {
+        let currentTime = lastProcessedTime + dt
+        lastProcessedTime = currentTime
+
         // Get candidate ball regions using color segmentation
-        let candidates = findBallCandidates(in: pixelBuffer)
+        var candidates = findBallCandidates(in: pixelBuffer)
+
+        // Apply trajectory-based filtering to reject unlikely candidates
+        candidates = filterCandidatesByTrajectory(candidates, currentTime: currentTime)
 
         // If we have a Kalman prediction, use it to select best candidate
         if let kalman = kalman {
@@ -101,6 +130,9 @@ class BallDetector {
             if let best = bestCandidate, bestDistance < 0.15 {
                 kalman.update(measurement: best.center)
                 consecutiveMisses = 0
+
+                // Add to trajectory history for future validation
+                addToTrajectoryHistory(position: best.center, radius: best.radius, confidence: best.confidence, timestamp: currentTime)
 
                 // Learn color from confirmed detection
                 learnColorFromRegion(pixelBuffer, center: best.center, radius: best.radius)
@@ -164,6 +196,91 @@ class BallDetector {
         }
 
         return nil
+    }
+
+    // MARK: - Trajectory Validation
+
+    /// Add confirmed detection to trajectory history
+    private func addToTrajectoryHistory(position: CGPoint, radius: CGFloat, confidence: Float, timestamp: Double) {
+        let point = TrajectoryPoint(position: position, timestamp: timestamp, radius: radius, confidence: confidence)
+        trajectoryHistory.append(point)
+
+        // Trim old history
+        if trajectoryHistory.count > maxTrajectoryHistory {
+            trajectoryHistory.removeFirst()
+        }
+    }
+
+    /// Filter candidates based on trajectory consistency
+    /// Uses motion history to reject impossible ball positions
+    private func filterCandidatesByTrajectory(_ candidates: [(center: CGPoint, radius: CGFloat, confidence: Float)], currentTime: Double) -> [(center: CGPoint, radius: CGFloat, confidence: Float)] {
+        guard trajectoryHistory.count >= 3 else {
+            // Not enough history - accept all candidates
+            return candidates
+        }
+
+        // Get recent trajectory for motion analysis
+        let recentHistory = trajectoryHistory.suffix(5)
+        guard let lastPoint = recentHistory.last else { return candidates }
+
+        // Calculate average velocity from recent history
+        var avgVelocity = CGPoint.zero
+        var count = 0
+        for i in 1..<recentHistory.count {
+            let historyArray = Array(recentHistory)
+            let p1 = historyArray[i - 1]
+            let p2 = historyArray[i]
+            let dt = p2.timestamp - p1.timestamp
+            if dt > 0.001 {  // Avoid division by zero
+                avgVelocity.x += (p2.position.x - p1.position.x) / CGFloat(dt)
+                avgVelocity.y += (p2.position.y - p1.position.y) / CGFloat(dt)
+                count += 1
+            }
+        }
+        if count > 0 {
+            avgVelocity.x /= CGFloat(count)
+            avgVelocity.y /= CGFloat(count)
+        }
+
+        // Filter candidates
+        return candidates.filter { candidate in
+            let dt = CGFloat(currentTime - lastPoint.timestamp)
+            if dt < 0.001 { return true }  // Accept if no time elapsed
+
+            // Predict position using constant velocity + gravity
+            let predictedX = lastPoint.position.x + avgVelocity.x * dt
+            let predictedY = lastPoint.position.y + avgVelocity.y * dt + 0.5 * gravity * dt * dt
+
+            // Check if candidate is within reasonable distance of prediction
+            let dx = candidate.center.x - predictedX
+            let dy = candidate.center.y - predictedY
+            let distance = sqrt(dx * dx + dy * dy)
+
+            // Allow larger deviation for fast-moving balls
+            let speed = sqrt(avgVelocity.x * avgVelocity.x + avgVelocity.y * avgVelocity.y)
+            let allowedDeviation = max(0.1, min(0.3, speed * 0.1 + 0.05))
+
+            return distance < allowedDeviation
+        }
+    }
+
+    /// Check if a position is physically plausible given trajectory history
+    func isPhysicallyPlausible(_ position: CGPoint, currentTime: Double) -> Bool {
+        guard let lastPoint = trajectoryHistory.last else { return true }
+
+        let dt = CGFloat(currentTime - lastPoint.timestamp)
+        if dt < 0.001 { return true }
+
+        // Calculate required velocity to reach this position
+        let velocity = CGPoint(
+            x: (position.x - lastPoint.position.x) / dt,
+            y: (position.y - lastPoint.position.y) / dt
+        )
+
+        let speed = sqrt(velocity.x * velocity.x + velocity.y * velocity.y)
+
+        // Reject if speed is impossibly high
+        return speed <= maxReasonableSpeed
     }
 
     // MARK: - Color Segmentation
@@ -458,6 +575,8 @@ class BallDetector {
         consecutiveMisses = 0
         colorSamples = []
         isCalibrated = false
+        trajectoryHistory = []
+        lastProcessedTime = 0
 
         // Reset to default orange thresholds
         hueMin = 5
@@ -469,36 +588,58 @@ class BallDetector {
     }
 }
 
-// MARK: - Ball Kalman Filter
+// MARK: - Ball Kalman Filter (Basketball-tuned)
 
-/// Specialized Kalman filter for ball tracking
+/// Specialized Kalman filter for basketball tracking
 /// State: [x, y, vx, vy] - position and velocity
+/// Tuned for basketball physics:
+/// - High velocity uncertainty (rapid acceleration from shots, passes, bounces)
+/// - Gravity affects vertical motion
+/// - Horizontal motion is mostly constant (minimal air resistance)
 class BallKalmanFilter {
 
     private var state: [Double]  // [x, y, vx, vy]
     private var P: [[Double]]    // Covariance matrix
 
-    // Process noise (ball can accelerate rapidly)
-    private let Q: [[Double]] = [
-        [0.001, 0, 0, 0],
-        [0, 0.001, 0, 0],
-        [0, 0, 0.05, 0],
-        [0, 0, 0, 0.05]
+    // Process noise (tuned for basketball dynamics)
+    // Higher values = more responsive to sudden changes (good for shots, passes)
+    // Lower values = smoother tracking (good for rolling ball)
+    private var Q: [[Double]]
+
+    // Measurement noise (detection uncertainty from color segmentation)
+    // HSV detection has ~1-2% position error in normalized coords
+    private let R: [[Double]] = [
+        [0.003, 0],     // ~0.3% position noise
+        [0, 0.003]
     ]
 
-    // Measurement noise (detection uncertainty)
-    private let R: [[Double]] = [
-        [0.002, 0],
-        [0, 0.002]
-    ]
+    // Gravity constant (normalized, positive = down in screen coords)
+    private let gravity: Double = 0.5  // ~0.5 screen heights per second^2
+
+    // Track if ball is likely in free flight (for gravity compensation)
+    private var isInFlight: Bool = false
+    private var flightStartTime: Double = 0
 
     init(initialPosition: CGPoint) {
         state = [Double(initialPosition.x), Double(initialPosition.y), 0, 0]
+
+        // Initial covariance - moderate position uncertainty, high velocity uncertainty
         P = [
             [0.01, 0, 0, 0],
             [0, 0.01, 0, 0],
-            [0, 0, 1, 0],
-            [0, 0, 0, 1]
+            [0, 0, 0.5, 0],    // High initial velocity uncertainty
+            [0, 0, 0, 0.5]
+        ]
+
+        // Process noise tuned for basketball:
+        // - Position noise relatively low (ball follows physics)
+        // - Velocity noise high for horizontal (passes, shots)
+        // - Velocity noise very high for vertical (gravity, bounces)
+        Q = [
+            [0.0005, 0, 0, 0],     // Position x
+            [0, 0.0005, 0, 0],     // Position y
+            [0, 0, 0.08, 0],       // Velocity x (handles passes)
+            [0, 0, 0, 0.15]        // Velocity y (handles shots, bounces)
         ]
     }
 
@@ -510,42 +651,89 @@ class BallKalmanFilter {
         CGPoint(x: state[2], y: state[3])
     }
 
+    /// Predict next state with optional gravity compensation
     func predict(dt: Double) {
-        // State transition: x' = x + vx*dt, y' = y + vy*dt
+        // Horizontal motion: constant velocity (air resistance negligible)
         state[0] += state[2] * dt
-        state[1] += state[3] * dt
+
+        // Vertical motion: check if ball is in flight (moving upward or fast downward)
+        let verticalSpeed = abs(state[3])
+        let movingUp = state[3] < -0.1  // Negative = up in screen coords
+
+        // Detect flight (shot or pass in air)
+        if movingUp || verticalSpeed > 0.5 {
+            isInFlight = true
+        }
+
+        // Apply gravity during flight
+        if isInFlight {
+            // y' = y + vy*dt + 0.5*g*dt^2
+            state[1] += state[3] * dt + 0.5 * gravity * dt * dt
+            // vy' = vy + g*dt
+            state[3] += gravity * dt
+        } else {
+            // Ball on ground or in hands - simple velocity model
+            state[1] += state[3] * dt
+        }
+
+        // End flight if ball is slow and near middle of screen (in player's hands)
+        if state[3] > 0 && state[3] < 0.3 && state[1] > 0.3 && state[1] < 0.8 {
+            isInFlight = false
+        }
 
         // Update covariance: P = F*P*F' + Q
-        // Simplified for constant velocity model
         P[0][0] += Q[0][0] + dt * dt * P[2][2]
         P[1][1] += Q[1][1] + dt * dt * P[3][3]
         P[2][2] += Q[2][2]
         P[3][3] += Q[3][3]
+
+        // Clamp covariance to prevent numerical explosion
+        P[0][0] = min(P[0][0], 1.0)
+        P[1][1] = min(P[1][1], 1.0)
+        P[2][2] = min(P[2][2], 5.0)
+        P[3][3] = min(P[3][3], 5.0)
     }
 
     func update(measurement: CGPoint) {
         let z = [Double(measurement.x), Double(measurement.y)]
 
-        // Innovation
+        // Innovation (measurement residual)
         let y0 = z[0] - state[0]
         let y1 = z[1] - state[1]
 
-        // Kalman gain (simplified)
+        // Large innovation in vertical direction might indicate bounce
+        if abs(y1) > 0.1 && state[3] > 0.3 {
+            // Possible bounce - increase vertical velocity uncertainty
+            P[3][3] = min(P[3][3] * 2, 5.0)
+            isInFlight = true  // Bounce = start of new flight
+        }
+
+        // Innovation covariance: S = H*P*H' + R
         let S0 = P[0][0] + R[0][0]
         let S1 = P[1][1] + R[1][1]
+
+        // Kalman gain: K = P*H' * S^-1
         let K0 = P[0][0] / S0
         let K1 = P[1][1] / S1
-        let K2 = P[2][0] / S0
-        let K3 = P[3][1] / S1
+        let K2 = P[2][0] / S0 * 0.8  // Slightly damped velocity update
+        let K3 = P[3][1] / S1 * 0.8
 
         // Update state
         state[0] += K0 * y0
         state[1] += K1 * y1
-        state[2] += K2 * y0
-        state[3] += K3 * y1
+        state[2] += K2 * y0 * 30.0  // Convert position error to velocity estimate
+        state[3] += K3 * y1 * 30.0
 
-        // Update covariance
+        // Update covariance: P = (I - K*H) * P
         P[0][0] *= (1 - K0)
         P[1][1] *= (1 - K1)
+        // Also reduce velocity uncertainty on successful measurement
+        P[2][2] *= 0.9
+        P[3][3] *= 0.9
+    }
+
+    /// Reset flight state (call when ball is caught or dribbled)
+    func resetFlightState() {
+        isInFlight = false
     }
 }
