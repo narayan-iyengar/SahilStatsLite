@@ -68,6 +68,15 @@ class PersonClassifier {
     /// Current focus hint for proximity weighting (set by AutoZoomManager)
     var currentFocusHint: CGPoint = CGPoint(x: 0.5, y: 0.5)
 
+    // MARK: - State Reset
+
+    /// Reset tracking state for game start (keeps learned court bounds + height stats from warmup)
+    func resetTrackingState() {
+        centroidHistory.removeAll()
+        currentFocusHint = CGPoint(x: 0.5, y: 0.5)
+        // courtBounds, baselineKidHeight, recentHeights are KEPT (warmup calibration)
+    }
+
     // MARK: - Main Classification
 
     /// Classify people from a CVPixelBuffer (convenience overload)

@@ -197,6 +197,30 @@ final class AutoZoomManager: ObservableObject {
         debugPrint("🔍 [AutoZoom] Stopped")
     }
 
+    /// Reset tracking state for game start (keeps learned court bounds from warmup)
+    /// Call this when the game clock starts to get fresh tracking without losing calibration
+    func resetTrackingState() {
+        // Reset tracking (fresh SORT state)
+        deepTracker.reset()
+        trackingReliability = 0
+        confirmedTracks = 0
+        isTimeoutMode = false
+
+        // Reset zoom to wide
+        smoothZoomController.reset()
+        currentZoom = 1.0
+        targetZoom = 1.0
+        recentZoomTargets = []
+
+        // Reset action center
+        actionZoneCenter = CGPoint(x: 0.5, y: 0.5)
+
+        // Reset PersonClassifier tracking but KEEP court bounds + height stats
+        personClassifier.resetTrackingState()
+
+        debugPrint("🔍 [AutoZoom] Tracking state reset for game start (court bounds preserved)")
+    }
+
     // MARK: - Frame Processing
 
     private struct UnsafeSendableBuffer: @unchecked Sendable {

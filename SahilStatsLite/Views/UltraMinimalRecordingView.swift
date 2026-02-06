@@ -57,7 +57,8 @@ struct UltraMinimalRecordingView: View {
     @State private var showEndConfirmation: Bool = false
     @State private var isFinishingRecording: Bool = false
     @State private var isPortrait: Bool = true
-    @State private var hasStartedRecording: Bool = false
+    @State private var hasCameraStarted: Bool = false
+    @State private var hasGameStarted: Bool = false
     @State private var isPulsing: Bool = false
     @State private var currentZoom: CGFloat = 1.0
 
@@ -313,12 +314,12 @@ struct UltraMinimalRecordingView: View {
                 updateOverlayState()
                 await recordingManager.requestPermissionsAndSetup()
 
-                // If already in landscape when camera is ready, start recording
-                if !isPortrait && !hasStartedRecording && recordingManager.isSessionReady && !recordingManager.isSimulator {
-                    debugPrint("📹 Starting recording (already in landscape)")
-                    hasStartedRecording = true
+                // If already in landscape, start camera preview + Skynet learning (NOT recording)
+                // Recording starts when game clock starts (warmup = free calibration)
+                if !isPortrait && !hasCameraStarted && recordingManager.isSessionReady && !recordingManager.isSimulator {
+                    debugPrint("📹 Camera + Skynet started (warmup calibration)")
+                    hasCameraStarted = true
                     updateOverlayState()
-                    recordingManager.startRecording()
                     gimbalManager.startTracking()
                     startAutoZoom()
                 }
@@ -798,8 +799,16 @@ struct UltraMinimalRecordingView: View {
     private func toggleClock() {
         debugPrint("🕐 [toggleClock] called - isClockRunning: \(isClockRunning)")
 
-        // Simple toggle - recording is already started when entering landscape
         isClockRunning.toggle()
+
+        // First clock start = game start → begin recording
+        if isClockRunning && !hasGameStarted && !appState.isStatsOnly {
+            hasGameStarted = true
+            debugPrint("🏀 Game started! Beginning video recording + resetting Skynet tracking")
+            recordingManager.startRecording()
+            autoZoomManager.resetTrackingState()
+        }
+
         if isClockRunning {
             startTimerIfNeeded()
         } else {
@@ -910,14 +919,13 @@ struct UltraMinimalRecordingView: View {
             }
         }
 
-        // Start recording when entering landscape (pre-game footage with initial overlay)
-        // Skip if in stats-only mode
-        if !newIsPortrait && isPortrait && !hasStartedRecording && !appState.isStatsOnly {
+        // Start camera + Skynet when entering landscape (warmup = free calibration)
+        // Recording starts later when game clock starts
+        if !newIsPortrait && isPortrait && !hasCameraStarted && !appState.isStatsOnly {
             if recordingManager.isSessionReady && !recordingManager.isSimulator {
-                debugPrint("📹 Starting recording on landscape entry")
-                hasStartedRecording = true
-                updateOverlayState()  // Set initial overlay state (paused clock at full time)
-                recordingManager.startRecording()
+                debugPrint("📹 Camera + Skynet started on landscape entry (warmup calibration)")
+                hasCameraStarted = true
+                updateOverlayState()
                 gimbalManager.startTracking()
                 startAutoZoom()
             }
@@ -944,7 +952,7 @@ struct UltraMinimalRecordingView: View {
                     .fontWeight(.bold)
                     .foregroundColor(.white)
 
-                Text("Hold your phone horizontally\nto start recording")
+                Text("Hold your phone horizontally\nto start camera")
                     .font(.subheadline)
                     .foregroundColor(.white.opacity(0.8))
                     .multilineTextAlignment(.center)
