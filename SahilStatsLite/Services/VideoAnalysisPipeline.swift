@@ -37,15 +37,16 @@ class UltraSmoothFocusTracker {
     private var velocityX: Double = 0
     private var velocityY: Double = 0
 
-    // Configuration (validated through testing)
-    private let positionSmoothing: Double = 0.02    // 2% per frame - very smooth
-    private let velocityDamping: Double = 0.85      // Momentum decay
-    private let deadZone: Double = 0.02             // 2% dead zone - ignore tiny movements
-    private let maxSpeed: Double = 0.015            // Max movement per frame
+    // Configuration - BROADCAST QUALITY (v3, validated on real game footage)
+    // Key insight: real broadcast cameras barely move. They anticipate, not chase.
+    private let positionSmoothing: Double = 0.008   // 0.8% per frame (was 2%) - very slow pan
+    private let velocityDamping: Double = 0.75      // Stronger decay = less momentum carry
+    private let deadZone: Double = 0.06             // 6% dead zone (was 2%) - ignore centroid jitter
+    private let maxSpeed: Double = 0.006            // 0.6% per frame max (was 1.5%) - broadcast-slow
 
     // Confidence streak tracking - only update after consistent detections
     private var highConfidenceStreak: Int = 0
-    private let minStreakForUpdate: Int = 2         // Require 2 consecutive frames
+    private let minStreakForUpdate: Int = 8          // Require 8 frames (~0.13s at 60fps, was 2)
 
     // Target from detection
     private var targetX: Double = 0.5

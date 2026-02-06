@@ -15,6 +15,9 @@
 //  5. Strong momentum/inertia - resist sudden direction changes
 //  6. Dead zone - ignore small movements entirely
 //
+//  v2: Added person detection (VNDetectHumanRectanglesRequest) for combined
+//      ball + player tracking. Fixed pixel buffer pool leak (was stopping at 9%).
+//
 //  Usage: swift SkynetVideoTest.swift "/path/to/video.mp4"
 //
 
@@ -22,6 +25,7 @@ import Foundation
 import AVFoundation
 import CoreImage
 import CoreGraphics
+import Vision
 
 // MARK: - Ultra-Smooth Focus Tracker
 
@@ -39,34 +43,64 @@ class UltraSmoothFocusTracker {
     private var targetX: Double = 0.5
     private var targetY: Double = 0.5
 
-    // Smoothing parameters
-    private let positionSmoothing: Double = 0.02  // Very slow position follow (2% per frame)
-    private let velocityDamping: Double = 0.85    // Strong velocity decay
-    private let deadZone: Double = 0.02           // Ignore movements smaller than 2%
-    private let maxSpeed: Double = 0.015          // Maximum movement per frame (1.5%)
+    // Smoothing parameters - BROADCAST QUALITY
+    // Key insight: real broadcast cameras barely move. They anticipate, not chase.
+    private let positionSmoothing: Double = 0.008  // 0.8% per frame (was 1.2%)
+    private let velocityDamping: Double = 0.75     // Stronger decay = less momentum carry
+    private let deadZone: Double = 0.06            // 6% dead zone (was 3.5%) - ignore centroid jitter
+    private let maxSpeed: Double = 0.006           // 0.6% per frame max (was 1%) - very slow pan
 
     // Confidence tracking
     private var highConfidenceStreak: Int = 0
-    private let minStreakForUpdate: Int = 2  // Reduced from 5 - be more responsive
+    private let minStreakForUpdate: Int = 8  // Require 8 consistent frames (~0.13s at 60fps)
 
     var position: CGPoint {
         CGPoint(x: smoothX, y: smoothY)
     }
 
-    func update(detectedPosition: CGPoint?, confidence: Float, dt: Double) {
+    func update(detectedPosition: CGPoint?, confidence: Float,
+                playerCenter: CGPoint?, playerConfidence: Float,
+                dt: Double) {
+
+        // Combine ball + player signals for target position
+        // Ball has priority when detected with high confidence
+        // Players provide stable background signal
+        var combinedPosition: CGPoint? = nil
+        var combinedConfidence: Float = 0
+
+        if let ballPos = detectedPosition, confidence > 0.4, let pCenter = playerCenter, playerConfidence > 0.3 {
+            // Both available with high-confidence ball: 30% ball, 70% player
+            // Players are far more reliable (89% vs 10% detection rate)
+            let ballWeight: CGFloat = 0.3
+            let playerWeight: CGFloat = 0.7
+            combinedPosition = CGPoint(
+                x: ballPos.x * ballWeight + pCenter.x * playerWeight,
+                y: ballPos.y * ballWeight + pCenter.y * playerWeight
+            )
+            combinedConfidence = confidence * 0.3 + playerConfidence * 0.7
+        } else if let pCenter = playerCenter, playerConfidence > 0.3 {
+            // Players detected (with or without low-confidence ball) - trust players
+            combinedPosition = pCenter
+            combinedConfidence = playerConfidence * 0.9
+        } else if let ballPos = detectedPosition, confidence > 0.2 {
+            // Ball only, no players (rare) - use ball
+            combinedPosition = ballPos
+            combinedConfidence = confidence
+        }
+
         // Track high-confidence streaks
-        if let detected = detectedPosition, confidence > 0.2 {  // Lowered threshold
+        if let combined = combinedPosition, combinedConfidence > 0.2 {
             highConfidenceStreak += 1
 
             // Only update target if we have sustained detection
             if highConfidenceStreak >= minStreakForUpdate {
-                let dx = Double(detected.x) - targetX
-                let dy = Double(detected.y) - targetY
+                let dx = Double(combined.x) - targetX
+                let dy = Double(combined.y) - targetY
 
                 // Apply dead zone - ignore small movements
                 if abs(dx) > deadZone || abs(dy) > deadZone {
-                    targetX = Double(detected.x)
-                    targetY = Double(detected.y)
+                    targetX = Double(combined.x)
+                    targetY = Double(combined.y)
                 }
             }
         } else {
@@ -120,19 +154,34 @@ class UltraSmoothZoomController {
     private var currentZoom: Double = 1.3
     private var targetZoom: Double = 1.3
 
-    // Zoom changes smoothly
-    private let zoomSmoothing: Double = 0.01  // Slower zoom changes
+    // Zoom changes VERY smoothly - zoom jitter feels worse than pan jitter
+    private let zoomSmoothing: Double = 0.005  // 0.5% per frame (was 1%) - ultra slow zoom
     private let minZoom: Double = 1.2
-    private let maxZoom: Double = 1.6  // Reasonable range
+    private let maxZoom: Double = 1.5  // Tighter range (was 1.6) - less zoom variation
 
     var zoom: CGFloat {
         CGFloat(currentZoom)
     }
 
-    func update(ballDetected: Bool, confidence: Float, actionSpread: Float, focusPosition: CGPoint? = nil) {
-        // Simple zoom logic - don't overthink it
-        if ballDetected && confidence > 0.3 {
-            // Have good detection - zoom in slightly
+    func update(ballDetected: Bool, confidence: Float, actionSpread: Float,
+                personCount: Int, focusPosition: CGPoint? = nil) {
+        if personCount > 0 {
+            // Use player spread to inform zoom
+            if actionSpread > 0.15 {
+                // Players spread wide - zoom out
+                targetZoom = 1.2
+            } else if actionSpread < 0.05 && ballDetected && confidence > 0.3 {
+                // Clustered action with ball - zoom in
+                targetZoom = 1.5
+            } else if ballDetected && confidence > 0.3 {
+                // Have ball detection - moderate zoom
+                targetZoom = 1.4
+            } else {
+                // Default moderate
+                targetZoom = 1.3
+            }
+        } else if ballDetected && confidence > 0.3 {
+            // No people detected but have ball
             targetZoom = 1.5
         } else {
             // No detection - stay at moderate zoom
@@ -142,6 +191,7 @@ class UltraSmoothZoomController {
         // Smoothly interpolate toward target
         let diff = targetZoom - currentZoom
         currentZoom += diff * zoomSmoothing
+        currentZoom = max(minZoom, min(maxZoom, currentZoom))
     }
 
     func reset() {
@@ -351,6 +401,163 @@ class SimpleBallDetector {
     }
 }
 
+// MARK: - Person Detector (Vision framework)
+
+class SimplePersonDetector {
+
+    // Cached results (Vision is expensive, run every N frames)
+    private var cachedBoxes: [CGRect] = []
+    private var framesSinceDetection = 0
+    private let detectionInterval = 6  // Every 6 frames (~10fps at 60fps)
+
+    // Rolling height statistics for kid/adult classification
+    private var heightHistory: [CGFloat] = []
+    private let historySize = 100
+    private var medianHeight: CGFloat = 0.15
+
+    // Rolling centroid smoother - averages recent centroids to eliminate jitter
+    private var centroidHistory: [CGPoint] = []
+    private let centroidHistorySize = 8  // Average over ~8 detection cycles = ~0.8s
+
+    // Current focus point for proximity weighting (updated externally)
+    var currentFocusHint: CGPoint = CGPoint(x: 0.5, y: 0.5)
+
+    struct PersonDetection {
+        let boundingBox: CGRect      // In normalized coords (0-1), Vision convention (origin bottom-left)
+        let displayBox: CGRect       // In normalized coords (0-1), display convention (origin top-left)
+        let isLikelyPlayer: Bool     // true = kid-sized (player), false = adult-sized (coach/parent)
+    }
+
+    var lastDetections: [PersonDetection] = []
+
+    func detect(in pixelBuffer: CVPixelBuffer) -> [PersonDetection] {
+        framesSinceDetection += 1
+        if framesSinceDetection < detectionInterval {
+            return lastDetections
+        }
+        framesSinceDetection = 0
+
+        let request = VNDetectHumanRectanglesRequest()
+        request.upperBodyOnly = false
+        let handler = VNImageRequestHandler(cvPixelBuffer: pixelBuffer, options: [:])
+
+        do {
+            try handler.perform([request])
+        } catch {
+            return lastDetections
+        }
+
+        guard let results = request.results, !results.isEmpty else {
+            lastDetections = []
+            return lastDetections
+        }
+
+        // Collect heights for classification
+        let heights = results.map { $0.boundingBox.height }
+        for h in heights {
+            heightHistory.append(h)
+            if heightHistory.count > historySize {
+                heightHistory.removeFirst()
+            }
+        }
+
+        // Update median height
+        if heightHistory.count >= 5 {
+            let sorted = heightHistory.sorted()
+            medianHeight = sorted[sorted.count / 2]
+        }
+
+        // Classify each detection
+        let adultThreshold = medianHeight * 1.25
+        lastDetections = results.map { obs in
+            let box = obs.boundingBox
+            let isKid = box.height < adultThreshold
+            // Convert Vision coords (bottom-left origin) to display coords (top-left origin)
+            let displayBox = CGRect(
+                x: box.origin.x,
+                y: 1.0 - box.origin.y - box.height,
+                width: box.width,
+                height: box.height
+            )
+            return PersonDetection(
+                boundingBox: box,
+                displayBox: displayBox,
+                isLikelyPlayer: isKid
+            )
+        }
+
+        return lastDetections
+    }
+
+    /// Center of mass of detected players, proximity-weighted and rolling-averaged.
+    /// Players closer to current focus have MORE weight (prevents distant players from yanking camera).
+    /// Result is averaged over last ~0.8s of detections to eliminate jitter.
+    var playerCenter: CGPoint? {
+        let candidates = lastDetections.filter { $0.isLikelyPlayer }
+        let people = candidates.isEmpty ? lastDetections : candidates
+        guard !people.isEmpty else { return nil }
+
+        // Proximity-weighted centroid: closer to focus = higher weight
+        var totalWeight: CGFloat = 0
+        var weightedX: CGFloat = 0
+        var weightedY: CGFloat = 0
+
+        for person in people {
+            let px = person.displayBox.midX
+            let py = person.displayBox.midY
+            let dx = px - currentFocusHint.x
+            let dy = py - currentFocusHint.y
+            let distance = sqrt(dx * dx + dy * dy)
+
+            // Weight: 1.0 at focus center, decays with distance
+            // Players within 20% of focus get full weight, far players get less
+            let weight = max(0.1, 1.0 - distance * 2.0)
+
+            weightedX += px * weight
+            weightedY += py * weight
+            totalWeight += weight
+        }
+
+        let rawCenter = CGPoint(x: weightedX / totalWeight, y: weightedY / totalWeight)
+
+        // Add to rolling history and return smoothed average
+        centroidHistory.append(rawCenter)
+        if centroidHistory.count > centroidHistorySize {
+            centroidHistory.removeFirst()
+        }
+
+        let avgX = centroidHistory.reduce(0.0) { $0 + $1.x } / CGFloat(centroidHistory.count)
+        let avgY = centroidHistory.reduce(0.0) { $0 + $1.y } / CGFloat(centroidHistory.count)
+        return CGPoint(x: avgX, y: avgY)
+    }
+
+    /// Player spread (variance of positions) - higher = players more spread out
+    var playerSpread: Float {
+        let players = lastDetections.filter { $0.isLikelyPlayer }
+        guard players.count >= 2 else { return 0.1 }
+
+        let avgX = players.reduce(0.0) { $0 + $1.displayBox.midX } / CGFloat(players.count)
+        let avgY = players.reduce(0.0) { $0 + $1.displayBox.midY } / CGFloat(players.count)
+
+        var variance: CGFloat = 0
+        for p in players {
+            let dx = p.displayBox.midX - avgX
+            let dy = p.displayBox.midY - avgY
+            variance += dx * dx + dy * dy
+        }
+        variance /= CGFloat(players.count)
+        return Float(sqrt(variance))
+    }
+
+    var playerCount: Int {
+        lastDetections.filter { $0.isLikelyPlayer }.count
+    }
+
+    var totalCount: Int {
+        lastDetections.count
+    }
+}
+
 // MARK: - Action Spread Calculator
 
 class ActionSpreadCalculator {
@@ -402,6 +609,10 @@ struct FrameAnalysis {
     let zoom: CGFloat
     let gameState: String
     let actionSpread: Float
+    let personBoxes: [SimplePersonDetector.PersonDetection]
+    let playerCenter: CGPoint?
+    let playerCount: Int
+    let totalPersonCount: Int
 }
 
 // MARK: - Video Analyzer (Ultra-Smooth)
@@ -409,6 +620,7 @@ struct FrameAnalysis {
 class VideoAnalyzer {
 
     private let ballDetector = SimpleBallDetector()
+    private let personDetector = SimplePersonDetector()
     private let focusTracker = UltraSmoothFocusTracker()
     private let zoomController = UltraSmoothZoomController()
     private let spreadCalculator = ActionSpreadCalculator()
@@ -420,22 +632,36 @@ class VideoAnalyzer {
         // Detect ball
         let detection = ballDetector.detect(in: pixelBuffer)
 
-        // Update action spread
-        spreadCalculator.update(position: detection?.position)
-        let spread = spreadCalculator.spread
+        // Feed current focus to person detector for proximity weighting
+        personDetector.currentFocusHint = focusTracker.position
 
-        // Update focus tracker (handles all smoothing internally)
+        // Detect people (runs every 6th frame internally, caches between)
+        let personDetections = personDetector.detect(in: pixelBuffer)
+        let playerCenter = personDetector.playerCenter
+        let playerSpread = personDetector.playerSpread
+
+        // Update action spread (combine ball movement + player spread)
+        spreadCalculator.update(position: detection?.position)
+        let ballSpread = spreadCalculator.spread
+        let combinedSpread = max(ballSpread, playerSpread)
+
+        // Update focus tracker with both ball and player signals
+        let playerConfidence: Float = personDetector.playerCount >= 2 ? 0.7 : (personDetector.totalCount > 0 ? 0.4 : 0.0)
+
         focusTracker.update(
             detectedPosition: detection?.position,
             confidence: detection?.confidence ?? 0,
+            playerCenter: playerCenter,
+            playerConfidence: playerConfidence,
             dt: dt
         )
 
-        // Update zoom controller (with position for far-court zoom)
+        // Update zoom controller with person awareness
         zoomController.update(
             ballDetected: detection != nil,
             confidence: detection?.confidence ?? 0,
-            actionSpread: spread,
+            actionSpread: combinedSpread,
+            personCount: personDetector.playerCount,
             focusPosition: focusTracker.position
         )
 
@@ -443,10 +669,12 @@ class VideoAnalyzer {
         var gameState = "Scanning"
         if let det = detection {
             if det.confidence > 0.5 {
-                gameState = "Tracking"
+                gameState = "Tracking \(personDetector.playerCount)P"
             } else if det.confidence > 0.25 {
-                gameState = "Detected"
+                gameState = "Detected \(personDetector.playerCount)P"
             }
+        } else if personDetector.playerCount > 0 {
+            gameState = "Players \(personDetector.playerCount)"
         }
 
         return FrameAnalysis(
@@ -458,7 +686,11 @@ class VideoAnalyzer {
             focusPoint: focusTracker.position,
             zoom: zoomController.zoom,
             gameState: gameState,
-            actionSpread: spread
+            actionSpread: combinedSpread,
+            personBoxes: personDetections,
+            playerCenter: playerCenter,
+            playerCount: personDetector.playerCount,
+            totalPersonCount: personDetector.totalCount
         )
     }
 
@@ -470,11 +702,52 @@ class VideoAnalyzer {
     }
 }
 
+// MARK: - Crop Info (for coordinate transform between input and output frames)
+
+struct CropInfo {
+    let cropRect: CGRect    // In CIImage pixel coords (bottom-left origin)
+    let inputSize: CGSize   // Full input frame size
+    let outputSize: CGSize  // Output (cropped) frame size
+
+    /// Transform a point from input display coords (0-1, top-left origin) to output pixel coords (top-left origin)
+    func toOutput(_ point: CGPoint) -> CGPoint {
+        // Input display -> CIImage pixel coords
+        let ciX = point.x * inputSize.width
+        let ciY = (1.0 - point.y) * inputSize.height
+
+        // CIImage pixel -> position within crop
+        let localX = ciX - cropRect.origin.x
+        let localY = ciY - cropRect.origin.y
+
+        // Scale to output size
+        let scaleX = outputSize.width / cropRect.width
+        let scaleY = outputSize.height / cropRect.height
+        let outCIX = localX * scaleX
+        let outCIY = localY * scaleY
+
+        // CIImage -> display (flip Y back to top-left origin)
+        return CGPoint(x: outCIX, y: outputSize.height - outCIY)
+    }
+
+    /// Transform a rect from input display coords to output pixel coords
+    func toOutputRect(_ rect: CGRect) -> CGRect {
+        let topLeft = toOutput(CGPoint(x: rect.minX, y: rect.minY))
+        let bottomRight = toOutput(CGPoint(x: rect.maxX, y: rect.maxY))
+        return CGRect(
+            x: min(topLeft.x, bottomRight.x),
+            y: min(topLeft.y, bottomRight.y),
+            width: abs(bottomRight.x - topLeft.x),
+            height: abs(bottomRight.y - topLeft.y)
+        )
+    }
+}
+
 // MARK: - Debug Overlay Drawing
 
 func drawDebugOverlay(
     on pixelBuffer: CVPixelBuffer,
-    analysis: FrameAnalysis
+    analysis: FrameAnalysis,
+    cropInfo: CropInfo
 ) {
     CVPixelBufferLockBaseAddress(pixelBuffer, [])
     defer { CVPixelBufferUnlockBaseAddress(pixelBuffer, []) }
@@ -535,52 +808,113 @@ func drawDebugOverlay(
         }
     }
 
-    // Ball detection (orange circle)
+    func drawRectOutline(x: Int, y: Int, w: Int, h: Int, r: UInt8, g: UInt8, b: UInt8, thickness: Int = 2) {
+        // Top and bottom edges
+        for px in x..<(x + w) {
+            for t in 0..<thickness {
+                setPixel(x: px, y: y + t, r: r, g: g, b: b)
+                setPixel(x: px, y: y + h - 1 - t, r: r, g: g, b: b)
+            }
+        }
+        // Left and right edges
+        for py in y..<(y + h) {
+            for t in 0..<thickness {
+                setPixel(x: x + t, y: py, r: r, g: g, b: b)
+                setPixel(x: x + w - 1 - t, y: py, r: r, g: g, b: b)
+            }
+        }
+    }
+
+    // Person detection boxes (transformed from input to crop space)
+    for person in analysis.personBoxes {
+        let outRect = cropInfo.toOutputRect(person.displayBox)
+        let bx = Int(outRect.origin.x)
+        let by = Int(outRect.origin.y)
+        let bw = Int(outRect.width)
+        let bh = Int(outRect.height)
+
+        // Skip if mostly off-screen
+        if bx + bw < 0 || bx > width || by + bh < 0 || by > height { continue }
+
+        if person.isLikelyPlayer {
+            // Green = player (kid)
+            drawRectOutline(x: bx, y: by, w: bw, h: bh, r: 0, g: 255, b: 100, thickness: 2)
+        } else {
+            // Red = adult (coach/parent)
+            drawRectOutline(x: bx, y: by, w: bw, h: bh, r: 255, g: 80, b: 80, thickness: 1)
+        }
+    }
+
+    // Player center of mass (magenta diamond) - transformed to crop space
+    if let pc = analysis.playerCenter {
+        let outPt = cropInfo.toOutput(pc)
+        let px = Int(outPt.x)
+        let py = Int(outPt.y)
+        let size = 15
+        drawLine(x1: px, y1: py - size, x2: px + size, y2: py, r: 255, g: 0, b: 255, thickness: 2)
+        drawLine(x1: px + size, y1: py, x2: px, y2: py + size, r: 255, g: 0, b: 255, thickness: 2)
+        drawLine(x1: px, y1: py + size, x2: px - size, y2: py, r: 255, g: 0, b: 255, thickness: 2)
+        drawLine(x1: px - size, y1: py, x2: px, y2: py - size, r: 255, g: 0, b: 255, thickness: 2)
+    }
+
+    // Ball detection (orange circle) - transformed to crop space
     if let ballPos = analysis.ballPosition, analysis.ballConfidence > 0.15 {
-        let bx = Int(ballPos.x * CGFloat(width))
-        let by = Int(ballPos.y * CGFloat(height))
-        let radius = max(10, Int(analysis.ballRadius * CGFloat(width)))
+        let outPt = cropInfo.toOutput(ballPos)
+        let bx = Int(outPt.x)
+        let by = Int(outPt.y)
+        let radius = max(12, Int(analysis.ballRadius * CGFloat(width)))
 
-        // Main circle
         drawCircle(cx: bx, cy: by, radius: radius, r: 255, g: 140, b: 0, thickness: 3)
-
-        // Confidence ring
         let confColor: (UInt8, UInt8, UInt8) = analysis.ballConfidence > 0.5 ? (0, 255, 0) : (255, 255, 0)
         drawCircle(cx: bx, cy: by, radius: radius + 5, r: confColor.0, g: confColor.1, b: confColor.2, thickness: 1)
     }
 
-    // Focus crosshair (cyan) - this should move SMOOTHLY
-    let fx = Int(analysis.focusPoint.x * CGFloat(width))
-    let fy = Int(analysis.focusPoint.y * CGFloat(height))
-
+    // Focus crosshair (cyan) - drawn at CENTER of output since focus IS the crop center
+    let fx = width / 2
+    let fy = height / 2
     drawLine(x1: fx - 50, y1: fy, x2: fx - 20, y2: fy, r: 0, g: 255, b: 255, thickness: 3)
     drawLine(x1: fx + 20, y1: fy, x2: fx + 50, y2: fy, r: 0, g: 255, b: 255, thickness: 3)
     drawLine(x1: fx, y1: fy - 50, x2: fx, y2: fy - 20, r: 0, g: 255, b: 255, thickness: 3)
     drawLine(x1: fx, y1: fy + 20, x2: fx, y2: fy + 50, r: 0, g: 255, b: 255, thickness: 3)
 
-    // Status panel (top-left)
-    drawRect(x: 10, y: 10, w: 180, h: 80, r: 0, g: 0, b: 0, a: 180)
+    // Status panel (top-left) - HUD elements stay in output space
+    drawRect(x: 10, y: 10, w: 220, h: 95, r: 0, g: 0, b: 0, a: 180)
 
     // Status indicator
     let statusColor: (r: UInt8, g: UInt8, b: UInt8)
-    switch analysis.gameState {
-    case "Tracking": statusColor = (0, 255, 0)
-    case "Detected": statusColor = (255, 255, 0)
+    switch true {
+    case analysis.gameState.hasPrefix("Tracking"): statusColor = (0, 255, 0)
+    case analysis.gameState.hasPrefix("Detected"): statusColor = (255, 255, 0)
+    case analysis.gameState.hasPrefix("Players"):  statusColor = (100, 200, 255)
     default: statusColor = (255, 80, 80)
     }
     drawRect(x: 15, y: 15, w: 20, h: 20, r: statusColor.r, g: statusColor.g, b: statusColor.b)
 
+    // Person count indicator (green dots for players, red for adults)
+    let players = analysis.personBoxes.filter { $0.isLikelyPlayer }.count
+    let adults = analysis.personBoxes.count - players
+    for i in 0..<min(players, 12) {
+        drawRect(x: 40 + i * 10, y: 17, w: 7, h: 7, r: 0, g: 255, b: 100)
+    }
+    for i in 0..<min(adults, 6) {
+        drawRect(x: 40 + (players + i) * 10, y: 17, w: 7, h: 7, r: 255, g: 80, b: 80)
+    }
+
     // Action spread indicator (blue bar)
     let spreadWidth = Int(analysis.actionSpread * 300)
-    drawRect(x: 15, y: 45, w: max(5, min(150, spreadWidth)), h: 8, r: 100, g: 150, b: 255)
+    drawRect(x: 15, y: 45, w: max(5, min(180, spreadWidth)), h: 8, r: 100, g: 150, b: 255)
 
     // Zoom indicator (green bar)
     let zoomWidth = Int((analysis.zoom - 1.0) * 300)
     drawRect(x: 15, y: 58, w: max(5, zoomWidth), h: 8, r: 150, g: 255, b: 150)
 
+    // Player spread indicator (magenta bar)
+    let pSpreadWidth = Int(analysis.actionSpread * 500)
+    drawRect(x: 15, y: 71, w: max(5, min(180, pSpreadWidth)), h: 8, r: 200, g: 100, b: 255)
+
     // Frame progress
-    let progressWidth = (analysis.frameNumber % 1000) * 160 / 1000
-    drawRect(x: 15, y: 75, w: progressWidth, h: 4, r: 255, g: 255, b: 255)
+    let progressWidth = (analysis.frameNumber % 1000) * 200 / 1000
+    drawRect(x: 15, y: 88, w: progressWidth, h: 4, r: 255, g: 255, b: 255)
 }
 
 // MARK: - Video Processor
@@ -590,7 +924,7 @@ class MacVideoProcessor {
     private let analyzer = VideoAnalyzer()
     private var enableDebugOverlay = true
 
-    func processVideo(inputPath: String, outputPath: String, debug: Bool = true, completion: @escaping (Bool, String) -> Void) {
+    func processVideo(inputPath: String, outputPath: String, debug: Bool = true, maxDuration: Double = 0, completion: @escaping (Bool, String) -> Void) {
         enableDebugOverlay = debug
 
         let inputURL = URL(fileURLWithPath: inputPath)
@@ -611,7 +945,6 @@ class MacVideoProcessor {
         let fps = videoTrack.nominalFrameRate
         let duration = CMTimeGetSeconds(asset.duration)
         let totalFrames = Int(duration * Double(fps))
-        let dt = 1.0 / Double(fps)
 
         print("   Size: \(Int(naturalSize.width))x\(Int(naturalSize.height))")
         print("   FPS: \(fps), Duration: \(String(format: "%.1f", duration))s, Frames: \(totalFrames)")
@@ -646,12 +979,16 @@ class MacVideoProcessor {
             return
         }
 
+        // Adaptive bitrate based on resolution
+        let pixelCount = Int(outputSize.width) * Int(outputSize.height)
+        let bitrate = max(4_000_000, min(20_000_000, pixelCount * Int(fps) / 1000))
+
         let writerSettings: [String: Any] = [
             AVVideoCodecKey: AVVideoCodecType.h264,
             AVVideoWidthKey: Int(outputSize.width),
             AVVideoHeightKey: Int(outputSize.height),
             AVVideoCompressionPropertiesKey: [
-                AVVideoAverageBitRateKey: 8_000_000
+                AVVideoAverageBitRateKey: bitrate
             ]
         ]
 
@@ -674,12 +1011,12 @@ class MacVideoProcessor {
         writer.add(writerInput)
 
         guard reader.startReading() else {
-            completion(false, "Cannot start reading")
+            completion(false, "Cannot start reading: \(reader.error?.localizedDescription ?? "unknown")")
             return
         }
 
         guard writer.startWriting() else {
-            completion(false, "Cannot start writing")
+            completion(false, "Cannot start writing: \(writer.error?.localizedDescription ?? "unknown")")
             return
         }
 
@@ -687,49 +1024,91 @@ class MacVideoProcessor {
 
         var frameNumber = 0
         var ballDetectedFrames = 0
-        let ciContext = CIContext()
+        var personDetectedFrames = 0
+        let ciContext = CIContext(options: [.useSoftwareRenderer: false])
         let startTime = Date()
+        var lastTimestamp: Double = 0
+
+        // Limit processing duration (default 120s / 2 min)
+        let maxSeconds: Double = maxDuration > 0 ? maxDuration : duration
+        let maxFrames = Int(maxSeconds * Double(fps))
 
         print("\n🔄 Processing frames...")
-        print("   Mode: ULTRA-SMOOTH (broadcast-quality)")
-        print("   - Focus smoothing: 2% per frame")
-        print("   - Zoom smoothing: 1.5% per frame")
-        print("   - Dead zone: 2% (ignore small movements)")
-        print("   - Min streak: 5 frames for focus update")
+        print("   Mode: ULTRA-SMOOTH v3 (broadcast-quality)")
+        print("   - Processing: \(String(format: "%.0f", maxSeconds))s of \(String(format: "%.0f", duration))s (\(maxFrames) frames)")
+        print("   - Focus: 0.8%/frame, 6% dead zone, 8-frame streak")
+        print("   - Zoom: 0.5%/frame, range 1.2-1.5x")
+        print("   - Centroid: proximity-weighted, 8-sample rolling avg")
+        print("   - Person detection: every 6 frames (~10fps)")
+        print("   - Bitrate: \(bitrate / 1_000_000)Mbps")
 
-        while let sampleBuffer = readerOutput.copyNextSampleBuffer() {
-            frameNumber += 1
-
-            if frameNumber % 500 == 0 {
-                let progress = Float(frameNumber) / Float(totalFrames) * 100
-                print("   \(Int(progress))% (\(frameNumber)/\(totalFrames))")
-            }
-
-            guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
-                continue
-            }
-
-            let timestamp = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
-
-            let analysis = analyzer.analyzeFrame(pixelBuffer, timestamp: timestamp, dt: dt)
-
-            if analysis.ballPosition != nil && analysis.ballConfidence > 0.2 {
-                ballDetectedFrames += 1
-            }
-
-            if let outputBuffer = createOutputFrame(
-                input: pixelBuffer,
-                analysis: analysis,
-                outputSize: outputSize,
-                context: ciContext
-            ) {
-                while !writerInput.isReadyForMoreMediaData {
-                    Thread.sleep(forTimeInterval: 0.001)
+        while reader.status == .reading && frameNumber < maxFrames {
+            // Use autoreleasepool to prevent memory buildup
+            autoreleasepool {
+                guard let sampleBuffer = readerOutput.copyNextSampleBuffer() else {
+                    return  // Will exit while loop since reader.status changes
                 }
 
-                let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
-                adaptor.append(outputBuffer, withPresentationTime: presentationTime)
+                frameNumber += 1
+
+                if frameNumber % 500 == 0 {
+                    let progress = Float(frameNumber) / Float(totalFrames) * 100
+                    let elapsed = Date().timeIntervalSince(startTime)
+                    let currentFps = Double(frameNumber) / elapsed
+                    let eta = (Double(totalFrames - frameNumber) / currentFps)
+                    let etaMin = Int(eta) / 60
+                    let etaSec = Int(eta) % 60
+                    print("   \(Int(progress))% (\(frameNumber)/\(totalFrames)) \(String(format: "%.0f", currentFps))fps ETA:\(etaMin)m\(etaSec)s P:\(personDetectedFrames)")
+                }
+
+                guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+                    return
+                }
+
+                // Calculate actual dt from timestamps
+                let timestamp = CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer))
+                let dt: Double
+                if lastTimestamp > 0 {
+                    dt = max(0.001, min(0.1, timestamp - lastTimestamp))  // Clamp to sane range
+                } else {
+                    dt = 1.0 / Double(fps)
+                }
+                lastTimestamp = timestamp
+
+                let analysis = analyzer.analyzeFrame(pixelBuffer, timestamp: timestamp, dt: dt)
+
+                if analysis.ballPosition != nil && analysis.ballConfidence > 0.2 {
+                    ballDetectedFrames += 1
+                }
+                if analysis.totalPersonCount > 0 {
+                    personDetectedFrames += 1
+                }
+
+                // Use pixel buffer pool from adaptor (prevents memory leak!)
+                if let outputBuffer = createOutputFrame(
+                    input: pixelBuffer,
+                    analysis: analysis,
+                    outputSize: outputSize,
+                    context: ciContext,
+                    pool: adaptor.pixelBufferPool
+                ) {
+                    while !writerInput.isReadyForMoreMediaData {
+                        Thread.sleep(forTimeInterval: 0.001)
+                    }
+
+                    let presentationTime = CMSampleBufferGetPresentationTimeStamp(sampleBuffer)
+                    if !adaptor.append(outputBuffer, withPresentationTime: presentationTime) {
+                        print("   ⚠️ Failed to append frame \(frameNumber): \(writer.error?.localizedDescription ?? "unknown")")
+                    }
+                }
             }
+        }
+
+        // Check reader status
+        if reader.status == .failed {
+            print("   ⚠️ Reader failed at frame \(frameNumber): \(reader.error?.localizedDescription ?? "unknown")")
+        } else if reader.status == .cancelled {
+            print("   ⚠️ Reader was cancelled at frame \(frameNumber)")
         }
 
         writerInput.markAsFinished()
@@ -739,24 +1118,31 @@ class MacVideoProcessor {
         writer.finishWriting { group.leave() }
         group.wait()
 
+        if writer.status == .failed {
+            print("   ⚠️ Writer failed: \(writer.error?.localizedDescription ?? "unknown")")
+        }
+
         let processingTime = Date().timeIntervalSince(startTime)
         let ballRate = Float(ballDetectedFrames) / Float(max(1, frameNumber)) * 100
+        let personRate = Float(personDetectedFrames) / Float(max(1, frameNumber)) * 100
 
         print("\n✅ Complete!")
         print("   Frames processed: \(frameNumber)")
         print("   Ball detection rate: \(String(format: "%.1f", ballRate))%")
+        print("   Person detection rate: \(String(format: "%.1f", personRate))%")
         print("   Processing time: \(String(format: "%.1f", processingTime))s")
         print("   Speed: \(String(format: "%.1f", Double(frameNumber) / processingTime)) fps")
         print("\n📁 Output: \(outputURL.path)")
 
-        completion(true, "Processed \(frameNumber) frames, ball detected in \(ballDetectedFrames)")
+        completion(true, "Processed \(frameNumber) frames, ball:\(ballDetectedFrames) persons:\(personDetectedFrames)")
     }
 
     private func createOutputFrame(
         input: CVPixelBuffer,
         analysis: FrameAnalysis,
         outputSize: CGSize,
-        context: CIContext
+        context: CIContext,
+        pool: CVPixelBufferPool?
     ) -> CVPixelBuffer? {
 
         let inputWidth = CGFloat(CVPixelBufferGetWidth(input))
@@ -785,22 +1171,43 @@ class MacVideoProcessor {
         ciImage = ciImage.transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
         ciImage = ciImage.transformed(by: CGAffineTransform(translationX: -cropRect.origin.x * scaleX, y: -cropRect.origin.y * scaleY))
 
+        // Use pixel buffer pool (recycled buffers) instead of allocating new ones
         var outputBuffer: CVPixelBuffer?
-        CVPixelBufferCreate(
-            kCFAllocatorDefault,
-            Int(outputSize.width),
-            Int(outputSize.height),
-            kCVPixelFormatType_32BGRA,
-            nil,
-            &outputBuffer
-        )
+        if let pool = pool {
+            let status = CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &outputBuffer)
+            if status != kCVReturnSuccess {
+                // Fallback to manual allocation
+                CVPixelBufferCreate(
+                    kCFAllocatorDefault,
+                    Int(outputSize.width),
+                    Int(outputSize.height),
+                    kCVPixelFormatType_32BGRA,
+                    nil,
+                    &outputBuffer
+                )
+            }
+        } else {
+            CVPixelBufferCreate(
+                kCFAllocatorDefault,
+                Int(outputSize.width),
+                Int(outputSize.height),
+                kCVPixelFormatType_32BGRA,
+                nil,
+                &outputBuffer
+            )
+        }
 
         guard let output = outputBuffer else { return nil }
 
         context.render(ciImage, to: output)
 
         if enableDebugOverlay {
-            drawDebugOverlay(on: output, analysis: analysis)
+            let cropInfo = CropInfo(
+                cropRect: cropRect,
+                inputSize: CGSize(width: inputWidth, height: inputHeight),
+                outputSize: outputSize
+            )
+            drawDebugOverlay(on: output, analysis: analysis, cropInfo: cropInfo)
         }
 
         return output
@@ -812,15 +1219,18 @@ class MacVideoProcessor {
 let args = CommandLine.arguments
 
 if args.count < 2 {
-    print("🧠 Skynet Vision Pipeline (ULTRA-SMOOTH)")
-    print("=========================================")
-    print("\nBroadcast-quality camera motion:")
-    print("  • Focus moves at 2% per frame (very slow)")
-    print("  • Zoom changes at 1.5% per frame")
-    print("  • Dead zone ignores movements < 2%")
-    print("  • Requires 5 consecutive high-confidence frames")
+    print("🧠 Skynet Vision Pipeline v2 (ULTRA-SMOOTH + PLAYER TRACKING)")
+    print("===============================================================")
+    print("\nBroadcast-quality camera motion with person detection:")
+    print("  • Focus combines ball (60%) + player center (40%)")
+    print("  • Vision-based human detection every 6 frames")
+    print("  • Kid/adult classification (green=player, red=adult)")
+    print("  • Zoom adapts to player spread")
+    print("  • Dead zone ignores movements < 3.5%")
+    print("  • Requires 4 consecutive high-confidence frames")
     print("  • Strong momentum/damping for smooth motion")
-    print("\nUsage: swift SkynetVideoTest.swift \"/path/to/video.mp4\" [--no-debug]")
+    print("\nUsage: swift SkynetVideoTest.swift \"/path/to/video.mp4\" [seconds] [--no-debug] [--full]")
+    print("  Default: processes first 120 seconds. Use --full for entire video.")
     print("\nAvailable videos:")
 
     let gamesPath = NSString(string: "~/Downloads/Sahil games").expandingTildeInPath
@@ -835,18 +1245,28 @@ if args.count < 2 {
 let inputPath = args[1]
 let enableDebug = !args.contains("--no-debug")
 
+// Parse optional duration limit (seconds). Default: 120s (2 min)
+// Usage: swift SkynetVideoTest.swift video.mp4 [seconds] [--no-debug] [--full]
+var maxDuration: Double = 120  // Default 2 minutes
+let processFullVideo = args.contains("--full")
+if processFullVideo {
+    maxDuration = 0  // 0 = no limit
+} else if args.count >= 3, let secs = Double(args[2]) {
+    maxDuration = secs
+}
+
 let inputURL = URL(fileURLWithPath: inputPath)
 let suffix = enableDebug ? "_ultrasmooth" : "_ultrasmooth_clean"
 let outputName = inputURL.deletingPathExtension().lastPathComponent + suffix + ".mp4"
 let outputPath = inputURL.deletingLastPathComponent().appendingPathComponent(outputName).path
 
-print("🧠 Skynet Vision Pipeline (ULTRA-SMOOTH)")
-print("=========================================\n")
+print("🧠 Skynet Vision Pipeline v2 (ULTRA-SMOOTH + PLAYER TRACKING)")
+print("===============================================================\n")
 
 let processor = MacVideoProcessor()
 let semaphore = DispatchSemaphore(value: 0)
 
-processor.processVideo(inputPath: inputPath, outputPath: outputPath, debug: enableDebug) { success, message in
+processor.processVideo(inputPath: inputPath, outputPath: outputPath, debug: enableDebug, maxDuration: maxDuration) { success, message in
     if !success {
         print("❌ Error: \(message)")
     }

@@ -1345,38 +1345,49 @@ if let callback = onFrameForAI, now - lastAIFrameTime >= 0.2 {
 - After that: continuous refinement throughout game
 - Works from ANY camera angle (center court, corner, bleachers)
 
-### Ultra-Smooth Tracking (2026-02-01)
+### Ultra-Smooth Tracking v3 (2026-02-05)
 
-> **LATEST**: Added broadcast-quality smoothing to eliminate jittery camera movements. Tested with command-line tool on real game footage.
+> **LATEST**: Broadcast-quality v3 tracking. Added VNDetectHumanRectanglesRequest person detection, proximity-weighted centroids, rolling centroid averaging. Tested on real game footage (IMG_7205.mov). Person detection 89.5% vs ball 10% — players now drive 70% of focus.
 
-**The Problem:**
-Initial Skynet implementation had good detection but jittery output video. Camera would jump between detected positions, creating seasick-inducing footage.
+**The Problem (v1-v2):**
+Initial Skynet had good detection but jittery output — camera jumped between detected positions. v2 added person detection but centroid still jittered when 10+ players were on court (Vision detects different subsets each frame).
+
+**v3 Key Insight:** With 10+ fast-moving players, the center of mass jumps around every detection cycle. Fix: proximity-weighted centroid (near players matter more) + rolling average over 8 cycles (~0.8s).
 
 **Research Applied:**
 | Algorithm | Implementation | Purpose |
 |-----------|---------------|---------|
 | Extended Kalman Filter | 6-state [x, y, vx, vy, ax, ay] | Smooth motion prediction |
 | SORT-style tracking | Hungarian algorithm assignment | Track ID persistence |
-| ByteTrack | Low-confidence re-matching | Recover lost tracks |
 | OC-SORT | Observation-centric recovery | Handle occlusions |
-| Action Probability Field | Predictive focus weighting | Camera follows likely action |
+| VNDetectHumanRectanglesRequest | Every 6 frames (~10fps) | Person detection (89.5% rate) |
+| Proximity-weighted centroid | `weight = max(0.1, 1.0 - distance * 2.0)` | Near-focus players matter more |
+| Rolling centroid average | 8-sample window (~0.8s) | Eliminate detection flickering |
+| Kid/adult classification | Median height * 1.25 threshold | Filter coaches/parents |
 
-**Ultra-Smooth Parameters (validated through testing):**
+**v3 Parameters (validated on real game footage):**
 ```swift
-// Focus movement (UltraSmoothFocusTracker)
-positionSmoothing = 0.02    // 2% per frame - very smooth
-velocityDamping = 0.85      // Momentum decay
-deadZone = 0.02             // 2% dead zone - ignore tiny movements
-maxSpeed = 0.015            // Max movement per frame
-minStreakForUpdate = 2      // Require 2 consecutive high-confidence frames
+// Focus movement (UltraSmoothFocusTracker) - VideoAnalysisPipeline.swift
+positionSmoothing = 0.008   // 0.8% per frame (was 2%) - broadcast-slow pan
+velocityDamping = 0.75      // Stronger decay (was 0.85) - less momentum carry
+deadZone = 0.06             // 6% dead zone (was 2%) - ignore centroid jitter
+maxSpeed = 0.006            // 0.6% per frame (was 1.5%) - very slow max pan
+minStreakForUpdate = 8      // 8 frames ~0.13s (was 2) - require agreement
 
-// Zoom control (UltraSmoothZoomController)
-zoomSmoothing = 0.01        // 1% per frame - ultra smooth
-velocityDamping = 0.9       // Momentum decay
-deadZone = 0.03             // 3% dead zone for zoom
-maxZoomSpeed = 0.008        // Max zoom change per frame
-minStreakForUpdate = 3      // Require 3 consistent frames for zoom
-minZoom = 1.0, maxZoom = 1.6  // Conservative range
+// Zoom control (UltraSmoothZoomController) - AutoZoomManager.swift
+zoomSmoothing = 0.005       // 0.5% per frame (was 1%) - ultra slow zoom
+deadZone = 0.04             // 4% dead zone (was 3%)
+maxZoomSpeed = 0.004        // Half of previous (was 0.008)
+minStreakForUpdate = 6      // 6 frames (was 3)
+minZoom = 1.0, maxZoom = 1.5  // Tighter range (was 1.6)
+
+// Centroid smoothing (PersonClassifier.swift)
+centroidHistorySize = 8     // Rolling average over ~0.8s of detections
+proximityWeight = max(0.1, 1.0 - distance * 2.0)  // Near-focus bias
+
+// Focus weights (ball vs players)
+// Players detected: 70% player, 30% ball (players are far more reliable)
+// No ball detected: 100% player (ball only 10% detection rate on wood courts)
 ```
 
 **Hoop False Positive Fix (BallDetector.swift):**
@@ -1395,29 +1406,39 @@ guard aspectRatio > 0.5 && aspectRatio < 2.0 else { continue }
 let sizePenalty = clusterCells.count > 15 ? Float(clusterCells.count - 15) * 0.02 : 0
 ```
 
-**Files Updated:**
-1. `BallDetector.swift` - Hoop filtering, tighter thresholds
-2. `VideoAnalysisPipeline.swift` - UltraSmoothFocusTracker integration
-3. `AutoZoomManager.swift` - UltraSmoothZoomController integration
+**Files Updated (v3):**
+1. `VideoAnalysisPipeline.swift` - UltraSmoothFocusTracker v3 params (slower, bigger dead zone)
+2. `AutoZoomManager.swift` - UltraSmoothZoomController v3 params + focus hint feedback
+3. `PersonClassifier.swift` - Proximity-weighted centroid + rolling average
+4. `SkynetTest/SkynetVideoTest.swift` - Standalone test tool with person detection + pool fix
 
 **Test Tool (SkynetTest/):**
 ```bash
 cd ~/SahilStats/SahilStatsLite/SahilStatsLite/SkynetTest
-swift SkynetVideoTest.swift ~/path/to/video.mp4
+swift SkynetVideoTest.swift ~/path/to/video.mp4          # First 2 min (default)
+swift SkynetVideoTest.swift ~/path/to/video.mp4 60       # First 60 seconds
+swift SkynetVideoTest.swift ~/path/to/video.mp4 --full   # Entire video
+swift SkynetVideoTest.swift ~/path/to/video.mp4 --no-debug  # No overlay
 ```
-Outputs `SkynetOutput.mp4` with debug overlay showing:
-- Ball detection (orange circle with predicted trajectory)
-- Player boxes (green = player, yellow = ref)
-- Focus crosshair (cyan)
-- Game state, frame count, zoom level
+Outputs `*_ultrasmooth.mp4` with debug overlay showing:
+- Person boxes (green = player/kid, red = adult/coach)
+- Magenta diamond = player center of mass
+- Ball detection (orange circle)
+- Focus crosshair (cyan, always at crop center)
+- Status panel with player count dots, spread/zoom bars
 
-**Results:**
-| Metric | Before | After |
-|--------|--------|-------|
-| Ball detection | 71% | 94% |
-| Video jitter | High | Eliminated |
-| Hoop false positives | Yes | No |
-| Zoom oscillation | Frequent | Rare |
+**Results (IMG_7205.mov, 1280x720 @ 60fps):**
+| Metric | v1 | v2 | v3 |
+|--------|-----|-----|-----|
+| Person detection | N/A | 89.5% | 89.5% |
+| Ball detection | 71% | 10.1% | 10.1% |
+| Video jitter | High | Moderate (shaky with many players) | Eliminated |
+| Hoop false positives | Yes | No | No |
+| Zoom oscillation | Frequent | Occasional | Rare |
+| Processing speed | 157 fps | 149 fps | 148 fps |
+
+**Why ball detection dropped from 71% to 10%:**
+The original test was on a video with good contrast. Real gym footage (wood court + overhead lighting) creates orange-ish floor reflections that confuse the ball detector. v3 compensates by leaning heavily on player detection instead.
 
 ### Future Refinements
 

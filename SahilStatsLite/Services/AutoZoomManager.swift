@@ -29,11 +29,12 @@ class UltraSmoothZoomController {
     // Velocity for momentum-based smoothing
     private var zoomVelocity: Double = 0
 
-    // Configuration (validated through testing)
-    private let zoomSmoothing: Double = 0.01    // 1% per frame - very smooth
+    // Configuration - BROADCAST QUALITY (v3, validated on real game footage)
+    // Zoom jitter feels worse than pan jitter, so extra conservative
+    private let zoomSmoothing: Double = 0.005   // 0.5% per frame (was 1%) - ultra slow zoom
     private let velocityDamping: Double = 0.9   // Momentum decay
-    private let deadZone: Double = 0.03         // 3% dead zone for zoom
-    private let maxZoomSpeed: Double = 0.008    // Max zoom change per frame
+    private let deadZone: Double = 0.04         // 4% dead zone (was 3%)
+    private let maxZoomSpeed: Double = 0.004    // Max zoom change per frame (was 0.008)
 
     // Zoom limits
     let minZoom: Double
@@ -44,9 +45,9 @@ class UltraSmoothZoomController {
 
     // Confidence tracking
     private var highConfidenceStreak: Int = 0
-    private let minStreakForUpdate: Int = 3     // Require 3 consistent frames for zoom
+    private let minStreakForUpdate: Int = 6     // Require 6 consistent frames (was 3)
 
-    init(minZoom: Double = 1.0, maxZoom: Double = 1.6) {
+    init(minZoom: Double = 1.0, maxZoom: Double = 1.5) {
         self.minZoom = minZoom
         self.maxZoom = maxZoom
         self.smoothZoom = minZoom
@@ -291,7 +292,10 @@ final class AutoZoomManager: ObservableObject {
         let dt = lastFrameTime > 0 ? now - lastFrameTime : 1.0/30.0
         lastFrameTime = now
 
-        // 1. Classify all people in frame (PersonClassifier)
+        // 1. Feed current focus to classifier for proximity weighting
+        personClassifier.currentFocusHint = actionZoneCenter
+
+        // 2. Classify all people in frame (PersonClassifier)
         let classifiedPeople = personClassifier.classifyPeople(in: pixelBuffer)
 
         // 2. Update DeepTracker with new detections (SORT-style tracking)

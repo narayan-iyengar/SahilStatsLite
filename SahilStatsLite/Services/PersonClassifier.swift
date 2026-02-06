@@ -58,6 +58,15 @@ class PersonClassifier {
     /// Baseline kid height (25th percentile of all detections)
     private var baselineKidHeight: CGFloat = 0.20
 
+    // MARK: - Broadcast-Quality Centroid Smoothing (v3)
+
+    /// Rolling centroid history for jitter elimination
+    private var centroidHistory: [CGPoint] = []
+    private let centroidHistorySize = 8  // Average over ~8 detection cycles
+
+    /// Current focus hint for proximity weighting (set by AutoZoomManager)
+    var currentFocusHint: CGPoint = CGPoint(x: 0.5, y: 0.5)
+
     // MARK: - Main Classification
 
     func classifyPeople(in pixelBuffer: CVPixelBuffer) -> [ClassifiedPerson] {
@@ -424,6 +433,8 @@ class PersonClassifier {
 extension PersonClassifier {
 
     /// Calculate weighted center of trackable people (players + refs on court)
+    /// Uses proximity weighting (players near current focus weigh more) and
+    /// rolling centroid averaging to eliminate jitter from detection flickering.
     func calculateActionCenter(from people: [ClassifiedPerson]) -> CGPoint {
         let trackable = people.filter { person in
             switch person.classification {
@@ -456,6 +467,14 @@ extension PersonClassifier {
             // Boost high-confidence detections
             weight *= CGFloat(person.confidence)
 
+            // Proximity weighting: players closer to current focus get MORE weight.
+            // This prevents distant players from yanking the camera around.
+            let dx = person.boundingBox.midX - currentFocusHint.x
+            let dy = person.boundingBox.midY - currentFocusHint.y
+            let distance = sqrt(dx * dx + dy * dy)
+            let proximityWeight = max(0.1, 1.0 - distance * 2.0)
+            weight *= proximityWeight
+
             weightedX += person.boundingBox.midX * weight
             weightedY += person.boundingBox.midY * weight
             totalWeight += weight
@@ -465,10 +484,20 @@ extension PersonClassifier {
             return CGPoint(x: 0.5, y: 0.5)
         }
 
-        return CGPoint(
+        let rawCenter = CGPoint(
             x: weightedX / totalWeight,
             y: weightedY / totalWeight
         )
+
+        // Rolling centroid average to smooth out detection flickering
+        centroidHistory.append(rawCenter)
+        if centroidHistory.count > centroidHistorySize {
+            centroidHistory.removeFirst()
+        }
+
+        let avgX = centroidHistory.reduce(0.0) { $0 + $1.x } / CGFloat(centroidHistory.count)
+        let avgY = centroidHistory.reduce(0.0) { $0 + $1.y } / CGFloat(centroidHistory.count)
+        return CGPoint(x: avgX, y: avgY)
     }
 
     /// Calculate recommended zoom based on player spread
