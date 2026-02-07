@@ -84,9 +84,11 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 ---
 
 <h2>Hardware</h2>
-- **Recording device**: iPhone (on gimbal)
+- **Phone**: iPhone 16 Pro Max (A18 Pro, 48MP main camera, 5x telephoto, 0.5x ultra-wide, Camera Control button, USB-C)
 - **Gimbal**: Insta360 Flow Pro 2 (DockKit compatible)
 - **Backup gimbal**: DJI Osmo Mobile 7P (not DockKit, future consideration)
+- **Watch (primary)**: Apple Watch Ultra 2 (49mm) in PodX Adventure Classic case
+- **Watch (backup)**: Apple Watch Series 8 (45mm) in TinyPod Standard case
 
 ---
 
