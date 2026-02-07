@@ -2,7 +2,14 @@
 //  WatchContentView.swift
 //  SahilStatsLiteWatch
 //
-//  Main content view with TabView for swipe navigation between scoring and stats
+//  PURPOSE: Root navigation view. Shows waiting screen when no game active,
+//           vertical TabView (Scoring + Stats) during a game, and upcoming
+//           games list from calendar. Handles quick-start game from Watch.
+//  KEY TYPES: WatchContentView, WatchGame
+//  DEPENDS ON: WatchConnectivityClient, WatchScoringView, WatchStatsView,
+//              WatchGameConfirmationView
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

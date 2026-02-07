@@ -2,8 +2,13 @@
 //  OverlayRenderer.swift
 //  SahilStatsLite
 //
-//  Real-time scoreboard overlay renderer
-//  NBA corner-style scorebug with team colors and logo space
+//  PURPOSE: Real-time NBA corner-style scoreboard overlay renderer. Composites
+//           team names, scores, period, and clock onto CVPixelBuffer frames
+//           during recording. Positioned bottom-right with team color bars.
+//  KEY TYPES: OverlayRenderer (@unchecked Sendable)
+//  DEPENDS ON: CoreImage, CoreGraphics
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import CoreImage

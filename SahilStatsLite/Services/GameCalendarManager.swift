@@ -2,7 +2,13 @@
 //  GameCalendarManager.swift
 //  SahilStatsLite
 //
-//  Calendar integration for upcoming games
+//  PURPOSE: Calendar integration for game scheduling. Parses EKEvents to find
+//           games, auto-detects opponents from event titles, supports hiding
+//           non-game events, and manages known team names.
+//  KEY TYPES: GameCalendarManager (singleton), CalendarGame
+//  DEPENDS ON: EventKit
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

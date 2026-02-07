@@ -2,7 +2,13 @@
 //  YouTubeService.swift
 //  SahilStatsLite
 //
-//  Lean YouTube upload - no WiFi monitoring, no queue, just upload
+//  PURPOSE: Lean YouTube upload service. Google Sign-In for OAuth, Keychain for
+//           token storage, immediate upload over 5G (no WiFi queue). Auto-uploads
+//           game videos as public to Sahil's YouTube channel.
+//  KEY TYPES: YouTubeService (singleton, @MainActor)
+//  DEPENDS ON: GoogleSignIn, Security (Keychain)
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

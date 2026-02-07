@@ -2,12 +2,14 @@
 //
 //  SkynetVideoTest.swift
 //
-//  ULTRA-SMOOTH Skynet vision pipeline with broadcast-quality camera motion.
+//  PURPOSE: Command-line tool for testing Skynet vision pipeline on recorded
+//           videos. Outputs SkynetOutput.mp4 with debug overlay showing ball
+//           detection, player boxes, focus crosshair, and game state.
+//           Ultra-smooth broadcast-quality camera motion.
+//  KEY TYPES: LeadTracker, SkynetProcessor (standalone)
+//  DEPENDS ON: AVFoundation, Vision, CoreImage (standalone, no app deps)
 //
-//  Key insight: Professional broadcast cameras move SLOWLY and DELIBERATELY.
-//  They don't chase every ball movement - they anticipate and glide.
-//
-//  Smoothing strategies:
+//  SMOOTHING STRATEGIES:
 //  1. Very low process noise Kalman (trust predictions over measurements)
 //  2. Exponential moving average on top of Kalman
 //  3. Zoom changes interpolated over 60+ frames
@@ -19,6 +21,8 @@
 //      ball + player tracking. Fixed pixel buffer pool leak (was stopping at 9%).
 //
 //  Usage: swift SkynetVideoTest.swift "/path/to/video.mp4"
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

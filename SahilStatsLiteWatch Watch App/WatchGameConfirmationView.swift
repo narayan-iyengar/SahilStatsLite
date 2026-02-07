@@ -2,8 +2,13 @@
 //  WatchGameConfirmationView.swift
 //  SahilStatsLiteWatch
 //
-//  Confirmation screen before starting a game from Watch
-//  Shows game details and Start Recording / Cancel buttons
+//  PURPOSE: Pre-game confirmation screen on Watch. Shows opponent, team,
+//           and time for a selected upcoming game. Start Recording button
+//           sends startGame message to iPhone via WatchConnectivity.
+//  KEY TYPES: WatchGameConfirmationView
+//  DEPENDS ON: WatchConnectivityClient, WatchGame
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

@@ -2,7 +2,13 @@
 //  AILabView.swift
 //  SahilStatsLite
 //
-//  Experimental AI features - Skynet mode with player detection and heat maps
+//  PURPOSE: Experimental AI lab UI for testing Skynet vision pipeline on
+//           recorded videos. Runs person detection, classification, heat map
+//           generation, and zoom-in-post processing on selected video files.
+//  KEY TYPES: AILabView
+//  DEPENDS ON: RecordingManager, PersonClassifier, AutoZoomManager
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

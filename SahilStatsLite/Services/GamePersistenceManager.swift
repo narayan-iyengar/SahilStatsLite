@@ -2,7 +2,13 @@
 //  GamePersistenceManager.swift
 //  SahilStatsLite
 //
-//  Handles saving and loading games to/from disk with Firebase sync
+//  PURPOSE: Local disk persistence and Firebase sync for games. Saves games as
+//           JSON to Documents directory, syncs with Firestore when signed in.
+//           Provides career stats aggregation (PPG, RPG, APG, win rate).
+//  KEY TYPES: GamePersistenceManager (singleton, @MainActor)
+//  DEPENDS ON: FirebaseService, AuthService, Game
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

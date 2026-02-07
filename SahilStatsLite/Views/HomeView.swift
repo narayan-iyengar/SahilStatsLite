@@ -2,7 +2,14 @@
 //  HomeView.swift
 //  SahilStatsLite
 //
-//  Main home screen with recent games and new game button
+//  PURPOSE: Main home screen with upcoming games (calendar), game log, career
+//           stats, and settings. Contains NextGameHeroCard, SettingsView,
+//           CareerStatsSheet, AllGamesView, and GameDetailSheet as sub-views.
+//  KEY TYPES: HomeView, SettingsView, CareerStatsSheet, AllGamesView
+//  DEPENDS ON: GameCalendarManager, GamePersistenceManager, AuthService,
+//              YouTubeService, AutoZoomManager, GimbalTrackingManager
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

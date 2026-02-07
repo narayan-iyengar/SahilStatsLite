@@ -2,7 +2,13 @@
 //  Game.swift
 //  SahilStatsLite
 //
-//  Simplified game model for recording and score tracking
+//  PURPOSE: Core data models for games, scores, and player stats.
+//           Game struct holds all state for a single basketball game.
+//           PlayerStats tracks Sahil's individual performance.
+//  KEY TYPES: Game, PlayerStats, ScoreEvent, RecordingState
+//  DEPENDS ON: None (foundation models)
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

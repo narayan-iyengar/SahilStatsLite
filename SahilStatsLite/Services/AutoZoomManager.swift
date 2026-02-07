@@ -2,14 +2,19 @@
 //  AutoZoomManager.swift
 //  SahilStatsLite
 //
-//  Intelligent Vision-based auto-zoom for basketball recording
-//  Works independently of gimbal - uses on-device ML to track players
+//  PURPOSE: AI-powered auto-zoom orchestrator (Skynet v4.1). Receives SD frames
+//           from RecordingManager, runs Vision detection, calculates optimal zoom.
+//           Starts during warmup for calibration; resets tracking on game start.
+//  KEY TYPES: AutoZoomManager (singleton), UltraSmoothZoomController, AutoZoomMode
+//  DEPENDS ON: PersonClassifier, DeepTracker, RecordingManager
 //
-//  Updated with Hybrid v4.1 logic (validated in sandbox):
+//  FEATURES:
 //  - v3.1 Golden Smoothing for broadcast-quality motion
-//  - Momentum-Weighted Attention (Mind) via TrackedObject velocities
-//  - Timeout Detection (Bench Rush awareness)
-//  - Proximity Damping (Stable close-ups)
+//  - Momentum-Weighted Attention via TrackedObject velocities (1x-3x capped)
+//  - Timeout Detection (60%+ players at edges → zoom out)
+//  - Warmup calibration (resetTrackingState keeps court bounds)
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

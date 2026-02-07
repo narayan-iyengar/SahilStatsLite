@@ -2,8 +2,16 @@
 //  UltraMinimalRecordingView.swift
 //  SahilStatsLite
 //
-//  Ultra-minimal recording view with real camera integration
-//  Single scoreboard, tap-to-score, stats overlay, game persistence
+//  PURPOSE: Main recording interface. Full-screen tap zones for scoring (left=home,
+//           right=away), pinch-to-zoom, swipe to subtract. Camera preview starts
+//           on landscape entry (warmup calibration); video recording starts on
+//           first clock tap. Contains scoreboard, stats overlay, Watch callbacks,
+//           end game flow with Photos save and YouTube upload.
+//  KEY TYPES: UltraMinimalRecordingView, BlinkingColon, CameraPreviewView
+//  DEPENDS ON: RecordingManager, AutoZoomManager, GimbalTrackingManager,
+//              WatchConnectivityService, YouTubeService, GamePersistenceManager
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

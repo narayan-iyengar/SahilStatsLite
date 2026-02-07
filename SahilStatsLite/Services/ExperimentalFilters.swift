@@ -2,8 +2,13 @@
 //  ExperimentalFilters.swift
 //  SahilStatsLite
 //
-//  Research algorithms for "Skynet" Phase 2.
-//  Contains advanced tracking and prediction filters to layer on top of DeepTracker.
+//  PURPOSE: Research algorithms for Skynet Phase 2. Predictive lead tracker
+//           ("cameraman algorithm"), scene activity monitor, and advanced
+//           filtering experiments layered on top of DeepTracker.
+//  KEY TYPES: PredictiveLeadTracker, SceneActivityMonitor
+//  DEPENDS ON: DeepTracker, PersonClassifier
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

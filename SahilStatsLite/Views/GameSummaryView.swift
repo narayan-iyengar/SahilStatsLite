@@ -2,7 +2,13 @@
 //  GameSummaryView.swift
 //  SahilStatsLite
 //
-//  Post-game summary with stats - auto-saves video to Photos
+//  PURPOSE: Post-game summary screen. Shows final score, Sahil's stats,
+//           shooting percentages (FG%, 3P%, FT%, eFG%, TS%). Auto-saves
+//           video to Photos library.
+//  KEY TYPES: GameSummaryView
+//  DEPENDS ON: RecordingManager, AppState
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

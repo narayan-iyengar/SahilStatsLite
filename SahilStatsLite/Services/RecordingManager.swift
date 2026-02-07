@@ -2,8 +2,14 @@
 //  RecordingManager.swift
 //  SahilStatsLite
 //
-//  Real-time video recording with burned-in scoreboard overlay
-//  Uses AVCaptureVideoDataOutput + AVAssetWriter for frame-by-frame processing
+//  PURPOSE: AVFoundation video capture with real-time scoreboard overlay.
+//           Records 4K video via AVAssetWriter, renders overlay per-frame,
+//           provides AI frame callback for Skynet processing at SD resolution.
+//           Camera session starts during warmup; file recording starts on clock.
+//  KEY TYPES: RecordingManager (singleton, @MainActor)
+//  DEPENDS ON: OverlayRenderer
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

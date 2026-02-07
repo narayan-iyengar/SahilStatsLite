@@ -2,7 +2,12 @@
 //  SahilStatsLiteWatchApp.swift
 //  SahilStatsLiteWatch Watch App
 //
-//  Apple Watch companion app for basketball game scoring
+//  PURPOSE: Watch app entry point. Initializes WatchConnectivityClient
+//           as environment object and presents WatchContentView.
+//  KEY TYPES: SahilStatsLiteWatchApp
+//  DEPENDS ON: WatchConnectivityClient, WatchContentView
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

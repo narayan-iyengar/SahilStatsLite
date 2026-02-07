@@ -2,8 +2,13 @@
 //  WatchLayout.swift
 //  SahilStatsLiteWatch
 //
-//  Auto-detects Apple Watch size and provides adaptive dimensions.
-//  Supports Series 8 (45mm, 198pt wide) and Ultra 2 (49mm, 205pt wide).
+//  PURPOSE: Auto-detects Apple Watch screen size (compact/regular/ultra)
+//           and provides adaptive layout dimensions (fonts, spacing, flags).
+//           Supports 40-41mm, 44-45mm, and 49mm Ultra watches.
+//  KEY TYPES: WatchLayout, WatchLayout.Size
+//  DEPENDS ON: WatchKit
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import WatchKit

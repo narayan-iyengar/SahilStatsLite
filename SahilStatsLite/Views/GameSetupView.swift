@@ -2,7 +2,13 @@
 //  GameSetupView.swift
 //  SahilStatsLite
 //
-//  Quick game setup - just opponent name and optional location
+//  PURPOSE: Pre-game setup screen. Select opponent, team, location, half length
+//           (18 or 20 min AAU). Auto-populates from calendar event if available.
+//           Offers video recording or stats-only mode.
+//  KEY TYPES: GameSetupView
+//  DEPENDS ON: GimbalTrackingManager, AppState
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

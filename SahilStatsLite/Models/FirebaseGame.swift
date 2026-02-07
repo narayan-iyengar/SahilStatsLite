@@ -2,7 +2,13 @@
 //  FirebaseGame.swift
 //  SahilStatsLite
 //
-//  Maps between Lite's Game model and Firebase document structure (matching main app)
+//  PURPOSE: Firestore document mapping and serialization. Converts between the
+//           local Game model and Firebase's document schema (matching main app).
+//           Handles complex date decoding and field name mapping.
+//  KEY TYPES: FirebaseGame (Codable)
+//  DEPENDS ON: Game.swift, FirebaseFirestore
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

@@ -2,16 +2,13 @@
 //  TestVideoProcessor.swift
 //  SahilStatsLite
 //
-//  Test harness for validating the Skynet vision pipeline
-//  on existing video files before integrating into live recording.
+//  PURPOSE: Test harness for validating the Skynet vision pipeline on existing
+//           video files. Reads video via AVAssetReader, runs full pipeline,
+//           outputs processed video with smart crop/zoom and optional debug overlay.
+//  KEY TYPES: TestVideoProcessor
+//  DEPENDS ON: VideoAnalysisPipeline, AVFoundation
 //
-//  Features:
-//  - Reads existing video files (AVAssetReader)
-//  - Processes each frame through VideoAnalysisPipeline
-//  - Outputs processed video with:
-//    - Smart crop/zoom following action probability field
-//    - Debug overlay showing detections (optional)
-//  - Generates statistics report
+//  NOTE: Keep this header updated when modifying this file.
 //
 //  Usage:
 //  let processor = TestVideoProcessor()

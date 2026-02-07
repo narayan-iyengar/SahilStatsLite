@@ -2,8 +2,12 @@
 //  GimbalTrackingManager.swift
 //  SahilStatsLite
 //
-//  DockKit integration for Insta360 Flow 2 Pro smart tracking
-//  Requires: iOS 18+ with DockKit framework
+//  PURPOSE: DockKit gimbal integration for Insta360 Flow Pro 2. Controls
+//           physical pan/tilt tracking, stabilization mode, and region of interest.
+//  KEY TYPES: GimbalTrackingManager (singleton), GimbalMode (off/stabilize/track)
+//  DEPENDS ON: DockKit (iOS 18+), AVFoundation
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

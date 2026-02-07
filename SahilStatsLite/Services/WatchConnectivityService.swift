@@ -2,8 +2,14 @@
 //  WatchConnectivityService.swift
 //  SahilStatsLite
 //
-//  Handles communication between iPhone and Apple Watch
-//  Used by both iOS app and watchOS app
+//  PURPOSE: iPhone-side WatchConnectivity handler. Sends game state, scores,
+//           clock, and period updates to Watch. Receives scoring, clock toggle,
+//           period advance, stat updates, and end game commands from Watch.
+//           Must be initialized at app launch (AppDelegate) or WCSession fails.
+//  KEY TYPES: WatchConnectivityService (singleton), WatchMessage, WatchGame
+//  DEPENDS ON: WatchConnectivity
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

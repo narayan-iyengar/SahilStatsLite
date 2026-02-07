@@ -2,7 +2,12 @@
 //  AuthService.swift
 //  SahilStatsLite
 //
-//  Firebase Authentication service with Google Sign-In
+//  PURPOSE: Firebase Authentication with Google Sign-In. Manages user session,
+//           provides userId for Firestore scoping.
+//  KEY TYPES: AuthService (singleton, @MainActor)
+//  DEPENDS ON: FirebaseAuth, GoogleSignIn
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

@@ -2,17 +2,14 @@
 //  GameStateDetector.swift
 //  SahilStatsLite
 //
-//  Basketball game state detection using heuristics
-//  No training required - uses basketball domain knowledge
+//  PURPOSE: Detects basketball game state (fastBreak, halfCourt, transition,
+//           deadBall) using heuristics. No training required - uses basketball
+//           domain knowledge from ball velocity, player spread, and court position.
+//  KEY TYPES: GameStateDetector, GameState
+//  DEPENDS ON: BallDetector, DeepTracker, CourtDetector
 //
-//  Game States:
-//  - fastBreak: Ball moving quickly toward basket, players spread/running
-//  - halfCourt: Set offense, players relatively stationary, ball handler probing
-//  - transition: Ball crossing half court, teams setting up
-//  - deadBall: No active play (timeout, foul, out of bounds)
+//  NOTE: Keep this header updated when modifying this file.
 //
-//  Detection is based on:
-//  - Ball position and velocity
 //  - Player positions relative to court geometry
 //  - Player velocities (running vs stationary)
 //  - Historical patterns (state transitions)

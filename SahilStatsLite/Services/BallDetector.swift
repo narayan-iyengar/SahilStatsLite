@@ -2,13 +2,13 @@
 //  BallDetector.swift
 //  SahilStatsLite
 //
-//  Zero-training ball detection using classical computer vision
-//  - HSV color segmentation (orange/brown basketball)
-//  - Circular contour detection
-//  - Kalman filter for smooth tracking + prediction
-//  - Online color adaptation to gym lighting
-//  - Trajectory-based validation (physics-aware filtering)
-//  - Motion history for false positive rejection
+//  PURPOSE: Basketball detection using HSV color segmentation and Kalman tracking.
+//           Zero training required. Detects orange/brown ball, filters hoop false
+//           positives, validates trajectory with physics, adapts to gym lighting.
+//  KEY TYPES: BallDetector, BallDetection, TrajectoryPoint
+//  DEPENDS ON: CoreImage, Vision
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

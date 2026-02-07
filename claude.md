@@ -125,8 +125,8 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 ---
 
 ## Current Status
-- Existing app: 100 files, 40k lines (too complex) - in `/SahilStats/SahilStats/`
-- New app: ~20 files, ~3,700 lines - in `/SahilStats/SahilStatsLite/`
+- Old app: archived to `SahilStats-archive.zip` (100 files, 40k lines - too complex)
+- New app: ~40 files, ~5,000 lines - in `/SahilStats/SahilStatsLite/SahilStatsLite/` (git repo root)
 - Phase 1: Recording + auto-tracking + score overlay (IN PROGRESS)
 - Phase 2: Stats tagging
 - Phase 3: Highlights and sharing
@@ -271,36 +271,65 @@ Without this, static layers may not appear until partway through the video.
 
 ## Project Structure (SahilStatsLite)
 
+**Git repo root**: `/Users/narayan/SahilStats/SahilStatsLite/SahilStatsLite/`
+
+All files have documentation headers (PURPOSE, KEY TYPES, DEPENDS ON) for quick context.
+
 ```
-SahilStatsLite/
-├── SahilStatsLiteApp.swift           # App entry point + AppState
-├── Models/
-│   └── Game.swift                    # Game, ScoreEvent models
-├── Views/
-│   ├── HomeView.swift                # Home screen with game list + Career Stats
-│   ├── GameSetupView.swift           # Quick opponent entry
-│   ├── RecordingView.swift           # Full-screen recording with floating controls
-│   ├── UltraMinimalRecordingView.swift # Simplified recording UI
-│   └── GameSummaryView.swift         # Post-game summary + video processing
-├── Services/
-│   ├── RecordingManager.swift        # AVFoundation video capture (4K support)
-│   ├── AutoZoomManager.swift         # Skynet Auto-Zoom (v4.1)
-│   ├── PersonClassifier.swift        # Player/ref/adult classification + Momentum Attention
-│   ├── DeepTracker.swift             # SORT-style tracking with Kalman filtering
-│   ├── GimbalTrackingManager.swift   # DockKit integration
-│   ├── GameCalendarManager.swift     # Calendar integration
-│   ├── ScoreTimelineTracker.swift    # Tracks score/clock during recording
-│   ├── OverlayCompositor.swift       # Burns overlay into video post-recording
-│   ├── WatchConnectivityService.swift # iPhone-side Watch communication
-│   └── YouTubeService.swift          # YouTube auth + upload (~200 lines)
-├── Resources/
-│   └── Info.plist                    # Privacy descriptions
-└── SahilStatsLiteWatch Watch App/    # Apple Watch companion
-    ├── SahilStatsLiteWatchApp.swift  # Watch app entry point
-    ├── WatchContentView.swift        # Main navigation
-    ├── WatchScoringView.swift        # Remote score controls
-    ├── WatchStatsView.swift          # Stats display
-    └── WatchConnectivityClient.swift # Watch-side communication
+SahilStatsLite/SahilStatsLite/              ← Git repo root
+├── claude.md                                # Project context for Claude
+├── Gemini.md                                # Project context for Gemini
+├── SahilStatsLite/                          ← iOS app source
+│   ├── SahilStatsLiteApp.swift              # App entry point, AppState, AppDelegate, screen routing
+│   ├── Components/
+│   │   └── MissingComponents.swift          # Stub components for compilation
+│   ├── Models/
+│   │   ├── Game.swift                       # Game, PlayerStats, ScoreEvent, GameResult models
+│   │   └── FirebaseGame.swift               # Codable Firebase data model for cloud sync
+│   ├── Views/
+│   │   ├── HomeView.swift                   # Home screen: hero card, game log, career stats, settings
+│   │   ├── GameSetupView.swift              # Pre-game setup: opponent, team, half length, video toggle
+│   │   ├── UltraMinimalRecordingView.swift  # Main recording UI: full-screen tap zones, scoreboard, warmup
+│   │   ├── GameSummaryView.swift            # Post-game summary: scores, shooting %, video save
+│   │   ├── ManualGameEntryView.swift        # Manual stats-only entry (no video)
+│   │   ├── AuthView.swift                   # Firebase sign-in + sync controls
+│   │   ├── AILabView.swift                  # AI lab: test Skynet pipeline on recorded videos
+│   │   └── SkynetTestView.swift             # Standalone Skynet test UI (pick video, run pipeline)
+│   ├── Services/
+│   │   ├── RecordingManager.swift           # AVFoundation 4K capture, frame callbacks for AI
+│   │   ├── AutoZoomManager.swift            # Skynet v4.1 orchestrator (zoom, pan, timeout detection)
+│   │   ├── PersonClassifier.swift           # Player/ref/adult classification, court bounds, heat map
+│   │   ├── DeepTracker.swift                # SORT-style tracking, KalmanFilter2D, TrackedObject
+│   │   ├── GimbalTrackingManager.swift      # DockKit gimbal pan/tilt/zoom integration
+│   │   ├── GameCalendarManager.swift        # Calendar event parsing, team/opponent detection
+│   │   ├── GamePersistenceManager.swift     # Local game storage (UserDefaults JSON)
+│   │   ├── OverlayRenderer.swift            # Core Graphics scoreboard renderer (broadcast-style)
+│   │   ├── WatchConnectivityService.swift   # iPhone-side WCSession (Watch ↔ Phone sync)
+│   │   ├── YouTubeService.swift             # YouTube OAuth + resumable upload (~200 lines)
+│   │   ├── AuthService.swift                # Firebase/Google Sign-In auth wrapper
+│   │   ├── FirebaseService.swift            # Firestore CRUD for games
+│   │   ├── BallDetector.swift               # Orange basketball detection via color thresholding
+│   │   ├── CourtDetector.swift              # Court line detection (R&D, limited success)
+│   │   ├── ActionProbabilityField.swift     # Predictive action field for camera focus
+│   │   ├── GameStateDetector.swift          # Play/dead-ball/timeout state detection
+│   │   ├── ExperimentalFilters.swift        # R&D tracking filters (sandbox)
+│   │   ├── TestVideoProcessor.swift         # Offline video processing for SkynetTestView
+│   │   └── VideoAnalysisPipeline.swift      # Full video analysis: detection → tracking → output
+│   └── Resources/
+│       └── Info.plist                       # Privacy descriptions (camera, mic, photos, calendar)
+├── SahilStatsLite.xcodeproj/                # Xcode project
+├── SahilStatsLiteWatch Watch App/           ← Apple Watch companion
+│   ├── SahilStatsLiteWatchApp.swift         # Watch app entry point
+│   ├── WatchContentView.swift               # Root nav: waiting screen or scoring TabView
+│   ├── WatchScoringView.swift               # Tap-to-score, clock, period, end game
+│   ├── WatchStatsView.swift                 # Shooting stats (MAKE/MISS) + other stats
+│   ├── WatchGameConfirmationView.swift      # Pre-game confirmation from Watch
+│   ├── WatchLayout.swift                    # Adaptive layout (compact/regular/ultra)
+│   ├── WatchConnectivityClient.swift        # Watch-side WCSession handler
+│   └── Assets.xcassets/                     # Watch app icons
+└── SkynetTest/                              ← AI R&D tools (standalone)
+    ├── SkynetVideoTest.swift                # CLI: broadcast-quality Skynet test on video files
+    └── ailab.swift                           # CLI: person detection, heat map, zoom-in-post
 ```
 
 ### Data Flow for Score Overlay
@@ -1029,7 +1058,7 @@ First 60 seconds of game:
 
 **1. Playground (for quick experiments):**
 ```
-/Users/narayan/SahilStats/AILabPlayground.playground
+SkynetTest/AILabPlayground.playground
 ```
 - Visual frame analysis
 - Heat map generation
@@ -1038,14 +1067,14 @@ First 60 seconds of game:
 
 **2. Command-line tool (stable):**
 ```
-/Users/narayan/SahilStats/ailab.swift
+SkynetTest/ailab.swift
 
 Usage:
-swift ailab.swift <video_path> [start_seconds] [duration_seconds] [--zoom]
+swift SkynetTest/ailab.swift <video_path> [start_seconds] [duration_seconds] [--zoom]
 
 Examples:
-swift ailab.swift "~/game.mp4" 0 60           # Tracking overlay mode
-swift ailab.swift "~/game.mp4" 0 60 --zoom    # Zoom-in-post mode
+swift SkynetTest/ailab.swift "~/game.mp4" 0 60           # Tracking overlay mode
+swift SkynetTest/ailab.swift "~/game.mp4" 0 60 --zoom    # Zoom-in-post mode
 ```
 
 **Two modes:**
@@ -1451,11 +1480,11 @@ let sizePenalty = clusterCells.count > 15 ? Float(clusterCells.count - 15) * 0.0
 
 **Test Tool (SkynetTest/):**
 ```bash
-cd ~/SahilStats/SahilStatsLite/SahilStatsLite/SkynetTest
-swift SkynetVideoTest.swift ~/path/to/video.mp4          # First 2 min (default)
-swift SkynetVideoTest.swift ~/path/to/video.mp4 60       # First 60 seconds
-swift SkynetVideoTest.swift ~/path/to/video.mp4 --full   # Entire video
-swift SkynetVideoTest.swift ~/path/to/video.mp4 --no-debug  # No overlay
+cd ~/SahilStats/SahilStatsLite/SahilStatsLite/
+swift SkynetTest/SkynetVideoTest.swift ~/path/to/video.mp4          # First 2 min (default)
+swift SkynetTest/SkynetVideoTest.swift ~/path/to/video.mp4 60       # First 60 seconds
+swift SkynetTest/SkynetVideoTest.swift ~/path/to/video.mp4 --full   # Entire video
+swift SkynetTest/SkynetVideoTest.swift ~/path/to/video.mp4 --no-debug  # No overlay
 ```
 Outputs `*_ultrasmooth.mp4` with debug overlay showing:
 - Person boxes (green = player/kid, red = adult/coach)
@@ -1497,11 +1526,12 @@ The original test was on a video with good contrast. Real gym footage (wood cour
 
 ### Files
 
+All AI R&D tools are now in the `SkynetTest/` directory within the git repo:
 ```
-/Users/narayan/SahilStats/
+SkynetTest/
 ├── AILabPlayground.playground  # Visual experiments (unstable)
 ├── ailab.swift                  # Command-line tool (stable)
-└── SahilStatsLite/             # Main app (untouched)
+└── SkynetVideoTest.swift        # Broadcast-quality Skynet test tool
 ```
 
 ---

@@ -2,17 +2,14 @@
 //  CourtDetector.swift
 //  SahilStatsLite
 //
-//  Zero-training court detection using classical computer vision
-//  - Edge detection (Canny-style)
-//  - Hough transform for line detection
-//  - Court boundary estimation
-//  - Homography to standard court template
+//  PURPOSE: Basketball court boundary detection using edge detection and Hough
+//           transform. Estimates court bounds, locates baskets, classifies paint
+//           area. Uses homography to standard court template.
+//  KEY TYPES: CourtDetector, CourtDetection, CourtTemplate
+//  DEPENDS ON: CoreImage, Accelerate
 //
-//  Court Geometry (Youth Basketball):
-//  - Full court: 84ft x 50ft (high school) or 74ft x 42ft (youth)
-//  - Key/paint width: 12ft
-//  - 3-point line: 19.75ft from basket (high school)
-//  - Free throw line: 15ft from backboard
+//  NOTE: Keep this header updated when modifying this file.
+//
 //
 
 import Foundation

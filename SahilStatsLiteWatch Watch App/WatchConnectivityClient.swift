@@ -2,7 +2,14 @@
 //  WatchConnectivityClient.swift
 //  SahilStatsLiteWatch
 //
-//  Watch-side connectivity service for communicating with iPhone app
+//  PURPOSE: Watch-side WCSession handler. Sends score/stat/clock/period
+//           updates to iPhone, receives game state sync back. Manages
+//           all published state (scores, clock, period, player stats).
+//           Optimistic local updates for responsive UI.
+//  KEY TYPES: WatchConnectivityClient (singleton), WatchMessage
+//  DEPENDS ON: WatchConnectivity framework
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

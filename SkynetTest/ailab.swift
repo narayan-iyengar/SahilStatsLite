@@ -1,4 +1,18 @@
 #!/usr/bin/env swift
+//
+//  ailab.swift
+//
+//  PURPOSE: AI Lab command-line tool for R&D. Runs person detection, stripe
+//           detection (refs), kid/adult classification, heat map generation,
+//           and zoom-in-post on recorded game videos. Two modes: tracking
+//           overlay (debug viz) and zoom (cropped output following action).
+//  KEY TYPES: Standalone script (no app integration)
+//  DEPENDS ON: AVFoundation, Vision, CoreImage, AppKit (standalone)
+//
+//  Usage: swift ailab.swift <video_path> [start_seconds] [duration] [--zoom] [--smooth]
+//
+//  NOTE: Keep this header updated when modifying this file.
+//
 
 // AILab Command Line Tool
 // Run: swift ailab.swift /path/to/video.mp4 [startSeconds] [duration]

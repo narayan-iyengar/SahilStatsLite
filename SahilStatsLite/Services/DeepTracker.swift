@@ -2,14 +2,17 @@
 //  DeepTracker.swift
 //  SahilStatsLite
 //
-//  Deep Track 4.0-inspired tracking system with OC-SORT enhancements
-//  Implements: Kalman filtering, OC-SORT tracking, reliability scoring, recovery strategies
+//  PURPOSE: SORT-style multi-object tracking with Kalman filtering. Maintains
+//           persistent track IDs across frames, scores reliability/occlusion,
+//           and provides Kalman-smoothed action center and group bounding box.
+//  KEY TYPES: KalmanFilter2D, TrackedObject, DeepTracker
+//  DEPENDS ON: PersonClassifier (ClassifiedPerson), Accelerate
 //
-//  References:
-//  - Insta360 patents US11509824B2, JP2021527865A
-//  - SORT: Simple Online and Realtime Tracking (Bewley et al.)
-//  - OC-SORT: Observation-Centric SORT (Cao et al., CVPR 2023)
-//  - Kalman Filter for visual tracking
+//  ALGORITHMS: Extended Kalman filter (pos+vel+accel), Hungarian matching,
+//              ByteTrack low-confidence re-matching, OC-SORT recovery.
+//  REFERENCES: Insta360 US11509824B2, SORT (Bewley), OC-SORT (Cao, CVPR 2023)
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

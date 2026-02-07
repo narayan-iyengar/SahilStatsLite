@@ -2,7 +2,14 @@
 //  WatchStatsView.swift
 //  SahilStatsLiteWatch
 //
-//  Jony Ive-inspired stats tracking: simplicity, generous touch targets, focus on the essential
+//  PURPOSE: Individual player stats tracking (Sahil). Shooting stats with
+//           large MAKE/MISS buttons (2PT, 3PT, FT pill selector). Swipe
+//           left for other stats (AST, REB, STL, BLK, TO, PF). Jony Ive
+//           design: generous 80pt touch targets, haptic feedback.
+//  KEY TYPES: WatchStatsView, ShotType
+//  DEPENDS ON: WatchConnectivityClient
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

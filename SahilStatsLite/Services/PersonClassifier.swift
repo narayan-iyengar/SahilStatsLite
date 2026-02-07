@@ -2,11 +2,18 @@
 //  PersonClassifier.swift
 //  SahilStatsLite
 //
-//  Improved person classification for Skynet mode
-//  - Kid vs Adult: Multiple heuristics, not just median height
-//  - Ref detection: Multi-sample stripe analysis
-//  - Court position: Heat map based filtering
-//  - Momentum Attention (v3.1): Moving players weighted higher via Kalman velocity
+//  PURPOSE: Vision-based person classification for Skynet. Detects humans via
+//           VNDetectHumanRectanglesRequest, classifies as player/ref/coach/bench.
+//           Calculates momentum-weighted action center from tracked objects.
+//           Court bounds and height baselines learned during warmup are preserved
+//           across resetTrackingState() calls.
+//  KEY TYPES: PersonClassifier, ClassifiedPerson, PersonType
+//  DEPENDS ON: Vision, CoreImage
+//
+//  CLASSIFICATION: Kid/adult by height ratio, refs by stripe detection,
+//                  court position via heat map, momentum attention via Kalman velocity.
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

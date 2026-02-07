@@ -2,17 +2,14 @@
 //  ActionProbabilityField.swift
 //  SahilStatsLite
 //
-//  NOVEL APPROACH: Predictive Action Probability Field
+//  PURPOSE: Predictive action focus - computes where action WILL BE in 0.3-0.5s.
+//           Combines ball trajectory, player velocities, basket positions, and
+//           game state to predict optimal camera focus point and zoom.
+//  KEY TYPES: ActionProbabilityField, ActionProbability, Weights
+//  DEPENDS ON: BallDetector, CourtDetector, DeepTracker, GameStateDetector
 //
-//  Instead of tracking where the action IS, we compute where
-//  the action WILL BE in the next 0.3-0.5 seconds.
+//  NOTE: Keep this header updated when modifying this file.
 //
-//  This mimics how expert basketball players/coaches see the game:
-//  - They look at empty space where they PREDICT the action will occur
-//  - They anticipate based on ball movement, player velocities, court geometry
-//
-//  The Action Probability Field combines:
-//  - Ball position & velocity (primary weight)
 //  - Player positions & velocities (weighted by proximity to ball)
 //  - Basket locations (the eventual target of offense)
 //  - Game state (fast break, half court, transition)

@@ -2,7 +2,12 @@
 //  ManualGameEntryView.swift
 //  SahilStatsLite
 //
-//  Manual game stats entry (no video recording)
+//  PURPOSE: Manual post-game stats entry without video recording. Input final
+//           scores and individual player stats. Saves to persistence manager.
+//  KEY TYPES: ManualGameEntryView
+//  DEPENDS ON: GamePersistenceManager, AppState
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

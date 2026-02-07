@@ -2,7 +2,13 @@
 //  SahilStatsLiteApp.swift
 //  SahilStatsLite
 //
-//  Simplified basketball recording app with auto-tracking and score overlay
+//  PURPOSE: App entry point, root navigation, and global state management.
+//           AppDelegate initializes Firebase and WatchConnectivity at launch.
+//           ContentView manages NavigationStack for screen transitions.
+//  KEY TYPES: SahilStatsLiteApp, AppDelegate, ContentView, AppState
+//  DEPENDS ON: FirebaseService, WatchConnectivityService, GamePersistenceManager
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

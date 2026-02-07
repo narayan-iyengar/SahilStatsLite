@@ -2,8 +2,14 @@
 //  WatchScoringView.swift
 //  SahilStatsLiteWatch
 //
-//  Main scoring screen - tap scores to add points, swipe down to subtract.
-//  Auto-adapts between Series 8 (45mm) and Ultra 2 (49mm).
+//  PURPOSE: Primary scoring screen during games. Tap score zones to add +1,
+//           swipe away to subtract -1. Shows live/paused indicator, period,
+//           clock with blinking colon. Long-press clock to end game.
+//           Auto-adapts layout for Series 8 (45mm) and Ultra 2 (49mm).
+//  KEY TYPES: WatchScoringView
+//  DEPENDS ON: WatchConnectivityClient, WatchLayout
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

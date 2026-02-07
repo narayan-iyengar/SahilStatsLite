@@ -2,7 +2,12 @@
 //  AuthView.swift
 //  SahilStatsLite
 //
-//  Sign-in view for Firebase authentication
+//  PURPOSE: Sign-in view for Firebase authentication. Shows Google Sign-In
+//           button, current auth status, and sync controls for game data.
+//  KEY TYPES: AuthView
+//  DEPENDS ON: AuthService, GamePersistenceManager
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI

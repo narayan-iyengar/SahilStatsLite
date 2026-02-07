@@ -2,7 +2,12 @@
 //  FirebaseService.swift
 //  SahilStatsLite
 //
-//  Firebase Firestore sync service for games
+//  PURPOSE: Firestore real-time listener for game documents. Provides CRUD
+//           operations and live sync via snapshot listeners.
+//  KEY TYPES: FirebaseService (singleton, @MainActor)
+//  DEPENDS ON: FirebaseFirestore, FirebaseGame, AuthService
+//
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import Foundation

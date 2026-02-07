@@ -2,17 +2,16 @@
 //  VideoAnalysisPipeline.swift
 //  SahilStatsLite
 //
-//  Main orchestrator for the Skynet vision pipeline
-//  Combines all detection and prediction algorithms:
-//  - BallDetector: HSV color + Kalman tracking
-//  - CourtDetector: Hough transform + homography
-//  - PersonClassifier: Kid/adult/ref classification
-//  - DeepTracker: SORT-style multi-object tracking
-//  - ActionProbabilityField: Novel predictive focus
-//  - GameStateDetector: Basketball heuristics
+//  PURPOSE: Main orchestrator for the Skynet vision pipeline. Combines all
+//           detection modules (ball, court, person, tracking, game state) into
+//           a single per-frame processing call. Includes UltraSmoothFocusTracker
+//           for broadcast-quality camera motion smoothing.
+//  KEY TYPES: VideoAnalysisPipeline, UltraSmoothFocusTracker, FrameAnalysis
+//  DEPENDS ON: BallDetector, CourtDetector, PersonClassifier, DeepTracker,
+//              ActionProbabilityField, GameStateDetector
 //
-//  Zero training required - all algorithms use:
-//  - Classical computer vision
+//  NOTE: Keep this header updated when modifying this file.
+//
 //  - Apple Vision pre-trained APIs
 //  - Basketball domain knowledge as heuristics
 //  - Online adaptation/calibration

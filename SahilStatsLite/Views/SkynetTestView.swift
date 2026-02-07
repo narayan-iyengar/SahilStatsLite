@@ -2,10 +2,14 @@
 //  SkynetTestView.swift
 //  SahilStatsLite
 //
-//  Standalone test UI for validating the Skynet vision pipeline
-//  on existing video files. Does NOT affect the main app flow.
+//  PURPOSE: Standalone test UI for validating the Skynet vision pipeline
+//           on existing video files. Pick a video from Photos, run the
+//           full pipeline, view debug overlay output. Does NOT affect
+//           the main app flow.
+//  KEY TYPES: SkynetTestView, VideoProcessingResult
+//  DEPENDS ON: VideoAnalysisPipeline, PersonClassifier
 //
-//  Access: Can be shown from a debug menu or launched separately
+//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI
