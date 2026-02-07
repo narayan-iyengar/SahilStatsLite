@@ -28,6 +28,9 @@ struct ClassifiedPerson {
     let classification: PersonType
     let confidence: Float    // 0-1
     let isOnCourt: Bool
+    
+    // Visual Re-ID: Hue-Saturation histogram (16 hue bins + 4 saturation bins = 20 float vector)
+    let colorHistogram: [Float]?
 
     enum PersonType {
         case player      // Kid on court (TRACK)
@@ -111,37 +114,44 @@ class PersonClassifier {
 
         // Update height statistics
         updateHeightStatistics(from: observations)
+        
+        // Get pixel data once for all classifications (efficiency)
+        let pixelData = getPixelData(from: image)
 
         // Classify each person
         return observations.map { observation in
-            classifyPerson(observation: observation, in: image)
+            classifyPerson(observation: observation, in: image, pixelData: pixelData)
         }
     }
 
     // MARK: - Individual Classification
 
-    private func classifyPerson(observation: VNHumanObservation, in image: CGImage) -> ClassifiedPerson {
+    private func classifyPerson(observation: VNHumanObservation, in image: CGImage, pixelData: [UInt8]?) -> ClassifiedPerson {
         let box = observation.boundingBox
 
         // 1. Check if on court (within heat map bounds)
         let isOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.midY))
 
         // 2. Check for ref jersey (striped pattern)
-        let (isRef, refConfidence) = checkForRefJersey(in: image, box: box)
+        let (isRef, refConfidence) = checkForRefJersey(in: image, box: box, pixelData: pixelData)
+        
+        // 3. Extract visual appearance (Color Histogram) for Re-ID tracking continuity
+        let histogram = extractColorHistogram(in: image, box: box, pixelData: pixelData)
 
         if isRef {
             return ClassifiedPerson(
                 boundingBox: box,
                 classification: .referee,
                 confidence: refConfidence,
-                isOnCourt: isOnCourt
+                isOnCourt: isOnCourt,
+                colorHistogram: histogram
             )
         }
 
-        // 3. Classify as kid or adult
+        // 4. Classify as kid or adult
         let (isKid, kidConfidence) = classifyAge(box: box)
 
-        // 4. Determine final classification
+        // 5. Determine final classification
         let classification: ClassifiedPerson.PersonType
         let confidence: Float
 
@@ -168,7 +178,8 @@ class PersonClassifier {
             boundingBox: box,
             classification: classification,
             confidence: confidence,
-            isOnCourt: isOnCourt
+            isOnCourt: isOnCourt,
+            colorHistogram: histogram
         )
     }
 
@@ -226,7 +237,7 @@ class PersonClassifier {
 
     // MARK: - Ref Jersey Detection (Improved)
 
-    private func checkForRefJersey(in image: CGImage, box: CGRect) -> (isRef: Bool, confidence: Float) {
+    private func checkForRefJersey(in image: CGImage, box: CGRect, pixelData: [UInt8]?) -> (isRef: Bool, confidence: Float) {
         let width = CGFloat(image.width)
         let height = CGFloat(image.height)
 
@@ -248,8 +259,8 @@ class PersonClassifier {
             return (false, 0)
         }
 
-        // Create bitmap to read pixels
-        guard let pixelData = getPixelData(from: image) else {
+        // Use cached pixel data if available
+        guard let data = pixelData else {
             return (false, 0)
         }
 
@@ -263,7 +274,7 @@ class PersonClassifier {
             let sampleX = sampleStartX + Int(CGFloat(sampleEndX - sampleStartX) * xOffset)
 
             let transitions = countStripeTransitions(
-                pixelData: pixelData,
+                pixelData: data,
                 imageWidth: image.width,
                 x: sampleX,
                 startY: sampleStartY,
@@ -278,7 +289,7 @@ class PersonClassifier {
 
         // Also check horizontal stripes (refs have horizontal black/white pattern)
         let horizontalTransitions = countHorizontalStripes(
-            pixelData: pixelData,
+            pixelData: data,
             imageWidth: image.width,
             startX: sampleStartX,
             endX: sampleEndX,
@@ -298,6 +309,101 @@ class PersonClassifier {
         let confidence = min(1.0, Float(maxTransitions) / 6.0)
 
         return (isRef, confidence)
+    }
+    
+    // MARK: - Visual Re-ID (Histogram Extraction)
+    
+    /// Extract a Hue-Saturation histogram from the person's bounding box
+    /// Used to distinguish teams and identify specific players for tracking continuity
+    private func extractColorHistogram(in image: CGImage, box: CGRect, pixelData: [UInt8]?) -> [Float]? {
+        guard let data = pixelData else { return nil }
+        
+        let width = CGFloat(image.width)
+        let height = CGFloat(image.height)
+        
+        // Sample center 50% of the box (focus on jersey, avoid background)
+        let roi = CGRect(
+            x: box.minX * width + box.width * width * 0.25,
+            y: (1 - box.maxY) * height + box.height * height * 0.25,
+            width: box.width * width * 0.5,
+            height: box.height * height * 0.5
+        )
+        
+        let startX = max(0, Int(roi.minX))
+        let endX = min(image.width - 1, Int(roi.maxX))
+        let startY = max(0, Int(roi.minY))
+        let endY = min(image.height - 1, Int(roi.maxY))
+        
+        guard endX > startX && endY > startY else { return nil }
+        
+        // Histogram bins: 16 Hue bins, 4 Saturation bins
+        // Hue: 0-360 mapped to 0-15
+        // Sat: 0-1 mapped to 0-3
+        var histogram = [Float](repeating: 0, count: 20)
+        var totalPixels = 0
+        
+        // Stride for performance (sample every 4th pixel)
+        let strideStep = 4
+        let bytesPerPixel = 4
+        let rowStride = image.width * bytesPerPixel
+        
+        for y in stride(from: startY, to: endY, by: strideStep) {
+            for x in stride(from: startX, to: endX, by: strideStep) {
+                let offset = y * rowStride + x * bytesPerPixel
+                guard offset + 2 < data.count else { continue }
+                
+                let r = CGFloat(data[offset]) / 255.0
+                let g = CGFloat(data[offset + 1]) / 255.0
+                let b = CGFloat(data[offset + 2]) / 255.0
+                
+                // Convert to HSV
+                let (h, s, v) = rgbToHSV(r: r, g: g, b: b)
+                
+                // Ignore very dark or very bright pixels (noise/shadows)
+                if v < 0.1 || v > 0.95 { continue }
+                
+                // Binning
+                let hueBin = min(15, Int(h / 22.5)) // 360 / 16 = 22.5
+                let satBin = min(3, Int(s * 4))
+                
+                histogram[hueBin] += 1.0
+                histogram[16 + satBin] += 1.0
+                totalPixels += 1
+            }
+        }
+        
+        guard totalPixels > 0 else { return nil }
+        
+        // Normalize
+        for i in 0..<histogram.count {
+            histogram[i] /= Float(totalPixels)
+        }
+        
+        return histogram
+    }
+    
+    private func rgbToHSV(r: CGFloat, g: CGFloat, b: CGFloat) -> (h: CGFloat, s: CGFloat, v: CGFloat) {
+        let maxC = max(r, g, b)
+        let minC = min(r, g, b)
+        let delta = maxC - minC
+
+        var h: CGFloat = 0
+        let s: CGFloat = maxC == 0 ? 0 : delta / maxC
+        let v: CGFloat = maxC
+
+        if delta > 0 {
+            if maxC == r {
+                h = 60 * (((g - b) / delta).truncatingRemainder(dividingBy: 6))
+            } else if maxC == g {
+                h = 60 * ((b - r) / delta + 2)
+            } else {
+                h = 60 * ((r - g) / delta + 4)
+            }
+        }
+
+        if h < 0 { h += 360 }
+
+        return (h, s, v)
     }
 
     private func countStripeTransitions(pixelData: [UInt8], imageWidth: Int, x: Int, startY: Int, endY: Int) -> Int {

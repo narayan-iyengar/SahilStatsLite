@@ -265,7 +265,7 @@ class TrackedObject {
     var reliabilityScore: Float = 1.0
     var occlusionScore: Float = 0.0
 
-    // For re-identification (simple color histogram)
+    // Visual Re-ID: Color histogram for appearance matching
     var colorHistogram: [Float]?
 
     // OC-SORT: Observation-Centric Momentum (OCM)
@@ -300,6 +300,7 @@ class TrackedObject {
         self.classification = detection.classification
         self.boundingBox = detection.boundingBox
         self.lastSeen = Date()
+        self.colorHistogram = detection.colorHistogram
 
         let center = CGPoint(x: detection.boundingBox.midX, y: detection.boundingBox.midY)
         self.kalman = KalmanFilter2D(initialPosition: center)
@@ -349,6 +350,20 @@ class TrackedObject {
         boundingBox = detection.boundingBox
         classification = detection.classification
         lastSeen = Date()
+
+        // Update color histogram with Exponential Moving Average (EMA)
+        // Helps adapt to lighting changes while maintaining identity
+        if let newHist = detection.colorHistogram {
+            if var currentHist = colorHistogram {
+                let alpha: Float = 0.1  // 10% update rate
+                for i in 0..<currentHist.count {
+                    currentHist[i] = currentHist[i] * (1.0 - alpha) + newHist[i] * alpha
+                }
+                colorHistogram = currentHist
+            } else {
+                colorHistogram = newHist
+            }
+        }
 
         // OC-SORT: Update observation history and calculate momentum
         if let lastObs = lastObservedPosition {
@@ -440,6 +455,21 @@ class TrackedObject {
 
         // Normalize: 0 diff = 1.0 score, large diff = 0.0 score
         return Float(max(0, 1.0 - vDiff / 2.0))
+    }
+    
+    /// Visual Re-ID: Calculate appearance similarity (0.0 - 1.0)
+    /// Uses histogram intersection
+    func appearanceConsistency(with detection: ClassifiedPerson) -> Float {
+        guard let hist1 = colorHistogram, let hist2 = detection.colorHistogram, hist1.count == hist2.count else {
+            return 0.5 // Neutral if no histogram available
+        }
+        
+        var intersection: Float = 0
+        for i in 0..<hist1.count {
+            intersection += min(hist1[i], hist2[i])
+        }
+        
+        return intersection
     }
 
     /// Predicted bounding box based on Kalman position
@@ -640,24 +670,33 @@ class DeepTracker {
         }
 
         // Build cost matrix using OC-SORT-style scoring
-        // Cost = 1 - (IoU + velocity_consistency + class_match) / 3
+        // Cost = 1 - (IoU + velocity_consistency + class_match + appearance_consistency)
         var costMatrix = [[Float]](repeating: [Float](repeating: 1.0, count: detections.count), count: tracks.count)
 
         for i in tracks.indices {
             for j in detections.indices {
-                // OC-SORT: Use observation-centric IoU
+                // 1. OC-SORT: Use observation-centric IoU (0.0 - 1.0)
                 let iouScore = tracks[i].iou(with: detections[j], useObservationCentric: true)
 
-                // Velocity consistency (OC-SORT enhancement)
+                // 2. Velocity consistency (OC-SORT enhancement) (0.0 - 1.0)
                 let prevDetPos = previousDetections[tracks[i].id]
                 let velocityScore = tracks[i].velocityConsistency(with: detections[j], previousDetection: prevDetPos)
 
-                // Classification match bonus
-                let classMatch: Float = tracks[i].classification == detections[j].classification ? 0.2 : 0
+                // 3. Classification match bonus (0.0 or 0.1)
+                let classMatch: Float = tracks[i].classification == detections[j].classification ? 0.1 : 0
+                
+                // 4. Visual Re-ID: Appearance Consistency (0.0 - 1.0)
+                let appearanceScore = tracks[i].appearanceConsistency(with: detections[j])
 
                 // Combined score (higher is better, convert to cost)
-                let combinedScore = (iouScore * 0.5) + (velocityScore * 0.3) + classMatch
-                costMatrix[i][j] = 1.0 - combinedScore
+                // Weights tuned for basketball tracking:
+                // - IoU (0.4): Spatial overlap is still primary
+                // - Velocity (0.2): Motion consistency helps
+                // - Appearance (0.3): Critical for solving "passerby" distractions (XBotGo killer)
+                // - Class (0.1): Bonus for keeping same type
+                let combinedScore = (iouScore * 0.4) + (velocityScore * 0.2) + (appearanceScore * 0.3) + classMatch
+                
+                costMatrix[i][j] = 1.0 - min(1.0, combinedScore)
             }
         }
 
@@ -670,9 +709,14 @@ class DeepTracker {
         var usedDetections = Set<Int>()
 
         for (trackIdx, detectionIdx) in assignments {
-            // Only accept if IoU meets threshold
+            // Only accept if IoU meets threshold OR appearance is extremely high (recovery)
             let iou = tracks[trackIdx].iou(with: detections[detectionIdx], useObservationCentric: true)
-            if iou >= iouThreshold {
+            let appearance = tracks[trackIdx].appearanceConsistency(with: detections[detectionIdx])
+            
+            // Allow match if:
+            // 1. IoU is good (standard case)
+            // 2. Appearance is VERY high (>0.85) even if IoU is low (fast movement / occlusion recovery)
+            if iou >= iouThreshold || appearance > 0.85 {
                 matched.append((trackIdx, detectionIdx))
                 usedTracks.insert(trackIdx)
                 usedDetections.insert(detectionIdx)
@@ -695,7 +739,12 @@ class DeepTracker {
                     // Check distance to last virtual position
                     if let virtualPos = track.virtualTrajectory.last {
                         let distance = hypot(detCenter.x - virtualPos.x, detCenter.y - virtualPos.y)
-                        if distance < 0.1 {  // Within 10% of frame
+                        
+                        // Also check appearance consistency for recovery
+                        let appearance = track.appearanceConsistency(with: detection)
+                        
+                        // If distance is reasonable AND appearance matches
+                        if distance < 0.1 && appearance > 0.6 {
                             matched.append((trackIdx, detIdx))
                             usedTracks.insert(trackIdx)
                             usedDetections.insert(detIdx)
