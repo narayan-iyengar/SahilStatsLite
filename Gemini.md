@@ -1,6 +1,6 @@
 # Sahil Stats - Project Context
 
-> **UPDATED (2026-02-01):** Jony Ive UX overhaul! Settings now in dedicated Settings screen (Skynet, Gimbal mode). Stats overlay is clean - only shows stats and game controls. Skynet AI tracking is ON by default. Philosophy: "Set up before the game, watch your kid play, phone is a dumb camera during recording."
+> **UPDATED (2026-02-05):** Warmup calibration! Camera + Skynet AI starts immediately when entering recording view (landscape). Video recording only begins when game clock starts. Warmup = free AI calibration. Skynet v4.1: Momentum Attention + Timeout Detection + Golden Smoothing.
 
 ---
 
@@ -94,10 +94,11 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 
 **Core Principle:** "You're a parent watching your kid's game, not babysitting an app."
 
-<h3>Three-Phase Workflow</h3>
-1. **Before game**: Set up in Settings (Skynet on/off, gimbal mode, team names)
-2. **During game**: Phone is a "dumb camera" - just records. Stats overlay shows only stats.
-3. **After game**: Review, share, celebrate
+<h3>Four-Phase Workflow</h3>
+1. **Setup**: Configure in Settings (Skynet on/off, gimbal mode, team names)
+2. **Warmup Calibration**: Enter recording view in landscape. Camera + Skynet start immediately — learns court bounds, player sizes, ref detection. No video file yet.
+3. **Game Recording**: Tap game clock to start. Video file recording begins. Skynet resets tracking momentum (keeps learned court bounds). Phone is a "dumb camera" from here.
+4. **After game**: Review, share, celebrate. Video contains only game footage.
 
 <h3>Settings vs Stats Separation</h3>
 - **Settings screen**: Skynet AI toggle, Gimbal mode, YouTube upload, Team names
@@ -205,8 +206,9 @@ SahilStatsLite/
 │   └── GameSummaryView.swift         # Post-game summary
 ├── Services/
 │   ├── RecordingManager.swift        # 4K video capture + Overlay
-│   ├── AutoZoomManager.swift         # Skynet Auto-Zoom (v4.1)
-│   ├── PersonClassifier.swift        # Momentum Attention Mind
+│   ├── AutoZoomManager.swift         # Skynet Auto-Zoom (v4.1) + Warmup Calibration
+│   ├── PersonClassifier.swift        # Player/ref/adult classification + Momentum Attention
+│   ├── DeepTracker.swift             # SORT-style tracking with Kalman filtering
 │   ├── WatchConnectivityService.swift # Watch sync
 │   └── YouTubeService.swift          # YouTube upload
 └── SahilStatsLiteWatch Watch App/    # Apple Watch companion
@@ -263,10 +265,23 @@ The Watch UI auto-detects screen size via `WKInterfaceDevice.current().screenBou
 <h2>AI Lab (R&D Complete)</h2>
 
 **Skynet v4.1 (The Golden Hybrid)**:
-- **Momentum Attention**: Weight players based on velocity (ignore stationary sideline noise).
+- **Momentum Attention**: Weight players based on Kalman-filtered velocity (1x-3x, capped). Moving players matter more than stationary sideline noise.
 - **Proximity Damping**: Slow down panning when subjects are close to lens.
-- **Timeout Awareness**: Detect players rushing the bench and zoom out to 1.0x automatically.
+- **Timeout Awareness**: When 60%+ of players have `boundingBox.midX < 0.15 || > 0.85`, zoom out to 1.0x automatically.
 - **Standardized Vision**: AI receives 640x360 downscaled frames for consistent detection across 4K/1080p recording.
+- **Warmup Calibration**: Camera + Skynet start during warmup (no video recording). Learns court bounds, player sizes, ref detection. When game clock starts, tracking momentum resets but learned calibration is preserved.
+
+**Warmup → Game Transition:**
+```
+Landscape entry → Camera session + Skynet learning (hasCameraStarted = true)
+  → PersonClassifier learns: court bounds, baseline kid height, ref stripe patterns
+  → DeepTracker builds: initial track IDs, confidence baselines
+
+Clock tap → Video recording starts (hasGameStarted = true)
+  → AutoZoomManager.resetTrackingState() called
+  → Resets: DeepTracker tracks, zoom, action center, momentum
+  → KEEPS: court bounds, kid height baseline, height statistics
+```
 
 **Validated on physical footage**: `IMG_7205.mov` (stationary) and XBotGo moving footage.
 - **Person detection rate**: ~90% on stationary, ~50% on moving SD.

@@ -1,6 +1,6 @@
 # Sahil Stats - Project Context
 
-> **UPDATED (2026-02-01):** Jony Ive UX overhaul! Settings now in dedicated Settings screen (Skynet, Gimbal mode). Stats overlay is clean - only shows stats and game controls. Skynet AI tracking is ON by default. Philosophy: "Set up before the game, watch your kid play, phone is a dumb camera during recording."
+> **UPDATED (2026-02-05):** Warmup calibration! Camera + Skynet AI starts immediately when you enter recording view (landscape). Video file recording only begins when you tap the game clock. Warmup = free AI calibration for court bounds and player sizes. Skynet v4.1: Momentum Attention + Timeout Detection + Golden Smoothing.
 
 ---
 
@@ -100,10 +100,11 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 
 **Core Principle:** "You're a parent watching your kid's game, not babysitting an app."
 
-### Three-Phase Workflow
-1. **Before game**: Set up in Settings (Skynet on/off, gimbal mode, team names)
-2. **During game**: Phone is a "dumb camera" - just records. Stats overlay shows only stats.
-3. **After game**: Review, share, celebrate
+### Four-Phase Workflow
+1. **Setup**: Configure in Settings (Skynet on/off, gimbal mode, team names)
+2. **Warmup Calibration**: Enter recording view in landscape. Camera preview + Skynet AI start learning immediately (court bounds, player sizes, ref detection). No video file created yet. This is free calibration time.
+3. **Game Recording**: Tap game clock to start. Video file recording begins. Skynet resets tracking momentum (keeps learned court bounds from warmup). Phone is a "dumb camera" from here.
+4. **After game**: Review, share, celebrate. Video contains only game footage, no warmup.
 
 ### Settings vs Stats Separation
 - **Settings screen**: Skynet AI toggle, Gimbal mode, YouTube upload, Team names
@@ -130,7 +131,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - Phase 2: Stats tagging
 - Phase 3: Highlights and sharing
 
-### Phase 1 Progress (Updated 2025-01-15)
+### Phase 1 Progress (Updated 2026-02-05)
 - [x] Basic project structure
 - [x] Camera preview working
 - [x] Floating Ubiquiti-style controls with score buttons (+1, +2, +3)
@@ -140,11 +141,12 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] OverlayCompositor - burns score overlay into video post-recording
 - [x] Integration complete: RecordingView -> ScoreTimelineTracker -> OverlayCompositor -> GameSummaryView
 - [x] Fixed timing issue: wait for video file to finish writing before processing
-- [x] 4K video recording support (falls back to 1080p/720p if unavailable)
+- [x] **4K video recording support** (now default, `.hd4K3840x2160`)
 - [x] Broadcast-style overlay design (blue home, red/orange away, dark score boxes)
 - [x] Landscape rotation handling for video composition
 - [x] iOS 26 UIScreen.main deprecation fix
-- [ ] Auto expand/collapse floating control bar
+- [x] **Skynet v4.1**: Momentum Attention (velocity-weighted tracking), Timeout Detection (bench rush → zoom out), Golden Smoothing (broadcast-quality motion)
+- [x] **Warmup Calibration**: Camera + Skynet start on landscape entry, video recording starts on first clock tap. Warmup = free AI learning period.
 - [ ] Physical device testing with gimbal
 
 ### Bug Fixes (Comprehensive List)
@@ -282,6 +284,9 @@ SahilStatsLite/
 │   └── GameSummaryView.swift         # Post-game summary + video processing
 ├── Services/
 │   ├── RecordingManager.swift        # AVFoundation video capture (4K support)
+│   ├── AutoZoomManager.swift         # Skynet Auto-Zoom (v4.1)
+│   ├── PersonClassifier.swift        # Player/ref/adult classification + Momentum Attention
+│   ├── DeepTracker.swift             # SORT-style tracking with Kalman filtering
 │   ├── GimbalTrackingManager.swift   # DockKit integration
 │   ├── GameCalendarManager.swift     # Calendar integration
 │   ├── ScoreTimelineTracker.swift    # Tracks score/clock during recording
@@ -1108,9 +1113,42 @@ let region = TrackingRegion(
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+### Warmup Calibration Architecture (2026-02-05)
+
+**The Problem:** User sets up camera on gimbal 2-5 minutes before tip-off during warmups. Old flow started recording AND Skynet simultaneously, wasting storage on warmup footage AND cold-starting tracking.
+
+**The Solution:** Decouple camera/Skynet from video file recording.
+
+```
+View appears (landscape) → Camera session starts + Skynet starts learning
+  → Court bounds learned from player positions during warmup
+  → Player height baseline calibrated (kids vs adults)
+  → Ref stripe detection calibrated
+  → NO video file created yet
+
+User taps game clock → Video file recording begins
+  → AutoZoomManager.resetTrackingState() called
+  → Resets: tracking momentum, zoom, DeepTracker tracks, action center
+  → KEEPS: court bounds, baseline kid height, height statistics from warmup
+```
+
+**Key Architectural Insight:** `captureOutput` delegate in RecordingManager already has two independent paths:
+1. **AI path** — runs when `onFrameForAI` callback is set (works as long as camera session runs)
+2. **Recording path** — runs when `assetWriter` exists (only after `startRecording()`)
+
+So Skynet gets frames during warmup with zero changes to RecordingManager.
+
+**State Variables (UltraMinimalRecordingView):**
+- `hasCameraStarted` — Camera session + Skynet active (set on landscape entry)
+- `hasGameStarted` — Video file recording active (set on first clock tap)
+
+**resetTrackingState() Methods:**
+- `AutoZoomManager.resetTrackingState()` — Resets DeepTracker, zoom, action center. Keeps PersonClassifier court bounds.
+- `PersonClassifier.resetTrackingState()` — Resets centroid history. Keeps courtBounds, baselineKidHeight, recentHeights.
+
 ### Skynet Mode (Real-time Learning) - IMPLEMENTED
 
-> **STATUS**: Skynet mode fully implements Deep Track 4.0-inspired algorithms. Toggle via stats overlay: OFF → SMOOTH → FAST → **SKY** (purple brain icon).
+> **STATUS**: Skynet v4.1 — Momentum Attention + Timeout Detection + Golden Smoothing. Skynet is ON by default (only "Off" or "Auto" modes). Warmup calibration provides free learning period before game starts.
 
 **Deep Track 4.0 Research Summary (Insta360 Patents US11509824B2, JP2021527865A):**
 - **Multi-scale correlation filter (MSCF)** - Appearance models from adjacent regions
@@ -1246,24 +1284,23 @@ enum PersonType {
 }
 ```
 
-2. **AutoZoomManager.swift** - Skynet mode integration
+2. **AutoZoomManager.swift** - Skynet v4.1 integration
 ```swift
 enum AutoZoomMode: String, CaseIterable {
-    case off = "Off"        // Manual zoom only
-    case smooth = "Smooth"  // Gentle, cinematic (all humans)
-    case responsive = "Fast" // Quick reaction (all humans)
-    case skynet = "Skynet"  // Smart: filters refs/adults, tracks players only
+    case off = "Off"    // Manual zoom only
+    case auto = "Auto"  // AI tracks players, ignores refs/adults
 }
 
-// In Skynet mode:
-private let personClassifier = PersonClassifier()
-
+// v4.1 processing pipeline:
 func processFrameWithSkynet(_ pixelBuffer: CVPixelBuffer) {
     let classifiedPeople = personClassifier.classifyPeople(in: pixelBuffer)
-    let players = classifiedPeople.filter { $0.classification == .player }
-    let actionCenter = personClassifier.calculateActionCenter(from: classifiedPeople)
-    let zoom = personClassifier.calculateZoomFactor(from: classifiedPeople, ...)
-    // Apply zoom with smoothing
+    let activeTracks = deepTracker.update(detections: classifiedPeople, dt: dt)
+    let actionCenter = personClassifier.calculateActionCenter(from: activeTracks) // Momentum-weighted
+    let zoom = deepTracker.calculateZoom(minZoom: 1.0, maxZoom: 2.0)
+
+    // Timeout detection: 60%+ players at edges → zoom out to 1.0x
+    let isTimeout = players.count >= 3 && edgePlayers/players > 0.6
+    smoothZoomController.isTimeoutMode = isTimeout
 }
 ```
 
@@ -1345,9 +1382,9 @@ if let callback = onFrameForAI, now - lastAIFrameTime >= 0.2 {
 - After that: continuous refinement throughout game
 - Works from ANY camera angle (center court, corner, bleachers)
 
-### Ultra-Smooth Tracking v3 (2026-02-05)
+### Ultra-Smooth Tracking v3/v4.1 (2026-02-05)
 
-> **LATEST**: Broadcast-quality v3 tracking. Added VNDetectHumanRectanglesRequest person detection, proximity-weighted centroids, rolling centroid averaging. Tested on real game footage (IMG_7205.mov). Person detection 89.5% vs ball 10% — players now drive 70% of focus.
+> **LATEST**: Broadcast-quality tracking migrated to product as Skynet v4.1. Added Momentum Attention (velocity-weighted via Kalman filter), Timeout Detection (bench rush awareness), warmup calibration workflow. Tested on real game footage (IMG_7205.mov). Person detection 89.5% — players drive 100% of focus.
 
 **The Problem (v1-v2):**
 Initial Skynet had good detection but jittery output — camera jumped between detected positions. v2 added person detection but centroid still jittered when 10+ players were on court (Vision detects different subsets each frame).
