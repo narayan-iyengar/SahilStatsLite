@@ -78,15 +78,46 @@ class GamePersistenceManager: ObservableObject {
     private func mergeFirebaseGames(_ firebaseGames: [Game]) {
         debugPrint("[GamePersistence] Merging \(firebaseGames.count) Firebase games")
 
-        // Replace local games with Firebase games (Firebase is source of truth)
-        savedGames = firebaseGames.sorted { $0.date > $1.date }
+        // Create a map of existing local games to preserve local-only fields (videoURL)
+        let localGamesMap = Dictionary(uniqueKeysWithValues: savedGames.map { ($0.id, $0) })
+        
+        var mergedGames: [Game] = []
+        
+        for cloudGame in firebaseGames {
+            var finalGame = cloudGame
+            
+            // If we have a local version, preserve local-only fields
+            if let localGame = localGamesMap[cloudGame.id] {
+                // Preserve video URL if cloud doesn't have one (it never does)
+                // But only if the local file actually exists
+                if let localURL = localGame.videoURL {
+                    finalGame.videoURL = localURL
+                }
+                
+                // Preserve duration
+                if let duration = localGame.videoDuration {
+                    finalGame.videoDuration = duration
+                }
+                
+                // If local status is 'uploading', don't let cloud overwrite it with 'local'
+                // This prevents UI glitches during upload
+                if localGame.youtubeStatus == .uploading && finalGame.youtubeStatus == .local {
+                    finalGame.youtubeStatus = .uploading
+                }
+            }
+            
+            mergedGames.append(finalGame)
+        }
+
+        // Replace local games with merged games
+        savedGames = mergedGames.sorted { $0.date > $1.date }
         saveAllGamesToFile(savedGames)
 
         lastSyncTime = Date()
         isSyncing = false
         syncError = nil
 
-        debugPrint("[GamePersistence] Merged - now have \(savedGames.count) games")
+        debugPrint("[GamePersistence] Merged - now have \(savedGames.count) games (preserved local paths)")
     }
 
     // MARK: - Local File Operations

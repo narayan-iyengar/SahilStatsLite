@@ -1306,6 +1306,7 @@ struct GameDetailSheet: View {
     // Video picker state
     @State private var selectedVideoItem: PhotosPickerItem?
     @State private var isImportingVideo = false
+    @State private var showDeleteVideoConfirmation = false
 
     // Fetch live game object to ensure updates reflect immediately
     var game: Game {
@@ -1339,13 +1340,25 @@ struct GameDetailSheet: View {
                     // YouTube Upload Section
                     VStack(spacing: 12) {
                         if game.youtubeStatus == .uploaded {
-                            Label("Uploaded to YouTube", systemImage: "checkmark.circle.fill")
-                                .font(.headline)
-                                .foregroundColor(.green)
-                                .padding()
-                                .frame(maxWidth: .infinity)
-                                .background(Color.green.opacity(0.1))
-                                .cornerRadius(12)
+                            VStack(spacing: 12) {
+                                Label("Uploaded to YouTube", systemImage: "checkmark.circle.fill")
+                                    .font(.headline)
+                                    .foregroundColor(.green)
+                                    .padding()
+                                    .frame(maxWidth: .infinity)
+                                    .background(Color.green.opacity(0.1))
+                                    .cornerRadius(12)
+                                
+                                if resolveVideoURL(for: game) != nil {
+                                    Button(role: .destructive) {
+                                        showDeleteVideoConfirmation = true
+                                    } label: {
+                                        Label("Delete Local Video (Free up space)", systemImage: "trash")
+                                            .font(.caption)
+                                            .foregroundColor(.red)
+                                    }
+                                }
+                            }
                         } else if youtubeService.isUploading && youtubeService.currentUploadingGameID == game.id {
                             VStack(spacing: 8) {
                                 ProgressView(value: youtubeService.uploadProgress)
@@ -1468,6 +1481,30 @@ struct GameDetailSheet: View {
                     ))
                 }
             }
+            .alert("Delete Local Video?", isPresented: $showDeleteVideoConfirmation) {
+                Button("Cancel", role: .cancel) { }
+                Button("Delete", role: .destructive) {
+                    deleteLocalVideo()
+                }
+            } message: {
+                Text("This will permanently remove the 4K video file from your device to save space. The YouTube upload will remain.")
+            }
+        }
+    }
+    
+    private func deleteLocalVideo() {
+        guard let url = resolveVideoURL(for: game) else { return }
+        do {
+            try FileManager.default.removeItem(at: url)
+            debugPrint("🗑️ Deleted local video: \(url.path)")
+            
+            // Update game record to reflect missing video
+            // Note: We keep the status as .uploaded
+            var updatedGame = game
+            updatedGame.videoURL = nil 
+            persistenceManager.saveGame(updatedGame)
+        } catch {
+            debugPrint("❌ Failed to delete local video: \(error)")
         }
     }
     
