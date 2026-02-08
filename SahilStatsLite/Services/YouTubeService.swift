@@ -25,6 +25,7 @@ class YouTubeService: NSObject, ObservableObject {
     @Published var isUploading: Bool = false
     @Published var uploadProgress: Double = 0
     @Published var lastError: String?
+    @Published var currentUploadingGameID: String?
 
     private let keychainService = "com.narayan.SahilStats.youtube"
     private let accessTokenKey = "accessToken"
@@ -98,7 +99,7 @@ class YouTubeService: NSObject, ObservableObject {
 
     // MARK: - Upload
 
-    func uploadVideo(url: URL, title: String, description: String) async {
+    func uploadVideo(url: URL, title: String, description: String, gameID: String) async {
         guard isAuthorized else {
             debugPrint("📺 YouTube upload skipped (not authorized)")
             return
@@ -111,6 +112,7 @@ class YouTubeService: NSObject, ObservableObject {
         }
 
         isUploading = true
+        currentUploadingGameID = gameID
         uploadProgress = 0
         lastError = nil
 
@@ -128,6 +130,22 @@ class YouTubeService: NSObject, ObservableObject {
             debugPrint("📺 Upload failed to start: \(error.localizedDescription)")
             lastError = error.localizedDescription
             isUploading = false
+            currentUploadingGameID = nil
+        }
+    }
+
+    func cancelUpload() {
+        guard let taskID = currentTaskID else { return }
+        backgroundSession.getAllTasks { tasks in
+            if let task = tasks.first(where: { $0.taskIdentifier == taskID }) {
+                task.cancel()
+                debugPrint("📺 Upload cancelled by user")
+            }
+        }
+        Task { @MainActor in
+            isUploading = false
+            currentUploadingGameID = nil
+            uploadProgress = 0
         }
     }
 
@@ -313,6 +331,7 @@ extension YouTubeService: URLSessionDelegate, URLSessionTaskDelegate, URLSession
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         Task { @MainActor in
             self.isUploading = false
+            self.currentUploadingGameID = nil
             if let error = error {
                 debugPrint("📺 Background upload failed: \(error.localizedDescription)")
                 self.lastError = error.localizedDescription

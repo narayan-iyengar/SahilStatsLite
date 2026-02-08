@@ -70,8 +70,6 @@ struct UltraMinimalRecordingView: View {
     @State private var isPulsing: Bool = false
     @State private var currentZoom: CGFloat = 1.0
 
-    @State private var showCalibration: Bool = false
-
     // Computed
     private var halfLength: Int {
         appState.currentGame?.halfLength ?? 18
@@ -164,22 +162,6 @@ struct UltraMinimalRecordingView: View {
                         .padding(.leading, 20)
 
                     Spacer()
-                    
-                    // Calibration Button (Paused or Warmup)
-                    if !isClockRunning && !appState.isStatsOnly {
-                        Button(action: { showCalibration = true }) {
-                            Image(systemName: "scope")
-                                .font(.system(size: 18, weight: .semibold))
-                                .foregroundColor(.white)
-                                .frame(width: 40, height: 40)
-                                .background(
-                                    Circle()
-                                        .fill(.ultraThinMaterial)
-                                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
-                                )
-                        }
-                        .padding(.trailing, 8)
-                    }
 
                     // Stats button - frosted glass style for visibility against any background
                     Button(action: { showSahilStats = true }) {
@@ -313,13 +295,6 @@ struct UltraMinimalRecordingView: View {
                 sahilStatsOverlay
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
             }
-            
-            // Calibration Overlay
-            if showCalibration {
-                CourtCalibrationView(isPresented: $showCalibration)
-                    .transition(.opacity)
-                    .zIndex(100)
-            }
 
             // End game confirmation
             if showEndConfirmation {
@@ -335,12 +310,6 @@ struct UltraMinimalRecordingView: View {
         .persistentSystemOverlays(.hidden)
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             updateOrientationState()
-        }
-        .onReceive(watchService.calibrationSubject) { (command, value) in
-            if command == "open" {
-                debugPrint("📱 Received remote calibration request")
-                showCalibration = true
-            }
         }
         .task {
             initializeGameState()

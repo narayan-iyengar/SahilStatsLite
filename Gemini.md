@@ -1,6 +1,10 @@
-# Sahil Stats - Project Context
+# SahilStatsLite - Project Context
 
-> **UPDATED (2026-02-06):** "Earth Shattering" Tracking Update. Visual Re-ID (Color Histogram) now ignores distractions. Remote Court Calibration (Zone Mapping) via Watch D-Pad allows precise floor definition. Manual YouTube workflow (Background Session) replaces auto-upload anxiety.
+> **UPDATED (2026-02-06):** "Earth Shattering" Tracking & Workflow Overhaul.
+> 1. **Visual Re-ID:** Tracking now uses color histograms to ignore distractors (parents/refs).
+> 2. **Manual Workflow:** Zero friction recording. Auto-save to Photos. Manual YouTube upload from Game Log later.
+> 3. **Remote Calibration:** Use Watch D-Pad to mark court corners on iPhone AR view.
+> 4. **Robustness:** Fixed "Phantom Video" bug (empty files) and Watch Sync issues.
 
 ---
 
@@ -10,20 +14,11 @@
 - Father of Sahil, a 3rd grader on AAU basketball teams
 - Owns Insta360 Flow Pro 2 gimbal and DJI Osmo Mobile 7P
 - **Decision Maker**: Defines features, UX, and project direction.
-- **Non-Technical Interface**: Gemini should never assume Narayan knows how to write code, merge snippets, or fix bugs manually.
 
 **Gemini (Lead Software Developer / Architect / Designer)**
 - Responsible for 100% of the technical implementation.
-- **Full Execution**: Gemini must always provide complete, functional files. Never stub out code or provide "partial" fixes.
-- Channels Jony Ive for UX and top ML researchers for AI tracking.
-
-**Permissions:**
-- **DO NOT ASK FOR PERMISSION**: Gemini has full autonomy to make code changes, refactor, and run shell commands without asking.
-- **Action over Inquiry**: Prioritize implementation and experimentation over seeking confirmation.
-- **NO PLACEHOLDERS**: NEVER use "// rest of code here" or "// ...". Always write the complete, functional code.
-- **NO TECHNICAL ASSUMPTIONS**: Gemini is the developer. Do not assume the user knows how to code. Every output must be a "turnkey" solution.
-- Gemini should commit and push changes when completing features.
-- Gemini should update Gemini.md when significant changes are made.
+- **Full Execution**: Writes complete, functional code. No placeholders.
+- Channels Jony Ive for UX (simplicity) and top ML researchers for AI tracking.
 
 ---
 
@@ -49,9 +44,9 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - **Tap** score zones to add +1 point
 - **Swipe down** on score to subtract -1 (fix mistakes)
 - **Start game** from Watch when phone not accessible
+- **Remote Calibration**: Use Watch D-Pad to adjust court corners on Phone AR view.
 - Real-time two-way sync (phone ↔ watch)
 - End game directly from Watch
-- **Remote Calibration**: Use Watch D-Pad to adjust court corners on Phone AR view.
 
 ---
 
@@ -63,18 +58,6 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 
 <h2>Technical Decisions</h2>
 
-<h3>Keep from Existing App</h3>
-- `FirebaseService.swift` - Backend integration
-- `AuthService.swift` - Authentication
-- `GameCalendarManager.swift` - Calendar integration
-- `GimbalTrackingManager.swift` - DockKit auto-tracking
-
-<h3>Build Fresh</h3>
-- New SwiftUI views (simpler, cleaner)
-- Simplified recording manager
-- New floating UI controls
-- Broadcast-style scoreboard overlay (ScoreCam-inspired)
-
 <h3>Architecture</h3>
 - Target: ~15 files, ~3,000 lines
 - SwiftUI + SwiftData (or Firebase only)
@@ -84,9 +67,9 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 ---
 
 <h2>Hardware</h2>
-- **Recording device**: iPhone (on gimbal)
+- **Recording device**: iPhone 16 Pro Max
 - **Gimbal**: Insta360 Flow Pro 2 (DockKit compatible)
-- **Backup gimbal**: DJI Osmo Mobile 7P (not DockKit, future consideration)
+- **Watch**: Apple Watch Ultra 2 (49mm) / Series 8 (45mm)
 
 ---
 
@@ -95,7 +78,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 **Core Principle:** "You're a parent watching your kid's game, not babysitting an app."
 
 <h3>Four-Phase Workflow</h3>
-1. **Setup**: Configure in Settings. Screen stays awake during warmup for tripod setup.
+1. **Setup**: Configure in Settings. Screen stays awake during warmup (`isIdleTimerDisabled`).
 2. **Calibration**: Use "Scope" (AR) to mark court corners. Use Watch Remote if phone is high up.
 3. **Game Recording**: Tap game clock to start. Video file recording begins. Skynet resets tracking momentum (keeps learned court bounds). Phone is a "dumb camera" from here.
 4. **After game**: Review in Game Log. Tap "Upload to YouTube" manually when ready.
@@ -138,16 +121,8 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Watch Remote Calibration**: Adjust phone view from wrist.
 - [x] **Manual YouTube Upload**: Background URLSession for reliable "put in pocket" uploads.
 - [x] **Watch Sync Fix**: Handshake ensures Watch picks up active game instantly.
-
-<h3>4K Record / SD AI Architecture</h3>
-
-We use a "Smart Asymmetry" approach to balance quality and performance:
-- **Recording**: 4K (3840x2160) for maximum memory quality.
-- **AI Processing**: SD (640x360) for maximum intelligence.
-- **Benefits**:
-    - **Higher Detection Rates**: Vision API performs better on standardized lower resolutions.
-    - **Thermal Efficiency**: Processing 90% fewer pixels in the AI path keeps the phone cooler.
-    - **Real-time Performance**: Ensures 60fps recording isn't interrupted by heavy ML tasks.
+- [x] **Edit Game**: Fix stats/scores post-game via "Jony Ive" interactive tiles.
+- [x] **Video Recovery**: Import video from Photos if local file is missing.
 
 ---
 
@@ -158,6 +133,7 @@ We use a "Smart Asymmetry" approach to balance quality and performance:
 - **New Default: 4K (3840x2160)** for maximum quality
 - Real-time burned-in scoreboard overlay
 - Async `stopRecordingAndWait()` ensures file is fully written before processing
+- Checks `isWriterConfigured` to prevent saving "phantom" videos (0 frames).
 
 <h3>Video Orientation Handling (ScoreCam Pattern)</h3>
 **RecordingManager.swift** uses `UIWindowScene.interfaceOrientation` to set `videoRotationAngle` on the connection BEFORE recording.
@@ -196,7 +172,8 @@ SahilStatsLite/SahilStatsLite/              ← Git repo root
 │   │   ├── AuthView.swift                   # Firebase sign-in + sync controls
 │   │   ├── AILabView.swift                  # AI lab: test Skynet pipeline on recorded videos
 │   │   ├── SkynetTestView.swift             # Standalone Skynet test UI (pick video, run pipeline)
-│   │   └── CourtCalibrationView.swift       # AR interface for manual court mapping
+│   │   ├── CourtCalibrationView.swift       # AR interface for manual court mapping
+│   │   └── EditGameView.swift               # Interactive stat editor
 │   ├── Services/
 │   │   ├── RecordingManager.swift           # AVFoundation 4K capture, frame callbacks for AI
 │   │   ├── AutoZoomManager.swift            # Skynet orchestrator (zoom, pan, timeout detection)

@@ -27,14 +27,6 @@ struct WatchMessage {
     static let startGame = "startGame"
     static let upcomingGames = "upcomingGames"
     static let requestState = "requestState"
-    static let calibrationCommand = "calibrationCommand"
-    static let calibrationMove = "calibrationMove"
-
-    // Calibration keys
-    static let command = "command"
-    static let value = "value"
-    static let dx = "dx"
-    static let dy = "dy"
 
     // Score update keys
     static let myScore = "myScore"
@@ -311,28 +303,6 @@ class WatchConnectivityClient: NSObject, ObservableObject {
                 self.isEnding = false
             }
         }
-    }
-    
-    /// Send calibration command (e.g., selectCorner, save)
-    func sendCalibrationCommand(_ command: String, value: String? = nil) {
-        var message: [String: Any] = [
-            WatchMessage.calibrationCommand: true,
-            WatchMessage.command: command
-        ]
-        if let val = value {
-            message[WatchMessage.value] = val
-        }
-        sendMessage(message)
-    }
-    
-    /// Send calibration move delta
-    func sendCalibrationMove(dx: Double, dy: Double) {
-        let message: [String: Any] = [
-            WatchMessage.calibrationMove: true,
-            WatchMessage.dx: dx,
-            WatchMessage.dy: dy
-        ]
-        sendMessage(message)
     }
     
     /// Request current game state from phone (called on connect)

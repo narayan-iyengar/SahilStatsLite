@@ -16,6 +16,7 @@ import SwiftUI
 import Combine
 import Charts
 import EventKit
+import PhotosUI
 
 struct HomeView: View {
     @EnvironmentObject var appState: AppState
@@ -1294,10 +1295,22 @@ struct CareerStatsSheet: View {
 // MARK: - Game Detail Sheet
 
 struct GameDetailSheet: View {
-    let game: Game
+    let gameId: String
     @Environment(\.dismiss) private var dismiss
     @ObservedObject private var youtubeService = YouTubeService.shared
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
+    
+    // Edit state
+    @State private var showEditSheet = false
+    
+    // Video picker state
+    @State private var selectedVideoItem: PhotosPickerItem?
+    @State private var isImportingVideo = false
+
+    // Fetch live game object to ensure updates reflect immediately
+    var game: Game {
+        persistenceManager.savedGames.first(where: { $0.id == gameId }) ?? Game(opponent: "Unknown")
+    }
 
     var body: some View {
         NavigationView {
@@ -1333,21 +1346,30 @@ struct GameDetailSheet: View {
                                 .frame(maxWidth: .infinity)
                                 .background(Color.green.opacity(0.1))
                                 .cornerRadius(12)
-                        } else if youtubeService.isUploading {
+                        } else if youtubeService.isUploading && youtubeService.currentUploadingGameID == game.id {
                             VStack(spacing: 8) {
                                 ProgressView(value: youtubeService.uploadProgress)
                                     .tint(.blue)
-                                Text("Uploading to YouTube...")
+                                HStack {
+                                    Text("Uploading to YouTube...")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    Spacer()
+                                    Button("Cancel") {
+                                        youtubeService.cancelUpload()
+                                    }
                                     .font(.caption)
-                                    .foregroundColor(.secondary)
+                                    .fontWeight(.bold)
+                                    .foregroundColor(.red)
+                                }
                             }
                             .padding()
                             .background(Color(.systemBackground))
                             .cornerRadius(12)
                         } else {
-                            if let url = game.videoURL, FileManager.default.fileExists(atPath: url.path) {
+                            if let url = resolveVideoURL(for: game) {
                                 Button {
-                                    startUpload()
+                                    startUpload(url: url)
                                 } label: {
                                     HStack {
                                         Image(systemName: "square.and.arrow.up")
@@ -1367,10 +1389,32 @@ struct GameDetailSheet: View {
                                         .foregroundColor(.red)
                                 }
                             } else {
-                                Text("Video file not available on device")
-                                    .font(.caption)
-                                    .foregroundColor(.secondary)
-                                    .padding()
+                                // Video missing - offer picker
+                                VStack(spacing: 12) {
+                                    Text("Video file not found")
+                                        .font(.caption)
+                                        .foregroundColor(.secondary)
+                                    
+                                    if isImportingVideo {
+                                        ProgressView("Importing...")
+                                    } else {
+                                        PhotosPicker(selection: $selectedVideoItem, matching: .videos) {
+                                            Label("Select Video from Photos", systemImage: "photo.on.rectangle")
+                                                .font(.subheadline)
+                                                .fontWeight(.medium)
+                                                .frame(maxWidth: .infinity)
+                                                .padding()
+                                                .background(Color(.systemGray5))
+                                                .cornerRadius(12)
+                                        }
+                                        .onChange(of: selectedVideoItem) { _, newItem in
+                                            if let newItem {
+                                                importVideo(from: newItem)
+                                            }
+                                        }
+                                    }
+                                }
+                                .padding()
                             }
                         }
                     }
@@ -1407,19 +1451,87 @@ struct GameDetailSheet: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
-                    Button("Done") { dismiss() }
+                    HStack {
+                        Button("Edit") {
+                            showEditSheet = true
+                        }
+                        Button("Done") { dismiss() }
+                    }
+                }
+            }
+            .sheet(isPresented: $showEditSheet) {
+                // Pass binding that saves via persistence manager
+                if let index = persistenceManager.savedGames.firstIndex(where: { $0.id == gameId }) {
+                    EditGameView(game: Binding(
+                        get: { persistenceManager.savedGames[index] },
+                        set: { persistenceManager.saveGame($0) }
+                    ))
+                }
+            }
+        }
+    }
+    
+    private func importVideo(from item: PhotosPickerItem) {
+        isImportingVideo = true
+        
+        item.loadTransferable(type: Data.self) { result in
+            DispatchQueue.main.async {
+                isImportingVideo = false
+                
+                switch result {
+                case .success(let data):
+                    guard let data = data else { return }
+                    
+                    // Save to Documents
+                    let filename = "imported_\(game.id).mov"
+                    let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+                    let destinationURL = documentsPath.appendingPathComponent(filename)
+                    
+                    do {
+                        try data.write(to: destinationURL)
+                        
+                        // Update game record
+                        var updatedGame = game
+                        updatedGame.videoURL = destinationURL
+                        updatedGame.youtubeStatus = .local // Reset status so upload button appears
+                        persistenceManager.saveGame(updatedGame)
+                        
+                        debugPrint("✅ Video imported successfully: \(destinationURL.path)")
+                    } catch {
+                        debugPrint("❌ Failed to save imported video: \(error)")
+                    }
+                    
+                case .failure(let error):
+                    debugPrint("❌ Failed to load video from picker: \(error)")
                 }
             }
         }
     }
 
-    private func startUpload() {
-        guard let url = game.videoURL else { return }
+    private func resolveVideoURL(for game: Game) -> URL? {
+        guard let url = game.videoURL else { return nil }
         
+        // 1. Check if absolute path exists
+        if FileManager.default.fileExists(atPath: url.path) {
+            return url
+        }
+        
+        // 2. Check if file exists in Documents directory (handle container UUID change)
+        let filename = url.lastPathComponent
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let newURL = documentsPath.appendingPathComponent(filename)
+        
+        if FileManager.default.fileExists(atPath: newURL.path) {
+            return newURL
+        }
+        
+        return nil
+    }
+
+    private func startUpload(url: URL) {
         let title = "\(game.teamName) vs \(game.opponent) - \(game.date.formatted(date: .abbreviated, time: .omitted))"
         let description = """
         \(game.teamName) \(game.myScore) - \(game.opponentScore) \(game.opponent)
-        Sahil: \(game.playerStats.points) pts
         
         Recorded with Sahil Stats
         """
@@ -1430,13 +1542,9 @@ struct GameDetailSheet: View {
         persistenceManager.saveGame(updatedGame)
         
         Task {
-            await youtubeService.uploadVideo(url: url, title: title, description: description)
+            await youtubeService.uploadVideo(url: url, title: title, description: description, gameID: game.id)
             
-            // Note: Completion is handled via observing youtubeService, but we should update game status on success
-            // This is tricky with background session. For now, manual refresh or status check?
-            // Ideally YouTubeService would have a callback or delegate for specific game ID.
-            
-            // Optimistic success update (for now) if no error
+            // Check success via service error state
             if youtubeService.lastError == nil {
                 var finishedGame = game
                 finishedGame.youtubeStatus = .uploaded
@@ -1651,7 +1759,7 @@ struct AllGamesView: View {
                 }
             }
             .sheet(item: $selectedGameForDetail) { game in
-                GameDetailSheet(game: game)
+                GameDetailSheet(gameId: game.id)
             }
             .alert("Delete Game?", isPresented: $showDeleteConfirmation) {
                 Button("Cancel", role: .cancel) {

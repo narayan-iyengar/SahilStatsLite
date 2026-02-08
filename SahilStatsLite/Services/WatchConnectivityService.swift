@@ -28,14 +28,6 @@ struct WatchMessage {
     static let startGame = "startGame"  // Start game from watch
     static let upcomingGames = "upcomingGames"  // Calendar games sync
     static let requestState = "requestState" // Watch asks for current state
-    static let calibrationCommand = "calibrationCommand"
-    static let calibrationMove = "calibrationMove"
-
-    // Calibration keys
-    static let command = "command"
-    static let value = "value"
-    static let dx = "dx"
-    static let dy = "dy"
 
     // Score update keys
     static let myScore = "myScore"
@@ -119,10 +111,6 @@ class WatchConnectivityService: NSObject, ObservableObject {
     var onEndGame: (() -> Void)?
     var onStartGame: ((_ game: WatchGame) -> Void)?
     var onRequestState: (() -> Void)?
-    
-    // Calibration Subjects (Multicast)
-    let calibrationSubject = PassthroughSubject<(String, String?), Never>()
-    let calibrationMoveSubject = PassthroughSubject<(Double, Double), Never>()
 
     private var session: WCSession?
 
@@ -366,20 +354,6 @@ extension WatchConnectivityService: WCSessionDelegate {
         if message[WatchMessage.requestState] != nil {
             debugPrint("[WatchConnectivity] ⌚️ Watch requested game state sync")
             onRequestState?()
-        }
-        
-        // Calibration Command
-        if message[WatchMessage.calibrationCommand] != nil,
-           let command = message[WatchMessage.command] as? String {
-            let value = message[WatchMessage.value] as? String
-            calibrationSubject.send((command, value))
-        }
-        
-        // Calibration Move
-        if message[WatchMessage.calibrationMove] != nil,
-           let dx = message[WatchMessage.dx] as? Double,
-           let dy = message[WatchMessage.dy] as? Double {
-            calibrationMoveSubject.send((dx, dy))
         }
 
         // Start game from watch (triggers recording on phone)

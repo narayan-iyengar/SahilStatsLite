@@ -451,7 +451,17 @@ class RecordingManager: NSObject, ObservableObject {
     @MainActor
     func stopRecordingAndWait() async -> URL? {
         guard isRecording else {
-            return currentRecordingURL
+            return nil
+        }
+        
+        // If writer was never configured (e.g. no frames received), no file exists
+        if !isWriterConfigured {
+            debugPrint("⚠️ Stop called but writer not configured - no frames captured")
+            isRecording = false
+            recordingTimer?.invalidate()
+            recordingTimer = nil
+            UIApplication.shared.isIdleTimerDisabled = false
+            return nil
         }
 
         isRecording = false
