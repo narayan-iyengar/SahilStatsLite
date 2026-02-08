@@ -103,6 +103,11 @@ struct WatchScoringView: View {
             if showEndGame {
                 endGameOverlay
             }
+            
+            // Ending spinner
+            if connectivity.isEnding {
+                endingSpinner
+            }
         }
         .onReceive(Timer.publish(every: 0.5, on: .main, in: .common).autoconnect()) { _ in
             if connectivity.isClockRunning {
@@ -323,6 +328,28 @@ struct WatchScoringView: View {
                     }
                     .buttonStyle(.plain)
                 }
+            }
+        }
+    }
+
+    // MARK: - Ending Spinner
+    
+    private var endingSpinner: some View {
+        ZStack {
+            Color.black.opacity(0.8).ignoresSafeArea()
+            
+            VStack(spacing: 12) {
+                ProgressView()
+                    .tint(.orange)
+                    .scaleEffect(1.5)
+                
+                Text("Ending Game...")
+                    .font(.system(size: 14, weight: .bold))
+                    .foregroundColor(.white)
+                
+                Text("Saving video on phone")
+                    .font(.system(size: 11))
+                    .foregroundColor(.white.opacity(0.7))
             }
         }
     }

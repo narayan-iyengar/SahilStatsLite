@@ -123,6 +123,12 @@ class AppState: ObservableObject {
 
     @MainActor
     func startGameFromWatch(_ watchGame: WatchGame) {
+        // Prevent overwriting an active game
+        if currentScreen == .recording && currentGame != nil {
+            debugPrint("[AppState] ⚠️ Watch requested start game, but recording already in progress. Ignoring.")
+            return
+        }
+        
         // Create game from Watch data
         var game = Game(
             opponent: watchGame.opponent,

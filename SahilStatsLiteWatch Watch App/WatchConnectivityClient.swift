@@ -26,6 +26,7 @@ struct WatchMessage {
     static let endGame = "endGame"
     static let startGame = "startGame"
     static let upcomingGames = "upcomingGames"
+    static let requestState = "requestState"
 
     // Score update keys
     static let myScore = "myScore"
@@ -110,6 +111,7 @@ class WatchConnectivityClient: NSObject, ObservableObject {
     @Published var period: String = "1st Half"
     @Published var periodIndex: Int = 0
     @Published var halfLength: Int = 18
+    @Published var isEnding: Bool = false
 
     // Player stats (received from phone)
     @Published var fg2Made: Int = 0
@@ -286,10 +288,28 @@ class WatchConnectivityClient: NSObject, ObservableObject {
 
     /// End game
     func endGame() {
-        hasActiveGame = false
-
+        isEnding = true
+        
         let message: [String: Any] = [
             WatchMessage.endGame: true
+        ]
+        sendMessage(message)
+        
+        // Timeout safeguard: Force end if phone doesn't reply in 5s
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
+            guard let self = self else { return }
+            if self.isEnding {
+                self.hasActiveGame = false
+                self.isEnding = false
+            }
+        }
+    }
+    
+    /// Request current game state from phone (called on connect)
+    func requestState() {
+        debugPrint("[Watch] Requesting game state from phone...")
+        let message: [String: Any] = [
+            WatchMessage.requestState: true
         ]
         sendMessage(message)
     }
@@ -313,6 +333,11 @@ extension WatchConnectivityClient: WCSessionDelegate {
         Task { @MainActor in
             debugPrint("[Watch] Activation complete: \(activationState.rawValue)")
             self.isPhoneReachable = session.isReachable
+            
+            // Request state immediately on activation
+            if session.isReachable {
+                self.requestState()
+            }
         }
     }
 
@@ -320,6 +345,11 @@ extension WatchConnectivityClient: WCSessionDelegate {
         Task { @MainActor in
             self.isPhoneReachable = session.isReachable
             debugPrint("[Watch] Reachability changed: \(session.isReachable)")
+            
+            // Request state when phone becomes reachable
+            if session.isReachable {
+                self.requestState()
+            }
         }
     }
 
@@ -401,6 +431,7 @@ extension WatchConnectivityClient: WCSessionDelegate {
         // End game from phone
         if message[WatchMessage.endGame] != nil {
             hasActiveGame = false
+            isEnding = false
         }
 
         // Upcoming games from phone (calendar sync)

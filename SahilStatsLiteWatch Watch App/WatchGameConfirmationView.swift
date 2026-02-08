@@ -19,6 +19,7 @@ struct WatchGameConfirmationView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var isStarting = false
+    @State private var selectedHalfLength: Int = 18
 
     var body: some View {
         ScrollView {
@@ -76,15 +77,33 @@ struct WatchGameConfirmationView: View {
                         }
                     }
 
-                    // Half length
-                    HStack(spacing: 6) {
-                        Image(systemName: "timer")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.5))
-                        Text("\(game.halfLength) min halves")
-                            .font(.system(size: 10))
-                            .foregroundColor(.white.opacity(0.7))
+                    // Half length (Tappable to change)
+                    Button(action: {
+                        // Toggle between 18 and 20
+                        if selectedHalfLength == 18 {
+                            selectedHalfLength = 20
+                        } else {
+                            selectedHalfLength = 18
+                        }
+                        WKInterfaceDevice.current().play(.click)
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "timer")
+                                .font(.system(size: 10))
+                                .foregroundColor(.orange)
+                            Text("\(selectedHalfLength) min halves")
+                                .font(.system(size: 11, weight: .bold))
+                                .foregroundColor(.orange)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 8))
+                                .foregroundColor(.orange.opacity(0.7))
+                        }
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(Color.orange.opacity(0.15))
+                        .cornerRadius(8)
                     }
+                    .buttonStyle(.plain)
                 }
                 .padding(12)
                 .background(Color.white.opacity(0.08))
@@ -136,6 +155,9 @@ struct WatchGameConfirmationView: View {
         }
         .navigationTitle("Confirm")
         .navigationBarTitleDisplayMode(.inline)
+        .onAppear {
+            selectedHalfLength = game.halfLength
+        }
     }
 
     private func startGame() {
@@ -144,8 +166,18 @@ struct WatchGameConfirmationView: View {
         // Haptic feedback
         WKInterfaceDevice.current().play(.click)
 
+        // Create updated game object with selected half length
+        let updatedGame = WatchGame(
+            id: game.id,
+            opponent: game.opponent,
+            teamName: game.teamName,
+            location: game.location,
+            startTime: game.startTime,
+            halfLength: selectedHalfLength
+        )
+
         // Send to phone - this will trigger recording mode
-        connectivity.startGame(game)
+        connectivity.startGame(updatedGame)
 
         // Brief delay to show starting state, then dismiss
         // The main view will switch to scoring mode when hasActiveGame becomes true

@@ -70,6 +70,8 @@ struct UltraMinimalRecordingView: View {
     @State private var isPulsing: Bool = false
     @State private var currentZoom: CGFloat = 1.0
 
+    @State private var showCalibration: Bool = false
+
     // Computed
     private var halfLength: Int {
         appState.currentGame?.halfLength ?? 18
@@ -162,6 +164,22 @@ struct UltraMinimalRecordingView: View {
                         .padding(.leading, 20)
 
                     Spacer()
+                    
+                    // Calibration Button (Paused or Warmup)
+                    if !isClockRunning && !appState.isStatsOnly {
+                        Button(action: { showCalibration = true }) {
+                            Image(systemName: "scope")
+                                .font(.system(size: 18, weight: .semibold))
+                                .foregroundColor(.white)
+                                .frame(width: 40, height: 40)
+                                .background(
+                                    Circle()
+                                        .fill(.ultraThinMaterial)
+                                        .shadow(color: .black.opacity(0.2), radius: 4, y: 2)
+                                )
+                        }
+                        .padding(.trailing, 8)
+                    }
 
                     // Stats button - frosted glass style for visibility against any background
                     Button(action: { showSahilStats = true }) {
@@ -291,10 +309,16 @@ struct UltraMinimalRecordingView: View {
             .animation(.spring(response: 0.2), value: showMySubtract)
             .animation(.spring(response: 0.2), value: showOppSubtract)
 
-            // Stats overlay
             if showSahilStats {
                 sahilStatsOverlay
                     .transition(.opacity.combined(with: .scale(scale: 0.95)))
+            }
+            
+            // Calibration Overlay
+            if showCalibration {
+                CourtCalibrationView()
+                    .transition(.opacity)
+                    .zIndex(100)
             }
 
             // End game confirmation
@@ -319,6 +343,7 @@ struct UltraMinimalRecordingView: View {
             // Only setup camera if recording video
             if !appState.isStatsOnly {
                 recordingManager.reset()
+                UIApplication.shared.isIdleTimerDisabled = true // Keep screen awake during warmup/setup
                 updateOverlayState()
                 await recordingManager.requestPermissionsAndSetup()
 
@@ -416,6 +441,12 @@ struct UltraMinimalRecordingView: View {
         // Handle end game from watch - end and save directly
         watchService.onEndGame = { [self] in
             endGame()
+        }
+        
+        // Handle state request from watch (e.g. app just launched)
+        watchService.onRequestState = { [self] in
+            debugPrint("📱 Received state request from Watch. Sending active game state.")
+            sendGameStateToWatch()
         }
     }
 
@@ -1075,24 +1106,16 @@ struct UltraMinimalRecordingView: View {
                     photosSaved = await saveVideoToPhotosAsync(url: url)
                     debugPrint("📹 Photos save: \(photosSaved ? "SUCCESS" : "FAILED")")
 
-                    // 2. Upload to YouTube (WAIT for completion)
+                    // 2. Upload to YouTube - REMOVED (Manual only now)
+                    /*
                     if youtubeService.isEnabled && youtubeService.isAuthorized {
-                        let title = "\(appState.currentGame?.teamName ?? "Game") vs \(appState.currentGame?.opponent ?? "Opponent") - \(formattedDate())"
-                        let description = """
-                        \(appState.currentGame?.teamName ?? "Home") \(myScore) - \(opponentScore) \(appState.currentGame?.opponent ?? "Away")
-                        Sahil: \(sahilPoints) pts
-
-                        Recorded with Sahil Stats
-                        """
-
-                        debugPrint("📺 Starting YouTube upload...")
-                        let videoId = await youtubeService.uploadVideo(url: url, title: title, description: description)
-                        debugPrint("📺 YouTube upload: \(videoId != nil ? "SUCCESS (\(videoId!))" : "FAILED")")
-                    } else {
-                        debugPrint("📺 YouTube upload skipped (not enabled/authorized)")
+                        // ... code removed for manual workflow ...
+                        debugPrint("📺 YouTube upload skipped (switched to manual workflow)")
                     }
+                    */
 
-                    // 3. Auto-cleanup: Delete local file if saved to Photos successfully
+                    // 3. Auto-cleanup - DISABLED for manual upload workflow
+                    /*
                     if photosSaved {
                         do {
                             try FileManager.default.removeItem(at: url)
@@ -1103,6 +1126,8 @@ struct UltraMinimalRecordingView: View {
                     } else {
                         debugPrint("⚠️ Keeping video in Documents (Photos save failed)")
                     }
+                    */
+                    debugPrint("✅ Video kept in Documents for manual upload")
                 }
 
                 await MainActor.run {
@@ -1207,6 +1232,62 @@ struct UltraMinimalRecordingView: View {
                     statTile("BLK", $playerStats.blocks, .indigo)
                     statTile("TO", $playerStats.turnovers, .red)
                     statTile("PF", $playerStats.fouls, .gray)
+                }
+                
+                Divider()
+                
+                // Camera & Gimbal Controls (Manual Override)
+                if !appState.isStatsOnly {
+                    VStack(spacing: 12) {
+                        HStack {
+                            Text("Camera Control")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.secondary)
+                            Spacer()
+                        }
+                        
+                        HStack(spacing: 12) {
+                            // Skynet Toggle
+                            Button(action: {
+                                autoZoomManager.mode = autoZoomManager.mode == .auto ? .off : .auto
+                            }) {
+                                HStack(spacing: 6) {
+                                    Image(systemName: autoZoomManager.mode == .auto ? "brain.head.profile" : "brain.head.profile")
+                                    Text(autoZoomManager.mode == .auto ? "Skynet ON" : "Skynet OFF")
+                                }
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(autoZoomManager.mode == .auto ? .white : .secondary)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
+                                .background(autoZoomManager.mode == .auto ? Color.purple : Color.gray.opacity(0.2))
+                                .cornerRadius(8)
+                            }
+                            
+                            // Gimbal Mode
+                            Menu {
+                                Picker("Mode", selection: $gimbalManager.gimbalMode) {
+                                    ForEach(GimbalMode.allCases, id: \.self) { mode in
+                                        Label(mode.rawValue, systemImage: mode.icon).tag(mode)
+                                    }
+                                }
+                            } label: {
+                                HStack(spacing: 6) {
+                                    Image(systemName: gimbalManager.gimbalMode.icon)
+                                    Text(gimbalManager.gimbalMode.rawValue)
+                                    Image(systemName: "chevron.up.chevron.down")
+                                        .font(.caption2)
+                                }
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundColor(gimbalManager.gimbalMode == .track ? .white : .secondary)
+                                .padding(.vertical, 8)
+                                .padding(.horizontal, 12)
+                                .background(gimbalManager.gimbalMode == .track ? Color.green : Color.gray.opacity(0.2))
+                                .cornerRadius(8)
+                            }
+                        }
+                    }
+                    .padding(.bottom, 4)
                 }
 
                 Divider()

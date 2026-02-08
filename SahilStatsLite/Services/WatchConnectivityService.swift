@@ -27,6 +27,7 @@ struct WatchMessage {
     static let endGame = "endGame"
     static let startGame = "startGame"  // Start game from watch
     static let upcomingGames = "upcomingGames"  // Calendar games sync
+    static let requestState = "requestState" // Watch asks for current state
 
     // Score update keys
     static let myScore = "myScore"
@@ -109,6 +110,7 @@ class WatchConnectivityService: NSObject, ObservableObject {
     var onStatUpdate: ((_ statType: String, _ value: Int) -> Void)?
     var onEndGame: (() -> Void)?
     var onStartGame: ((_ game: WatchGame) -> Void)?
+    var onRequestState: (() -> Void)?
 
     private var session: WCSession?
 
@@ -233,6 +235,9 @@ class WatchConnectivityService: NSObject, ObservableObject {
         let calendarGames = calendarManager.upcomingGames.prefix(10) // Limit to 10 games
 
         debugPrint("[WatchConnectivity] Syncing \(calendarGames.count) calendar games to Watch")
+        
+        let defaultHalfLength = UserDefaults.standard.integer(forKey: "defaultHalfLength")
+        let halfLength = defaultHalfLength > 0 ? defaultHalfLength : 18
 
         let watchGames = calendarGames.map { game in
             debugPrint("[WatchConnectivity]   - \(game.opponent) at \(game.startTime)")
@@ -242,7 +247,7 @@ class WatchConnectivityService: NSObject, ObservableObject {
                 teamName: game.detectedTeam ?? "Home",
                 location: game.location,
                 startTime: game.startTime,
-                halfLength: 18  // Default AAU half length
+                halfLength: halfLength
             )
         }
 
@@ -343,6 +348,12 @@ extension WatchConnectivityService: WCSessionDelegate {
         // End game from watch
         if message[WatchMessage.endGame] != nil {
             onEndGame?()
+        }
+        
+        // Request state from watch
+        if message[WatchMessage.requestState] != nil {
+            debugPrint("[WatchConnectivity] ⌚️ Watch requested game state sync")
+            onRequestState?()
         }
 
         // Start game from watch (triggers recording on phone)

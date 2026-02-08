@@ -225,6 +225,10 @@ final class AutoZoomManager: ObservableObject {
 
         debugPrint("🔍 [AutoZoom] Tracking state reset for game start (court bounds preserved)")
     }
+    
+    func updateCourtGeometry(_ geometry: CourtGeometry) {
+        personClassifier.updateCourtGeometry(geometry)
+    }
 
     // MARK: - Frame Processing
 

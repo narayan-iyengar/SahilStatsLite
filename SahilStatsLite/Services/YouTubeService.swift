@@ -17,7 +17,7 @@ import GoogleSignIn
 import Combine
 
 @MainActor
-class YouTubeService: ObservableObject {
+class YouTubeService: NSObject, ObservableObject {
     static let shared = YouTubeService()
 
     // State
@@ -26,20 +26,24 @@ class YouTubeService: ObservableObject {
     @Published var uploadProgress: Double = 0
     @Published var lastError: String?
 
-    // Settings
-    @Published var isEnabled: Bool {
-        didSet {
-            UserDefaults.standard.set(isEnabled, forKey: "youtubeUploadEnabled")
-        }
-    }
-
     private let keychainService = "com.narayan.SahilStats.youtube"
     private let accessTokenKey = "accessToken"
     private let refreshTokenKey = "refreshToken"
     private let tokenTimestampKey = "tokenTimestamp"
+    
+    // Background Session
+    private lazy var backgroundSession: URLSession = {
+        let config = URLSessionConfiguration.background(withIdentifier: "com.narayan.SahilStats.youtube.upload")
+        config.isDiscretionary = false // Start immediately
+        config.sessionSendsLaunchEvents = true
+        return URLSession(configuration: config, delegate: self, delegateQueue: nil)
+    }()
+    
+    // Track current upload task ID to match delegate callbacks
+    private var currentTaskID: Int?
 
-    private init() {
-        isEnabled = UserDefaults.standard.bool(forKey: "youtubeUploadEnabled")
+    private override init() {
+        super.init()
         checkAuthorization()
     }
 
@@ -94,57 +98,40 @@ class YouTubeService: ObservableObject {
 
     // MARK: - Upload
 
-    func uploadVideo(url: URL, title: String, description: String) async -> String? {
-        guard isEnabled && isAuthorized else {
-            debugPrint("📺 YouTube upload skipped (enabled: \(isEnabled), authorized: \(isAuthorized))")
-            return nil
+    func uploadVideo(url: URL, title: String, description: String) async {
+        guard isAuthorized else {
+            debugPrint("📺 YouTube upload skipped (not authorized)")
+            return
         }
 
         guard FileManager.default.fileExists(atPath: url.path) else {
             debugPrint("📺 Video file not found: \(url.path)")
             lastError = "Video file not found"
-            return nil
+            return
         }
 
         isUploading = true
         uploadProgress = 0
         lastError = nil
 
-        defer {
+        do {
+            let accessToken = try await getFreshAccessToken()
+            
+            // Step 1: Initialize Resumable Upload (Foreground - fast)
+            let fileSize = try FileManager.default.attributesOfItem(atPath: url.path)[.size] as! Int
+            let uploadURL = try await initializeUpload(title: title, description: description, accessToken: accessToken, fileSize: fileSize)
+            
+            // Step 2: Start Background Upload
+            startBackgroundUpload(fileURL: url, uploadURL: uploadURL)
+            
+        } catch {
+            debugPrint("📺 Upload failed to start: \(error.localizedDescription)")
+            lastError = error.localizedDescription
             isUploading = false
-            uploadProgress = 0
         }
-
-        // Retry up to 3 times
-        for attempt in 1...3 {
-            do {
-                let videoId = try await performUpload(url: url, title: title, description: description)
-                debugPrint("📺 YouTube upload success: \(videoId)")
-                return videoId
-            } catch {
-                debugPrint("📺 Upload attempt \(attempt) failed: \(error.localizedDescription)")
-                if attempt == 3 {
-                    lastError = error.localizedDescription
-                } else {
-                    // Wait before retry
-                    try? await Task.sleep(nanoseconds: 2_000_000_000)
-                }
-            }
-        }
-
-        return nil
     }
 
-    private func performUpload(url videoURL: URL, title: String, description: String) async throws -> String {
-        let accessToken = try await getFreshAccessToken()
-
-        uploadProgress = 0.1
-
-        // Get file size
-        let fileSize = try FileManager.default.attributesOfItem(atPath: videoURL.path)[.size] as! Int
-        debugPrint("📺 Video size: \(fileSize / 1_000_000) MB")
-
-        // Create resumable upload session
+    private func initializeUpload(title: String, description: String, accessToken: String, fileSize: Int) async throws -> URL {
         let metadata: [String: Any] = [
             "snippet": [
                 "title": title,
@@ -158,46 +145,39 @@ class YouTubeService: ObservableObject {
 
         let metadataJSON = try JSONSerialization.data(withJSONObject: metadata)
 
-        var initRequest = URLRequest(url: URL(string: "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status")!)
-        initRequest.httpMethod = "POST"
-        initRequest.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
-        initRequest.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
-        initRequest.setValue("\(fileSize)", forHTTPHeaderField: "X-Upload-Content-Length")
-        initRequest.setValue("video/*", forHTTPHeaderField: "X-Upload-Content-Type")
-        initRequest.httpBody = metadataJSON
+        var request = URLRequest(url: URL(string: "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status")!)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
+        request.setValue("\(fileSize)", forHTTPHeaderField: "X-Upload-Content-Length")
+        request.setValue("video/*", forHTTPHeaderField: "X-Upload-Content-Type")
+        request.httpBody = metadataJSON
 
-        uploadProgress = 0.2
+        let (_, response) = try await URLSession.shared.data(for: request)
 
-        let (_, initResponse) = try await URLSession.shared.data(for: initRequest)
-
-        guard let httpResponse = initResponse as? HTTPURLResponse,
-              let uploadURL = httpResponse.value(forHTTPHeaderField: "Location") else {
-            throw YouTubeError.uploadFailed("Failed to get upload URL (status: \((initResponse as? HTTPURLResponse)?.statusCode ?? 0))")
+        guard let httpResponse = response as? HTTPURLResponse,
+              let location = httpResponse.value(forHTTPHeaderField: "Location"),
+              let uploadURL = URL(string: location) else {
+            throw YouTubeError.uploadFailed("Failed to get upload URL")
         }
+        
+        return uploadURL
+    }
+    
+    private func startBackgroundUpload(fileURL: URL, uploadURL: URL) {
+        var request = URLRequest(url: uploadURL)
+        request.httpMethod = "PUT"
+        request.setValue("video/*", forHTTPHeaderField: "Content-Type")
+        
+        let task = backgroundSession.uploadTask(with: request, fromFile: fileURL)
+        currentTaskID = task.taskIdentifier
+        task.resume()
+        debugPrint("📺 Background upload task started (ID: \(task.taskIdentifier))")
+    }
 
-        uploadProgress = 0.3
-
-        // Upload the video file
-        var uploadRequest = URLRequest(url: URL(string: uploadURL)!)
-        uploadRequest.httpMethod = "PUT"
-        uploadRequest.setValue("video/*", forHTTPHeaderField: "Content-Type")
-
-        let (data, response) = try await URLSession.shared.upload(for: uploadRequest, fromFile: videoURL)
-
-        uploadProgress = 0.9
-
-        guard let uploadResponse = response as? HTTPURLResponse, uploadResponse.statusCode == 200 else {
-            let statusCode = (response as? HTTPURLResponse)?.statusCode ?? 0
-            throw YouTubeError.uploadFailed("Upload failed (status: \(statusCode))")
-        }
-
-        let json = try JSONSerialization.jsonObject(with: data) as? [String: Any]
-        guard let videoId = json?["id"] as? String else {
-            throw YouTubeError.uploadFailed("No video ID in response")
-        }
-
-        uploadProgress = 1.0
-        return videoId
+    private func performUpload(url videoURL: URL, title: String, description: String) async throws -> String {
+        // Legacy method - replaced by background flow
+        return ""
     }
 
     // MARK: - Token Management
@@ -316,6 +296,47 @@ class YouTubeService: ObservableObject {
         ]
 
         SecItemDelete(query as CFDictionary)
+    }
+}
+
+// MARK: - URLSessionTaskDelegate
+
+extension YouTubeService: URLSessionDelegate, URLSessionTaskDelegate, URLSessionDataDelegate {
+    
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didSendBodyData bytesSent: Int64, totalBytesSent: Int64, totalBytesExpectedToSend: Int64) {
+        let progress = Double(totalBytesSent) / Double(totalBytesExpectedToSend)
+        Task { @MainActor in
+            self.uploadProgress = progress
+        }
+    }
+    
+    nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        Task { @MainActor in
+            self.isUploading = false
+            if let error = error {
+                debugPrint("📺 Background upload failed: \(error.localizedDescription)")
+                self.lastError = error.localizedDescription
+            } else {
+                debugPrint("📺 Background upload completed successfully")
+                self.uploadProgress = 1.0
+            }
+        }
+    }
+    
+    nonisolated func urlSession(_ session: URLSession, dataTask: URLSessionDataTask, didReceive data: Data) {
+        // Parse response to get Video ID
+        if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+           let videoId = json["id"] as? String {
+            debugPrint("📺 YouTube Video ID: \(videoId)")
+            // TODO: Update game status with video ID
+        }
+    }
+    
+    // Required for background sessions
+    nonisolated func urlSessionDidFinishEvents(forBackgroundURLSession session: URLSession) {
+        Task { @MainActor in
+            // Call completion handler if stored from AppDelegate
+        }
     }
 }
 

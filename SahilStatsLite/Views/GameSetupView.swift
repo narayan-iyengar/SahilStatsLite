@@ -172,6 +172,12 @@ struct GameSetupView: View {
         .onAppear {
             // Load teams from UserDefaults
             loadTeams()
+            
+            // Load default half length
+            let savedHalfLength = UserDefaults.standard.integer(forKey: "defaultHalfLength")
+            if savedHalfLength > 0 {
+                halfLength = savedHalfLength
+            }
 
             // Pre-fill from calendar if available
             if let pending = appState.pendingCalendarGame {
@@ -243,6 +249,9 @@ struct GameSetupView: View {
     }
 
     private func startGame() {
+        // Save preferences
+        UserDefaults.standard.set(halfLength, forKey: "defaultHalfLength")
+        
         var game = Game(
             opponent: opponent,
             teamName: selectedTeam,

@@ -52,6 +52,10 @@ struct Game: Identifiable, Codable {
     // Timestamps
     var createdAt: Date = Date()
     var completedAt: Date?
+    
+    // Cloud Status
+    var youtubeStatus: YouTubeStatus = .local
+    var youtubeVideoId: String?
 
     init(opponent: String, teamName: String = "Wildcats", location: String? = nil) {
         self.id = UUID().uuidString
@@ -64,7 +68,7 @@ struct Game: Identifiable, Codable {
     /// Full initializer for Firebase sync
     init(id: String, opponent: String, teamName: String, location: String?, date: Date,
          myScore: Int, opponentScore: Int, halfLength: Int, currentHalf: Int, totalHalves: Int,
-         playerStats: PlayerStats, createdAt: Date) {
+         playerStats: PlayerStats, createdAt: Date, youtubeStatus: YouTubeStatus = .local, youtubeVideoId: String? = nil) {
         self.id = id
         self.opponent = opponent
         self.teamName = teamName
@@ -77,6 +81,8 @@ struct Game: Identifiable, Codable {
         self.totalHalves = totalHalves
         self.playerStats = playerStats
         self.createdAt = createdAt
+        self.youtubeStatus = youtubeStatus
+        self.youtubeVideoId = youtubeVideoId
     }
 
     // MARK: - Computed Properties
@@ -106,6 +112,15 @@ struct Game: Identifiable, Codable {
     var displayTitle: String {
         "vs \(opponent)"
     }
+}
+
+// MARK: - YouTube Status
+
+enum YouTubeStatus: String, Codable, Equatable {
+    case local      // On device only
+    case uploading  // Currently uploading
+    case uploaded   // Success
+    case failed     // Upload failed
 }
 
 // MARK: - Player Stats (Sahil)

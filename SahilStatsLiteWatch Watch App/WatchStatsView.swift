@@ -2,23 +2,19 @@
 //  WatchStatsView.swift
 //  SahilStatsLiteWatch
 //
-//  PURPOSE: Individual player stats tracking (Sahil). Shooting stats with
-//           large MAKE/MISS buttons (2PT, 3PT, FT pill selector). Swipe
-//           left for other stats (AST, REB, STL, BLK, TO, PF). Jony Ive
-//           design: generous 80pt touch targets, haptic feedback.
-//  KEY TYPES: WatchStatsView, ShotType
+//  PURPOSE: "Stat Entry" screen (Shooting). Tracks Points, 2PT/3PT/FT,
+//           and Make/Miss. Large touch targets for easy entry.
+//           Designed for vertical paging navigation.
+//  KEY TYPES: WatchShootingStatsView, ShotType
 //  DEPENDS ON: WatchConnectivityClient
-//
-//  NOTE: Keep this header updated when modifying this file.
 //
 
 import SwiftUI
 import WatchKit
 
-struct WatchStatsView: View {
+struct WatchShootingStatsView: View {
     @EnvironmentObject var connectivity: WatchConnectivityClient
     @State private var selectedShotType: ShotType = .twoPoint
-    @State private var showOtherStats: Bool = false
 
     enum ShotType: String, CaseIterable {
         case twoPoint = "2PT"
@@ -47,33 +43,6 @@ struct WatchStatsView: View {
     }
 
     var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-
-            if showOtherStats {
-                otherStatsView
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            } else {
-                shootingView
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-            }
-        }
-        .animation(.easeInOut(duration: 0.25), value: showOtherStats)
-        .gesture(
-            DragGesture(minimumDistance: 30)
-                .onEnded { value in
-                    if value.translation.width < -30 {
-                        showOtherStats = true
-                    } else if value.translation.width > 30 {
-                        showOtherStats = false
-                    }
-                }
-        )
-    }
-
-    // MARK: - Shooting View (Main)
-
-    private var shootingView: some View {
         VStack(spacing: 0) {
             // Points header
             HStack {
@@ -89,7 +58,7 @@ struct WatchStatsView: View {
                     .foregroundColor(.white.opacity(0.6))
             }
             .padding(.horizontal, 12)
-            .padding(.top, 8)
+            .padding(.top, 4)
 
             // Shot type selector - pill style
             HStack(spacing: 0) {
@@ -162,87 +131,8 @@ struct WatchStatsView: View {
             }
             .frame(height: 80)
             .padding(.horizontal, 8)
-
-            // Swipe hint
-            HStack(spacing: 4) {
-                Text("More stats")
-                    .font(.system(size: 9, weight: .medium))
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 8, weight: .semibold))
-            }
-            .foregroundColor(.white.opacity(0.3))
-            .padding(.top, 8)
-            .padding(.bottom, 6)
+            .padding(.bottom, 8)
         }
-    }
-
-    // MARK: - Other Stats View
-
-    private var otherStatsView: some View {
-        VStack(spacing: 8) {
-            // Back hint
-            HStack(spacing: 4) {
-                Image(systemName: "chevron.left")
-                    .font(.system(size: 8, weight: .semibold))
-                Text("Shooting")
-                    .font(.system(size: 9, weight: .medium))
-                Spacer()
-            }
-            .foregroundColor(.white.opacity(0.3))
-            .padding(.horizontal, 12)
-            .padding(.top, 8)
-
-            // Stats grid - 2x3 layout with big buttons
-            LazyVGrid(columns: [
-                GridItem(.flexible(), spacing: 8),
-                GridItem(.flexible(), spacing: 8),
-                GridItem(.flexible(), spacing: 8)
-            ], spacing: 8) {
-                statTile("AST", connectivity.assists, .green) {
-                    connectivity.updateStat("assists", value: 1)
-                }
-                statTile("REB", connectivity.rebounds, .orange) {
-                    connectivity.updateStat("rebounds", value: 1)
-                }
-                statTile("STL", connectivity.steals, .cyan) {
-                    connectivity.updateStat("steals", value: 1)
-                }
-                statTile("BLK", connectivity.blocks, .purple) {
-                    connectivity.updateStat("blocks", value: 1)
-                }
-                statTile("TO", connectivity.turnovers, .red) {
-                    connectivity.updateStat("turnovers", value: 1)
-                }
-                statTile("PF", 0, .gray) {
-                    // Fouls - placeholder
-                }
-            }
-            .padding(.horizontal, 8)
-
-            Spacer()
-        }
-    }
-
-    // MARK: - Stat Tile
-
-    private func statTile(_ label: String, _ value: Int, _ color: Color, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 2) {
-                Text("\(value)")
-                    .font(.system(size: 22, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                Text(label)
-                    .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(color)
-            }
-            .frame(maxWidth: .infinity)
-            .frame(height: 52)
-            .background(
-                RoundedRectangle(cornerRadius: 12)
-                    .fill(color.opacity(0.2))
-            )
-        }
-        .buttonStyle(.plain)
     }
 
     // MARK: - Actions
@@ -271,14 +161,7 @@ struct WatchStatsView: View {
     }
 }
 
-#Preview("Stats — 45mm") {
-    WatchConnectivityClient.configureForPreview()
-    return WatchStatsView()
-        .environmentObject(WatchConnectivityClient.shared)
-}
-
-#Preview("Stats — 49mm") {
-    WatchConnectivityClient.configureForPreview()
-    return WatchStatsView()
+#Preview {
+    WatchShootingStatsView()
         .environmentObject(WatchConnectivityClient.shared)
 }

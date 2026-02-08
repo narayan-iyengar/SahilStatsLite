@@ -59,6 +59,9 @@ class PersonClassifier {
 
     /// Court bounds (learned from heat map, updated dynamically)
     var courtBounds: CGRect = CGRect(x: 0.05, y: 0.10, width: 0.90, height: 0.60)
+    
+    /// Explicit court geometry from calibration (takes precedence over heat map)
+    var courtGeometry: CourtGeometry?
 
     // MARK: - Rolling Statistics
 
@@ -129,8 +132,15 @@ class PersonClassifier {
     private func classifyPerson(observation: VNHumanObservation, in image: CGImage, pixelData: [UInt8]?) -> ClassifiedPerson {
         let box = observation.boundingBox
 
-        // 1. Check if on court (within heat map bounds)
-        let isOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.midY))
+        // 1. Check if on court
+        // Priority: Explicit Geometry > Implicit Heat Map
+        let center = CGPoint(x: box.midX, y: box.midY)
+        let isOnCourt: Bool
+        if let geometry = courtGeometry {
+            isOnCourt = geometry.contains(center)
+        } else {
+            isOnCourt = courtBounds.contains(center)
+        }
 
         // 2. Check for ref jersey (striped pattern)
         let (isRef, refConfidence) = checkForRefJersey(in: image, box: box, pixelData: pixelData)
@@ -510,6 +520,11 @@ class PersonClassifier {
             let p25Index = sorted.count / 4
             baselineKidHeight = sorted[p25Index]
         }
+    }
+
+    func updateCourtGeometry(_ geometry: CourtGeometry) {
+        self.courtGeometry = geometry
+        debugPrint("🏀 [PersonClassifier] Updated court geometry from calibration")
     }
 
     // MARK: - Court Bounds Update

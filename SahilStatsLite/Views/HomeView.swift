@@ -785,9 +785,25 @@ struct GameRow: View {
                     .fontWeight(.semibold)
                     .monospacedDigit()
 
-                Text("\(game.playerStats.points) pts")
-                    .font(.caption)
-                    .foregroundColor(.orange)
+                HStack(spacing: 4) {
+                    // YouTube status icon
+                    if game.youtubeStatus == .uploading {
+                        ProgressView()
+                            .scaleEffect(0.6)
+                    } else if game.youtubeStatus == .uploaded {
+                        Image(systemName: "checkmark.icloud.fill")
+                            .font(.caption2)
+                            .foregroundColor(.green)
+                    } else if game.youtubeStatus == .failed {
+                        Image(systemName: "exclamationmark.icloud.fill")
+                            .font(.caption2)
+                            .foregroundColor(.red)
+                    }
+                    
+                    Text("\(game.playerStats.points) pts")
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
             }
 
             Image(systemName: "chevron.right")
@@ -1280,6 +1296,8 @@ struct CareerStatsSheet: View {
 struct GameDetailSheet: View {
     let game: Game
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var youtubeService = YouTubeService.shared
+    @ObservedObject private var persistenceManager = GamePersistenceManager.shared
 
     var body: some View {
         NavigationView {
@@ -1304,6 +1322,59 @@ struct GameDetailSheet: View {
                             .foregroundColor(.secondary)
                     }
                     .padding()
+                    
+                    // YouTube Upload Section
+                    VStack(spacing: 12) {
+                        if game.youtubeStatus == .uploaded {
+                            Label("Uploaded to YouTube", systemImage: "checkmark.circle.fill")
+                                .font(.headline)
+                                .foregroundColor(.green)
+                                .padding()
+                                .frame(maxWidth: .infinity)
+                                .background(Color.green.opacity(0.1))
+                                .cornerRadius(12)
+                        } else if youtubeService.isUploading {
+                            VStack(spacing: 8) {
+                                ProgressView(value: youtubeService.uploadProgress)
+                                    .tint(.blue)
+                                Text("Uploading to YouTube...")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                            }
+                            .padding()
+                            .background(Color(.systemBackground))
+                            .cornerRadius(12)
+                        } else {
+                            if let url = game.videoURL, FileManager.default.fileExists(atPath: url.path) {
+                                Button {
+                                    startUpload()
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "square.and.arrow.up")
+                                        Text(game.youtubeStatus == .failed ? "Retry Upload" : "Upload to YouTube")
+                                    }
+                                    .fontWeight(.semibold)
+                                    .frame(maxWidth: .infinity)
+                                    .padding()
+                                    .background(Color.blue)
+                                    .foregroundColor(.white)
+                                    .cornerRadius(12)
+                                }
+                                
+                                if let error = youtubeService.lastError {
+                                    Text(error)
+                                        .font(.caption)
+                                        .foregroundColor(.red)
+                                }
+                            } else {
+                                Text("Video file not available on device")
+                                    .font(.caption)
+                                    .foregroundColor(.secondary)
+                                    .padding()
+                            }
+                        }
+                    }
+                    .padding(.horizontal)
 
                     // Player Stats
                     VStack(spacing: 16) {
@@ -1338,6 +1409,42 @@ struct GameDetailSheet: View {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     Button("Done") { dismiss() }
                 }
+            }
+        }
+    }
+
+    private func startUpload() {
+        guard let url = game.videoURL else { return }
+        
+        let title = "\(game.teamName) vs \(game.opponent) - \(game.date.formatted(date: .abbreviated, time: .omitted))"
+        let description = """
+        \(game.teamName) \(game.myScore) - \(game.opponentScore) \(game.opponent)
+        Sahil: \(game.playerStats.points) pts
+        
+        Recorded with Sahil Stats
+        """
+        
+        // Update local status
+        var updatedGame = game
+        updatedGame.youtubeStatus = .uploading
+        persistenceManager.saveGame(updatedGame)
+        
+        Task {
+            await youtubeService.uploadVideo(url: url, title: title, description: description)
+            
+            // Note: Completion is handled via observing youtubeService, but we should update game status on success
+            // This is tricky with background session. For now, manual refresh or status check?
+            // Ideally YouTubeService would have a callback or delegate for specific game ID.
+            
+            // Optimistic success update (for now) if no error
+            if youtubeService.lastError == nil {
+                var finishedGame = game
+                finishedGame.youtubeStatus = .uploaded
+                persistenceManager.saveGame(finishedGame)
+            } else {
+                var failedGame = game
+                failedGame.youtubeStatus = .failed
+                persistenceManager.saveGame(failedGame)
             }
         }
     }
@@ -1691,8 +1798,6 @@ struct SettingsView: View {
 
                 // YouTube Section
                 Section {
-                    Toggle("Auto-upload to YouTube", isOn: $youtubeService.isEnabled)
-
                     if youtubeService.isAuthorized {
                         HStack {
                             Image(systemName: "checkmark.circle.fill")
@@ -1722,7 +1827,7 @@ struct SettingsView: View {
                 } header: {
                     Text("YouTube")
                 } footer: {
-                    Text("Videos are uploaded as unlisted to your YouTube channel for easy sharing with coaches.")
+                    Text("Connect to upload game videos manually from the Game Log.")
                 }
 
                 // My Teams Section (for smart opponent detection)

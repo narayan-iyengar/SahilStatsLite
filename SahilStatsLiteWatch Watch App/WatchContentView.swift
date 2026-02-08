@@ -22,15 +22,20 @@ struct WatchContentView: View {
     var body: some View {
         Group {
             if connectivity.hasActiveGame {
-                // Game in progress - show scoring interface
+                // Game in progress - show scoring interface with 3 vertical pages
+                // Use Digital Crown to scroll: Scoring -> Shooting -> Details
                 TabView(selection: $selectedTab) {
                     WatchScoringView()
                         .environmentObject(connectivity)
                         .tag(0)
 
-                    WatchStatsView()
+                    WatchShootingStatsView()
                         .environmentObject(connectivity)
                         .tag(1)
+                    
+                    WatchOtherStatsView()
+                        .environmentObject(connectivity)
+                        .tag(2)
                 }
                 .tabViewStyle(.verticalPage)
             } else {
