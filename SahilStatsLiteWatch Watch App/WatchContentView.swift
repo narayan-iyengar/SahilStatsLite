@@ -18,6 +18,7 @@ struct WatchContentView: View {
     @EnvironmentObject var connectivity: WatchConnectivityClient
     @State private var selectedTab: Int = 0
     @State private var showQuickGameConfirmation = false
+    @State private var showCalibrationRemote = false
 
     var body: some View {
         Group {
@@ -110,6 +111,8 @@ struct WatchContentView: View {
                                 .padding(.vertical, 4)
 
                             quickGameButton
+                            
+                            calibrationButton
                         }
                     }
                 }
@@ -117,6 +120,10 @@ struct WatchContentView: View {
             }
             .sheet(isPresented: $showQuickGameConfirmation) {
                 WatchQuickGameConfirmationView()
+                    .environmentObject(connectivity)
+            }
+            .sheet(isPresented: $showCalibrationRemote) {
+                WatchCalibrationView()
                     .environmentObject(connectivity)
             }
         }
@@ -194,6 +201,23 @@ struct WatchContentView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
             .background(Color.white.opacity(0.1))
+            .cornerRadius(16)
+        }
+        .buttonStyle(.plain)
+    }
+    
+    private var calibrationButton: some View {
+        Button(action: { showCalibrationRemote = true }) {
+            HStack(spacing: 6) {
+                Image(systemName: "scope")
+                    .font(.system(size: 12))
+                Text("Remote Calibration")
+                    .font(.system(size: 11, weight: .medium))
+            }
+            .foregroundColor(.green.opacity(0.7))
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Color.green.opacity(0.1))
             .cornerRadius(16)
         }
         .buttonStyle(.plain)

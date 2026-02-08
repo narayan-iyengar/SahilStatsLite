@@ -10,10 +10,17 @@
 //
 
 import SwiftUI
+import Combine
 
 struct CourtCalibrationView: View {
     @ObservedObject private var recordingManager = RecordingManager.shared
-    @Environment(\.dismiss) private var dismiss
+    @Binding var isPresented: Bool
+    
+    // Watch Connectivity
+    private let watchService = WatchConnectivityService.shared
+    
+    // Cancellables for Combine
+    @State private var cancellables = Set<AnyCancellable>()
     
     // Normalized coordinates (0.0 - 1.0)
     @State private var topLeft: CGPoint = CGPoint(x: 0.1, y: 0.2)
@@ -90,6 +97,12 @@ struct CourtCalibrationView: View {
                     Spacer()
                     
                     HStack(spacing: 20) {
+                        Button("Cancel") {
+                            isPresented = false
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.white)
+                        
                         Button("Reset") {
                             resetCorners()
                         }
@@ -98,7 +111,7 @@ struct CourtCalibrationView: View {
                         
                         Button("Save Court") {
                             saveCalibration()
-                            dismiss()
+                            isPresented = false
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.orange)
@@ -109,7 +122,56 @@ struct CourtCalibrationView: View {
         }
         .onAppear {
             loadSavedCalibration()
+            setupRemoteControl()
         }
+    }
+    
+    // MARK: - Remote Control
+    
+    private func setupRemoteControl() {
+        watchService.calibrationSubject
+            .receive(on: DispatchQueue.main)
+            .sink { command, value in
+                if command == "save" {
+                    saveCalibration()
+                    isPresented = false
+                } else if command == "selectCorner", let cornerName = value {
+                    switch cornerName {
+                    case "Top Left": activeHandle = .topLeft
+                    case "Top Right": activeHandle = .topRight
+                    case "Bottom Right": activeHandle = .bottomRight
+                    case "Bottom Left": activeHandle = .bottomLeft
+                    default: break
+                    }
+                }
+            }
+            .store(in: &cancellables)
+        
+        watchService.calibrationMoveSubject
+            .receive(on: DispatchQueue.main)
+            .sink { dx, dy in
+                let handle = activeHandle ?? .topLeft
+                
+                // Scale movement (adjust sensitivity as needed)
+                let moveX = CGFloat(dx) * 2.0
+                let moveY = CGFloat(dy) * 2.0
+                
+                switch handle {
+                case .topLeft:
+                    topLeft.x = (topLeft.x + moveX).clamped(to: 0...1)
+                    topLeft.y = (topLeft.y + moveY).clamped(to: 0...1)
+                case .topRight:
+                    topRight.x = (topRight.x + moveX).clamped(to: 0...1)
+                    topRight.y = (topRight.y + moveY).clamped(to: 0...1)
+                case .bottomRight:
+                    bottomRight.x = (bottomRight.x + moveX).clamped(to: 0...1)
+                    bottomRight.y = (bottomRight.y + moveY).clamped(to: 0...1)
+                case .bottomLeft:
+                    bottomLeft.x = (bottomLeft.x + moveX).clamped(to: 0...1)
+                    bottomLeft.y = (bottomLeft.y + moveY).clamped(to: 0...1)
+                }
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Helper Views
@@ -190,5 +252,5 @@ struct CourtCalibrationView: View {
 }
 
 #Preview {
-    CourtCalibrationView()
+    CourtCalibrationView(isPresented: .constant(true))
 }

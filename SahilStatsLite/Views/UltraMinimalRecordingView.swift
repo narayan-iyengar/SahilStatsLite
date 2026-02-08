@@ -316,7 +316,7 @@ struct UltraMinimalRecordingView: View {
             
             // Calibration Overlay
             if showCalibration {
-                CourtCalibrationView()
+                CourtCalibrationView(isPresented: $showCalibration)
                     .transition(.opacity)
                     .zIndex(100)
             }
@@ -335,6 +335,12 @@ struct UltraMinimalRecordingView: View {
         .persistentSystemOverlays(.hidden)
         .onReceive(NotificationCenter.default.publisher(for: UIDevice.orientationDidChangeNotification)) { _ in
             updateOrientationState()
+        }
+        .onReceive(watchService.calibrationSubject) { (command, value) in
+            if command == "open" {
+                debugPrint("📱 Received remote calibration request")
+                showCalibration = true
+            }
         }
         .task {
             initializeGameState()
@@ -1236,61 +1242,7 @@ struct UltraMinimalRecordingView: View {
                 
                 Divider()
                 
-                // Camera & Gimbal Controls (Manual Override)
-                if !appState.isStatsOnly {
-                    VStack(spacing: 12) {
-                        HStack {
-                            Text("Camera Control")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.secondary)
-                            Spacer()
-                        }
-                        
-                        HStack(spacing: 12) {
-                            // Skynet Toggle
-                            Button(action: {
-                                autoZoomManager.mode = autoZoomManager.mode == .auto ? .off : .auto
-                            }) {
-                                HStack(spacing: 6) {
-                                    Image(systemName: autoZoomManager.mode == .auto ? "brain.head.profile" : "brain.head.profile")
-                                    Text(autoZoomManager.mode == .auto ? "Skynet ON" : "Skynet OFF")
-                                }
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(autoZoomManager.mode == .auto ? .white : .secondary)
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 12)
-                                .background(autoZoomManager.mode == .auto ? Color.purple : Color.gray.opacity(0.2))
-                                .cornerRadius(8)
-                            }
-                            
-                            // Gimbal Mode
-                            Menu {
-                                Picker("Mode", selection: $gimbalManager.gimbalMode) {
-                                    ForEach(GimbalMode.allCases, id: \.self) { mode in
-                                        Label(mode.rawValue, systemImage: mode.icon).tag(mode)
-                                    }
-                                }
-                            } label: {
-                                HStack(spacing: 6) {
-                                    Image(systemName: gimbalManager.gimbalMode.icon)
-                                    Text(gimbalManager.gimbalMode.rawValue)
-                                    Image(systemName: "chevron.up.chevron.down")
-                                        .font(.caption2)
-                                }
-                                .font(.system(size: 12, weight: .bold))
-                                .foregroundColor(gimbalManager.gimbalMode == .track ? .white : .secondary)
-                                .padding(.vertical, 8)
-                                .padding(.horizontal, 12)
-                                .background(gimbalManager.gimbalMode == .track ? Color.green : Color.gray.opacity(0.2))
-                                .cornerRadius(8)
-                            }
-                        }
-                    }
-                    .padding(.bottom, 4)
-                }
-
-                Divider()
+                // Camera & Gimbal Controls (Manual Override) - Moved below Game Controls
 
                 // Game Controls
                 HStack(spacing: 10) {
@@ -1341,6 +1293,52 @@ struct UltraMinimalRecordingView: View {
                         .background(Color.red.opacity(0.1))
                         .cornerRadius(10)
                     }
+                }
+                
+                Divider()
+                
+                // Camera & Gimbal Controls (Manual Override)
+                if !appState.isStatsOnly {
+                    HStack(spacing: 12) {
+                        // Skynet Toggle
+                        Button(action: {
+                            autoZoomManager.mode = autoZoomManager.mode == .auto ? .off : .auto
+                        }) {
+                            HStack(spacing: 6) {
+                                Image(systemName: autoZoomManager.mode == .auto ? "brain.head.profile" : "brain.head.profile")
+                                Text(autoZoomManager.mode == .auto ? "Skynet ON" : "Skynet OFF")
+                            }
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(autoZoomManager.mode == .auto ? .white : .secondary)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .background(autoZoomManager.mode == .auto ? Color.purple : Color.gray.opacity(0.2))
+                            .cornerRadius(8)
+                        }
+                        
+                        // Gimbal Mode
+                        Menu {
+                            Picker("Mode", selection: $gimbalManager.gimbalMode) {
+                                ForEach(GimbalMode.allCases, id: \.self) { mode in
+                                    Label(mode.rawValue, systemImage: mode.icon).tag(mode)
+                                }
+                            }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: gimbalManager.gimbalMode.icon)
+                                Text(gimbalManager.gimbalMode.rawValue)
+                                Image(systemName: "chevron.up.chevron.down")
+                                    .font(.caption2)
+                            }
+                            .font(.system(size: 12, weight: .bold))
+                            .foregroundColor(gimbalManager.gimbalMode == .track ? .white : .secondary)
+                            .padding(.vertical, 8)
+                            .padding(.horizontal, 12)
+                            .background(gimbalManager.gimbalMode == .track ? Color.green : Color.gray.opacity(0.2))
+                            .cornerRadius(8)
+                        }
+                    }
+                    .padding(.top, 4)
                 }
             }
             .padding(18)
