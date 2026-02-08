@@ -131,6 +131,9 @@ class GamePersistenceManager: ObservableObject {
                 // But only if the local file actually exists
                 if let localURL = localGame.videoURL {
                     finalGame.videoURL = localURL
+                    debugPrint("✅ [Merge] Preserved URL for \(cloudGame.id)")
+                } else {
+                    debugPrint("⚠️ [Merge] Local game \(cloudGame.id) has NO URL")
                 }
                 
                 // Preserve duration
@@ -143,6 +146,8 @@ class GamePersistenceManager: ObservableObject {
                 if localGame.youtubeStatus == .uploading && finalGame.youtubeStatus == .local {
                     finalGame.youtubeStatus = .uploading
                 }
+            } else {
+                debugPrint("ℹ️ [Merge] New cloud game: \(cloudGame.id)")
             }
             
             mergedGames.append(finalGame)

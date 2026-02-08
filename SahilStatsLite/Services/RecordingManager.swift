@@ -361,6 +361,7 @@ class RecordingManager: NSObject, ObservableObject {
         // CRITICAL: Keep screen on during recording to prevent interruption
         UIApplication.shared.isIdleTimerDisabled = true
         debugPrint("📹 Screen auto-lock DISABLED for recording")
+        debugPrint("📹 startRecording COMPLETE. pendingOutputURL: \(outputURL.path)")
 
         // Start duration timer
         let startTime = Date()
@@ -656,18 +657,24 @@ extension RecordingManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCapt
 
         // Handle video frames
         if output === videoDataOutput {
-            guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+            guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else {
+                debugPrint("⚠️ Frame received but no pixel buffer")
+                return 
+            }
 
             // Lazily setup asset writer on first video frame to get actual dimensions
             if !isWriterConfigured {
                 let width = CVPixelBufferGetWidth(pixelBuffer)
                 let height = CVPixelBufferGetHeight(pixelBuffer)
 
-                guard let outputURL = pendingOutputURL else { return }
+                guard let outputURL = pendingOutputURL else { 
+                    debugPrint("⚠️ Frame received but pendingOutputURL is nil")
+                    return 
+                }
 
                 // Log frame info for debugging
                 let isLandscape = width > height
-                debugPrint("📹 First frame received: \(width)x\(height) (landscape: \(isLandscape))")
+                debugPrint("📹 First frame received: \(width)x\(height) (landscape: \(isLandscape)) at \(timestamp.seconds)s")
 
                 do {
                     try setupAssetWriter(outputURL: outputURL, width: width, height: height)

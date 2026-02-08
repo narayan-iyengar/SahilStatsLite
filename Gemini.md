@@ -2,9 +2,9 @@
 
 > **UPDATED (2026-02-06):** "Earth Shattering" Tracking & Workflow Overhaul.
 > 1. **Visual Re-ID:** Tracking now uses color histograms to ignore distractors (parents/refs).
-> 2. **Manual Workflow:** Zero friction recording. Auto-save to Photos. Manual YouTube upload from Game Log later.
-> 3. **Remote Calibration:** Use Watch D-Pad to mark court corners on iPhone AR view.
-> 4. **Robustness:** Fixed "Phantom Video" bug (empty files) and Watch Sync issues.
+> 2. **Jony Ive Workflow:** Record → Auto-Save to Photos → Manual Upload → Auto-Delete from App. No friction.
+> 3. **Watch on YouTube:** Direct link in Game Log after upload.
+> 4. **Robustness:** Fixed "Phantom Video" bug, Watch Sync, and Firebase Status Sync.
 
 ---
 
@@ -82,6 +82,9 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 2. **Calibration**: Use "Scope" (AR) to mark court corners. Use Watch Remote if phone is high up.
 3. **Game Recording**: Tap game clock to start. Video file recording begins. Skynet resets tracking momentum (keeps learned court bounds). Phone is a "dumb camera" from here.
 4. **After game**: Review in Game Log. Tap "Upload to YouTube" manually when ready.
+   - **Auto-Cleanup**: Once upload is confirmed success, local file is deleted to save space.
+   - **Backup**: Original recording remains in Photos app (user manages that).
+   - **Watch**: Direct "Watch on YouTube" link appears in Game Log.
 
 <h3>Settings vs Stats Separation</h3>
 - **Settings screen**: Skynet AI toggle, Gimbal mode, Team names
@@ -123,6 +126,8 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Watch Sync Fix**: Handshake ensures Watch picks up active game instantly.
 - [x] **Edit Game**: Fix stats/scores post-game via "Jony Ive" interactive tiles.
 - [x] **Video Recovery**: Import video from Photos if local file is missing.
+- [x] **Auto-Cleanup**: Delete local file after successful YouTube upload.
+- [x] **Firebase Sync**: YouTube status syncs correctly across devices.
 
 ---
 

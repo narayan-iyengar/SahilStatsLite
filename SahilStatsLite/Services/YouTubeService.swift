@@ -162,7 +162,7 @@ class YouTubeService: NSObject, ObservableObject {
                 "categoryId": "17" // Sports
             ],
             "status": [
-                "privacyStatus": "public"
+                "privacyStatus": "unlisted"
             ]
         ]
 
@@ -176,15 +176,28 @@ class YouTubeService: NSObject, ObservableObject {
         request.setValue("video/*", forHTTPHeaderField: "X-Upload-Content-Type")
         request.httpBody = metadataJSON
 
-        let (_, response) = try await URLSession.shared.data(for: request)
+        let (data, response) = try await URLSession.shared.data(for: request)
 
-        guard let httpResponse = response as? HTTPURLResponse,
-              let location = httpResponse.value(forHTTPHeaderField: "Location"),
-              let uploadURL = URL(string: location) else {
-            throw YouTubeError.uploadFailed("Failed to get upload URL")
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw YouTubeError.uploadFailed("Invalid response type")
         }
         
-        return uploadURL
+        if let location = httpResponse.value(forHTTPHeaderField: "Location"),
+           let uploadURL = URL(string: location) {
+            return uploadURL
+        } else {
+            let body = String(data: data, encoding: .utf8) ?? "No body"
+            debugPrint("❌ YouTube Init Failed: \(httpResponse.statusCode)")
+            debugPrint("❌ Body: \(body)")
+            
+            if body.contains("uploadLimitExceeded") {
+                throw YouTubeError.uploadFailed("Daily YouTube upload limit reached. Please wait 24 hours.")
+            } else if httpResponse.statusCode == 401 || httpResponse.statusCode == 403 {
+                throw YouTubeError.uploadFailed("YouTube permission denied. Please reconnect account.")
+            } else {
+                throw YouTubeError.uploadFailed("Upload failed (Server \(httpResponse.statusCode))")
+            }
+        }
     }
     
     private func startBackgroundUpload(fileURL: URL, uploadURL: URL) {

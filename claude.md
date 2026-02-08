@@ -1,35 +1,24 @@
-# Sahil Stats - Project Context
+# SahilStatsLite - Project Context
 
-> **UPDATED (2026-02-06):** "Earth Shattering" Tracking Update. Visual Re-ID (Color Histogram) now ignores distractions. Remote Court Calibration (Zone Mapping) via Watch D-Pad allows precise floor definition. Manual YouTube workflow (Background Session) replaces auto-upload anxiety.
+> **UPDATED (2026-02-06):** "Earth Shattering" Tracking & Workflow Overhaul.
+> 1. **Visual Re-ID:** Tracking now uses color histograms to ignore distractors (parents/refs).
+> 2. **Jony Ive Workflow:** Record → Auto-Save to Photos → Manual Upload → Auto-Delete from App. No friction.
+> 3. **Watch on YouTube:** Direct link in Game Log after upload.
+> 4. **Robustness:** Fixed "Phantom Video" bug, Watch Sync, and Firebase Status Sync.
 
 ---
 
 ## Team Roles
 
-**Narayan (Product Manager / End User)**
+**Narayan (Product Manager / Executive Decision Maker)**
 - Father of Sahil, a 3rd grader on AAU basketball teams
 - Owns Insta360 Flow Pro 2 gimbal and DJI Osmo Mobile 7P
-- Wants to record games and track stats for Sahil
-- Decision maker on features and UX
+- **Decision Maker**: Defines features, UX, and project direction.
 
-**Claude (Software Developer / Architect / Designer / ML Researcher)**
-- Kick-butt iOS app developer with deep knowledge of Swift and iOS frameworks
-- Works for Apple (in spirit) - knows AVFoundation, DockKit, Vision, Core ML, Camera Control like the back of hand
-- World-class developer, UX designer, user researcher, and all-around genius
-- Channels Jony Ive for interface design: simplicity, clarity, generous touch targets
-- **Channels top ML/Vision researchers**: Fei-Fei Li (ImageNet, human-centric vision), Kaiming He (ResNet, Mask R-CNN), Ross Girshick (R-CNN family, object detection), Yann LeCun (ConvNets), Andrej Karpathy (Tesla Autopilot, practical CV)
-- Deep knowledge of: object detection (YOLO, SSD, Faster R-CNN), pose estimation (OpenPose, MediaPipe), tracking (SORT, DeepSORT, ByteTrack), action recognition, attention mechanisms
-- Understands tradeoffs: accuracy vs latency, on-device vs cloud, real-time vs batch
-- Responsible for technical implementation
-- Makes architectural decisions
-- Writes clean, maintainable code
-- Proposes solutions, Narayan approves
-
-**Permissions:**
-- Claude has permission to make code changes without asking
-- Claude has permission to run shell commands (git, build, etc.) without asking
-- Claude should commit and push changes when completing features
-- Claude should update CLAUDE.md when significant changes are made
+**Claude (Lead Software Developer / Architect / Designer)**
+- Responsible for 100% of the technical implementation.
+- **Full Execution**: Writes complete, functional code. No placeholders.
+- Channels Jony Ive for UX (simplicity) and top ML researchers for AI tracking.
 
 ---
 
@@ -45,43 +34,31 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 5. **Calendar integration** for game scheduling
 6. **Firebase backend** for data persistence
 
-### Future Features (Post-MVP)
+<h3>Future Features (Post-MVP)</h3>
 - Post-game stat tagging for Sahil's individual plays
 - Highlight reel generation
 - Season stats and trends
 
-### Apple Watch Companion (WORKING)
+<h3>Apple Watch Companion (WORKING)</h3>
 - Watch app for remote scoring from sidelines
 - **Tap** score zones to add +1 point
 - **Swipe down** on score to subtract -1 (fix mistakes)
 - **Start game** from Watch when phone not accessible
+- **Remote Calibration**: Use Watch D-Pad to adjust court corners on Phone AR view.
 - Real-time two-way sync (phone ↔ watch)
 - End game directly from Watch
-- **Remote Calibration**: Use Watch D-Pad to adjust court corners on Phone AR view.
 
 ---
 
-## GitHub Repository
+<h2>GitHub Repository</h2>
 
 **Public repo**: https://github.com/narayan-iyengar/SahilStatsLite
 
 ---
 
-## Technical Decisions
+<h2>Technical Decisions</h2>
 
-### Keep from Existing App
-- `FirebaseService.swift` - Backend integration
-- `AuthService.swift` - Authentication
-- `GameCalendarManager.swift` - Calendar integration
-- `GimbalTrackingManager.swift` - DockKit auto-tracking
-
-### Build Fresh
-- New SwiftUI views (simpler, cleaner)
-- Simplified recording manager
-- New floating UI controls
-- Broadcast-style scoreboard overlay (ScoreCam-inspired)
-
-### Architecture
+<h3>Architecture</h3>
 - Target: ~15 files, ~3,000 lines
 - SwiftUI + SwiftData (or Firebase only)
 - Single device focus (no multi-device sync)
@@ -89,24 +66,25 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 
 ---
 
-## Hardware
-- **Phone**: iPhone 16 Pro Max (A18 Pro, 48MP main camera, 5x telephoto, 0.5x ultra-wide, Camera Control button, USB-C)
+<h2>Hardware</h2>
+- **Recording device**: iPhone 16 Pro Max
 - **Gimbal**: Insta360 Flow Pro 2 (DockKit compatible)
-- **Backup gimbal**: DJI Osmo Mobile 7P (not DockKit, future consideration)
-- **Watch (primary)**: Apple Watch Ultra 2 (49mm) in PodX Adventure Classic case
-- **Watch (backup)**: Apple Watch Series 8 (45mm) in TinyPod Standard case
+- **Watch**: Apple Watch Ultra 2 (49mm) / Series 8 (45mm)
 
 ---
 
-## UX Design Philosophy (Jony Ive Style)
+<h2>UX Design Philosophy (Jony Ive Style)</h2>
 
 **Core Principle:** "You're a parent watching your kid's game, not babysitting an app."
 
 <h3>Four-Phase Workflow</h3>
-1. **Setup**: Configure in Settings. Screen stays awake during warmup for tripod setup.
+1. **Setup**: Configure in Settings. Screen stays awake during warmup (`isIdleTimerDisabled`).
 2. **Calibration**: Use "Scope" (AR) to mark court corners. Use Watch Remote if phone is high up.
 3. **Game Recording**: Tap game clock to start. Video file recording begins. Skynet resets tracking momentum (keeps learned court bounds). Phone is a "dumb camera" from here.
 4. **After game**: Review in Game Log. Tap "Upload to YouTube" manually when ready.
+   - **Auto-Cleanup**: Once upload is confirmed success, local file is deleted to save space.
+   - **Backup**: Original recording remains in Photos app (user manages that).
+   - **Watch**: Direct "Watch on YouTube" link appears in Game Log.
 
 <h3>Settings vs Stats Separation</h3>
 - **Settings screen**: Skynet AI toggle, Gimbal mode, Team names
@@ -146,16 +124,10 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Watch Remote Calibration**: Adjust phone view from wrist.
 - [x] **Manual YouTube Upload**: Background URLSession for reliable "put in pocket" uploads.
 - [x] **Watch Sync Fix**: Handshake ensures Watch picks up active game instantly.
-
-<h3>4K Record / SD AI Architecture</h3>
-
-We use a "Smart Asymmetry" approach to balance quality and performance:
-- **Recording**: 4K (3840x2160) for maximum memory quality.
-- **AI Processing**: SD (640x360) for maximum intelligence.
-- **Benefits**:
-    - **Higher Detection Rates**: Vision API performs better on standardized lower resolutions.
-    - **Thermal Efficiency**: Processing 90% fewer pixels in the AI path keeps the phone cooler.
-    - **Real-time Performance**: Ensures 60fps recording isn't interrupted by heavy ML tasks.
+- [x] **Edit Game**: Fix stats/scores post-game via "Jony Ive" interactive tiles.
+- [x] **Video Recovery**: Import video from Photos if local file is missing.
+- [x] **Auto-Cleanup**: Delete local file after successful YouTube upload.
+- [x] **Firebase Sync**: YouTube status syncs correctly across devices.
 
 ---
 
@@ -166,6 +138,7 @@ We use a "Smart Asymmetry" approach to balance quality and performance:
 - **New Default: 4K (3840x2160)** for maximum quality
 - Real-time burned-in scoreboard overlay
 - Async `stopRecordingAndWait()` ensures file is fully written before processing
+- Checks `isWriterConfigured` to prevent saving "phantom" videos (0 frames).
 
 <h3>Video Orientation Handling (ScoreCam Pattern)</h3>
 **RecordingManager.swift** uses `UIWindowScene.interfaceOrientation` to set `videoRotationAngle` on the connection BEFORE recording.
@@ -204,7 +177,8 @@ SahilStatsLite/SahilStatsLite/              ← Git repo root
 │   │   ├── AuthView.swift                   # Firebase sign-in + sync controls
 │   │   ├── AILabView.swift                  # AI lab: test Skynet pipeline on recorded videos
 │   │   ├── SkynetTestView.swift             # Standalone Skynet test UI (pick video, run pipeline)
-│   │   └── CourtCalibrationView.swift       # AR interface for manual court mapping
+│   │   ├── CourtCalibrationView.swift       # AR interface for manual court mapping
+│   │   └── EditGameView.swift               # Interactive stat editor
 │   ├── Services/
 │   │   ├── RecordingManager.swift           # AVFoundation 4K capture, frame callbacks for AI
 │   │   ├── AutoZoomManager.swift            # Skynet orchestrator (zoom, pan, timeout detection)
