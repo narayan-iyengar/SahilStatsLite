@@ -36,6 +36,10 @@ struct FirebaseGame: Codable {
     var numQuarter: Int
     var status: String // "final"
 
+    // MARK: - YouTube
+    var youtubeStatus: String?
+    var youtubeVideoId: String?
+
     // MARK: - Player Stats (main app uses short field names)
     var points: Int
     var fg2m: Int
@@ -61,6 +65,7 @@ struct FirebaseGame: Codable {
         case id, teamName, opponent, location, season
         case myTeamScore, opponentScore, outcome
         case gameFormat, quarterLength, numQuarter, status
+        case youtubeStatus, youtubeVideoId
         case points, fg2m, fg2a, fg3m, fg3a, ftm, fta
         case rebounds, assists, steals, blocks, fouls, turnovers
         case timestamp, createdAt
@@ -98,6 +103,10 @@ struct FirebaseGame: Codable {
         quarterLength = try container.decodeIfPresent(Int.self, forKey: .quarterLength) ?? 18
         numQuarter = try container.decodeIfPresent(Int.self, forKey: .numQuarter) ?? 2
         status = try container.decodeIfPresent(String.self, forKey: .status) ?? "final"
+
+        // YouTube
+        youtubeStatus = try container.decodeIfPresent(String.self, forKey: .youtubeStatus)
+        youtubeVideoId = try container.decodeIfPresent(String.self, forKey: .youtubeVideoId)
 
         // Player stats - default to 0 if missing
         points = try container.decodeIfPresent(Int.self, forKey: .points) ?? 0
@@ -206,6 +215,10 @@ struct FirebaseGame: Codable {
         self.numQuarter = game.totalHalves
         self.status = "final"
 
+        // YouTube
+        self.youtubeStatus = game.youtubeStatus.rawValue
+        self.youtubeVideoId = game.youtubeVideoId
+
         // Map player stats (Lite uses long names, Firebase uses short)
         let stats = game.playerStats
         self.points = stats.points
@@ -255,7 +268,9 @@ struct FirebaseGame: Codable {
                 turnovers: turnovers,
                 fouls: fouls
             ),
-            createdAt: createdAt ?? Date()
+            createdAt: createdAt ?? Date(),
+            youtubeStatus: YouTubeStatus(rawValue: youtubeStatus ?? "local") ?? .local,
+            youtubeVideoId: youtubeVideoId
         )
     }
 
@@ -272,6 +287,8 @@ struct FirebaseGame: Codable {
             "quarterLength": quarterLength,
             "numQuarter": numQuarter,
             "status": status,
+            "youtubeStatus": youtubeStatus ?? "local",
+            "youtubeVideoId": youtubeVideoId as Any,
             "points": points,
             "fg2m": fg2m,
             "fg2a": fg2a,
