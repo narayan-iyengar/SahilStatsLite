@@ -26,6 +26,9 @@ class YouTubeService: NSObject, ObservableObject {
     @Published var uploadProgress: Double = 0
     @Published var lastError: String?
     @Published var currentUploadingGameID: String?
+    
+    // Callback for completion (GameID, Success)
+    var onUploadCompleted: ((String, Bool) -> Void)?
 
     private let keychainService = "com.narayan.SahilStats.youtube"
     private let accessTokenKey = "accessToken"
@@ -330,14 +333,22 @@ extension YouTubeService: URLSessionDelegate, URLSessionTaskDelegate, URLSession
     
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         Task { @MainActor in
+            let gameID = self.currentUploadingGameID
             self.isUploading = false
             self.currentUploadingGameID = nil
+            
             if let error = error {
                 debugPrint("📺 Background upload failed: \(error.localizedDescription)")
                 self.lastError = error.localizedDescription
+                if let id = gameID {
+                    self.onUploadCompleted?(id, false)
+                }
             } else {
                 debugPrint("📺 Background upload completed successfully")
                 self.uploadProgress = 1.0
+                if let id = gameID {
+                    self.onUploadCompleted?(id, true)
+                }
             }
         }
     }

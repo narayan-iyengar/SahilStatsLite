@@ -36,6 +36,41 @@ class GamePersistenceManager: ObservableObject {
     private init() {
         loadGames()
         setupFirebaseSync()
+        setupYouTubeListener()
+    }
+    
+    private func setupYouTubeListener() {
+        YouTubeService.shared.onUploadCompleted = { [weak self] gameID, success in
+            self?.handleUploadCompletion(gameID: gameID, success: success)
+        }
+    }
+    
+    private func handleUploadCompletion(gameID: String, success: Bool) {
+        guard let index = savedGames.firstIndex(where: { $0.id == gameID }) else { return }
+        var game = savedGames[index]
+        
+        if success {
+            debugPrint("✅ [Persistence] Upload success for game \(gameID). Starting auto-cleanup.")
+            game.youtubeStatus = .uploaded
+            
+            // AUTO-CLEANUP: Delete local file to save space (Jony Ive style)
+            if let url = game.videoURL {
+                do {
+                    if fileManager.fileExists(atPath: url.path) {
+                        try fileManager.removeItem(at: url)
+                        debugPrint("🗑️ [Auto-Cleanup] Deleted local video: \(url.path)")
+                    }
+                    game.videoURL = nil // Clear the link
+                } catch {
+                    debugPrint("⚠️ [Auto-Cleanup] Failed to delete file: \(error)")
+                }
+            }
+        } else {
+            debugPrint("❌ [Persistence] Upload failed for game \(gameID).")
+            game.youtubeStatus = .failed
+        }
+        
+        saveGame(game)
     }
 
     // MARK: - Firebase Sync Setup
