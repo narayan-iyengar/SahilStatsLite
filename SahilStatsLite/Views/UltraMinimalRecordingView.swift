@@ -1068,7 +1068,10 @@ struct UltraMinimalRecordingView: View {
                 }
 
                 // Save to persistence
-                if let game = appState.currentGame {
+                if var game = appState.currentGame {
+                    game.videoURL = videoURL
+                    game.completedAt = Date()
+                    debugPrint("📹 Saving game with URL: \(videoURL?.lastPathComponent ?? "nil")")
                     persistenceManager.saveGame(game)
                 }
 

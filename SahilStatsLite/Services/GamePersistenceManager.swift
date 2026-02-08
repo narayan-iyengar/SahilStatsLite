@@ -189,6 +189,8 @@ class GamePersistenceManager: ObservableObject {
     func saveGame(_ game: Game) {
         var games = savedGames
 
+        debugPrint("[GamePersistence] saving game \(game.id). URL: \(game.videoURL?.lastPathComponent ?? "nil")")
+
         // Update existing or add new
         if let index = games.firstIndex(where: { $0.id == game.id }) {
             games[index] = game
@@ -229,6 +231,18 @@ class GamePersistenceManager: ObservableObject {
     // MARK: - Delete
 
     func deleteGame(_ game: Game) {
+        // CLEANUP: Delete local video file if it exists
+        if let url = game.videoURL {
+            do {
+                if fileManager.fileExists(atPath: url.path) {
+                    try fileManager.removeItem(at: url)
+                    debugPrint("🗑️ Deleted local video for game \(game.id)")
+                }
+            } catch {
+                debugPrint("⚠️ Failed to delete video file: \(error)")
+            }
+        }
+
         savedGames.removeAll { $0.id == game.id }
         saveAllGamesToFile(savedGames)
 
@@ -248,6 +262,21 @@ class GamePersistenceManager: ObservableObject {
 
     func deleteGame(at offsets: IndexSet) {
         let gamesToDelete = offsets.map { savedGames[$0] }
+        
+        // CLEANUP: Delete local video files
+        for game in gamesToDelete {
+            if let url = game.videoURL {
+                do {
+                    if fileManager.fileExists(atPath: url.path) {
+                        try fileManager.removeItem(at: url)
+                        debugPrint("🗑️ Deleted local video for game \(game.id)")
+                    }
+                } catch {
+                    debugPrint("⚠️ Failed to delete video file: \(error)")
+                }
+            }
+        }
+        
         var games = savedGames
         games.remove(atOffsets: offsets)
         saveAllGamesToFile(games)
