@@ -26,9 +26,10 @@ class YouTubeService: NSObject, ObservableObject {
     @Published var uploadProgress: Double = 0
     @Published var lastError: String?
     @Published var currentUploadingGameID: String?
+    @Published var completedVideoID: String?
     
-    // Callback for completion (GameID, Success)
-    var onUploadCompleted: ((String, Bool) -> Void)?
+    // Callback for completion (GameID, Success, VideoID?)
+    var onUploadCompleted: ((String, Bool, String?) -> Void)?
 
     private let keychainService = "com.narayan.SahilStats.youtube"
     private let accessTokenKey = "accessToken"
@@ -116,6 +117,7 @@ class YouTubeService: NSObject, ObservableObject {
 
         isUploading = true
         currentUploadingGameID = gameID
+        completedVideoID = nil
         uploadProgress = 0
         lastError = nil
 
@@ -334,20 +336,23 @@ extension YouTubeService: URLSessionDelegate, URLSessionTaskDelegate, URLSession
     nonisolated func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
         Task { @MainActor in
             let gameID = self.currentUploadingGameID
+            let videoID = self.completedVideoID
+            
             self.isUploading = false
             self.currentUploadingGameID = nil
+            self.completedVideoID = nil
             
             if let error = error {
                 debugPrint("📺 Background upload failed: \(error.localizedDescription)")
                 self.lastError = error.localizedDescription
                 if let id = gameID {
-                    self.onUploadCompleted?(id, false)
+                    self.onUploadCompleted?(id, false, nil)
                 }
             } else {
                 debugPrint("📺 Background upload completed successfully")
                 self.uploadProgress = 1.0
                 if let id = gameID {
-                    self.onUploadCompleted?(id, true)
+                    self.onUploadCompleted?(id, true, videoID)
                 }
             }
         }
@@ -358,7 +363,9 @@ extension YouTubeService: URLSessionDelegate, URLSessionTaskDelegate, URLSession
         if let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
            let videoId = json["id"] as? String {
             debugPrint("📺 YouTube Video ID: \(videoId)")
-            // TODO: Update game status with video ID
+            Task { @MainActor in
+                self.completedVideoID = videoId
+            }
         }
     }
     

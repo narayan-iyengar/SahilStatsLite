@@ -1347,6 +1347,24 @@ struct GameDetailSheet: View {
                                     .frame(maxWidth: .infinity)
                                     .background(Color.green.opacity(0.1))
                                     .cornerRadius(12)
+                                
+                                if let videoID = game.youtubeVideoId {
+                                    Button {
+                                        if let url = URL(string: "https://youtu.be/\(videoID)") {
+                                            UIApplication.shared.open(url)
+                                        }
+                                    } label: {
+                                        HStack {
+                                            Image(systemName: "play.rectangle.fill")
+                                            Text("Watch on YouTube")
+                                        }
+                                        .font(.subheadline)
+                                        .fontWeight(.semibold)
+                                        .foregroundColor(.red)
+                                        .padding(.vertical, 8)
+                                    }
+                                }
+                            }
                         } else if youtubeService.isUploading && youtubeService.currentUploadingGameID == game.id {
                             VStack(spacing: 8) {
                                 ProgressView(value: youtubeService.uploadProgress)

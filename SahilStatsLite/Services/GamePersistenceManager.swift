@@ -40,18 +40,22 @@ class GamePersistenceManager: ObservableObject {
     }
     
     private func setupYouTubeListener() {
-        YouTubeService.shared.onUploadCompleted = { [weak self] gameID, success in
-            self?.handleUploadCompletion(gameID: gameID, success: success)
+        YouTubeService.shared.onUploadCompleted = { [weak self] gameID, success, videoID in
+            self?.handleUploadCompletion(gameID: gameID, success: success, videoID: videoID)
         }
     }
     
-    private func handleUploadCompletion(gameID: String, success: Bool) {
+    private func handleUploadCompletion(gameID: String, success: Bool, videoID: String?) {
         guard let index = savedGames.firstIndex(where: { $0.id == gameID }) else { return }
         var game = savedGames[index]
         
         if success {
             debugPrint("✅ [Persistence] Upload success for game \(gameID). Starting auto-cleanup.")
             game.youtubeStatus = .uploaded
+            
+            if let vid = videoID {
+                game.youtubeVideoId = vid
+            }
             
             // AUTO-CLEANUP: Delete local file to save space (Jony Ive style)
             if let url = game.videoURL {
