@@ -75,7 +75,8 @@ class OverlayRenderer: @unchecked Sendable {
     private nonisolated func drawNBAStyleScoreboard(in context: CGContext, width: CGFloat, height: CGFloat) {
         let isLandscape = width > height
         let referenceWidth: CGFloat = isLandscape ? 1920.0 : 1080.0
-        let scale = width / referenceWidth
+        // Increase scale by 1.5x for better visibility on 4K/high-res outputs
+        let scale = (width / referenceWidth) * 1.5
 
         // Scorebug dimensions
         let rowHeight: CGFloat = 44 * scale

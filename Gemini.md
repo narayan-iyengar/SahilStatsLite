@@ -4,7 +4,8 @@
 > 1. **Visual Re-ID:** Tracking now uses color histograms to ignore distractors (parents/refs).
 > 2. **Jony Ive Workflow:** Record → Auto-Save to Photos → Manual Upload → Auto-Delete from App. No friction.
 > 3. **Watch on YouTube:** Direct link in Game Log after upload.
-> 4. **Robustness:** Fixed "Phantom Video" bug, Watch Sync, Firebase Status Sync, and **Critical Video URL Save Bug**.
+> 4. **Robustness:** Fixed "Phantom Video" bug, Watch Sync, Firebase Status Sync, and Critical Video URL Save Bug.
+> 5. **Full Cleanup:** Deleting a game also deletes the local video file.
 
 ---
 
@@ -129,6 +130,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Auto-Cleanup**: Delete local file after successful YouTube upload.
 - [x] **Firebase Sync**: YouTube status syncs correctly across devices.
 - [x] **Fixed**: Critical bug where `saveGame` was called before `videoURL` was assigned.
+- [x] **Cleanup**: Deleting a game removes the local video file.
 
 ---
 
