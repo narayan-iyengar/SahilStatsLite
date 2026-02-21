@@ -1,11 +1,9 @@
 # SahilStatsLite - Project Context
 
-> **UPDATED (2026-02-06):** "Earth Shattering" Tracking & Workflow Overhaul.
-> 1. **Visual Re-ID:** Tracking now uses color histograms to ignore distractors (parents/refs).
-> 2. **Jony Ive Workflow:** Record → Auto-Save to Photos → Manual Upload → Auto-Delete from App. No friction.
-> 3. **Watch on YouTube:** Direct link in Game Log after upload.
-> 4. **Robustness:** Fixed "Phantom Video" bug, Watch Sync, Firebase Status Sync, and Critical Video URL Save Bug.
-> 5. **Full Cleanup:** Deleting a game also deletes the local video file.
+> **UPDATED (2026-02-08):** "Jony Ive" Workflow Complete. Debugging Watch Connectivity.
+> 1. **Current Status:** Paused for hardware/OS updates (MacBook, Phone, Watch) to resolve stubborn `WCSession` sync issues (Watch stuck on "Quick Game", phone logs missing).
+> 2. **Latest Win:** Fixed "Phantom Video" bug where `saveGame` missed the `videoURL`. Auto-delete after YouTube upload is working.
+> 3. **Next Step:** Verify Watch sync after OS updates. If fail, investigate `WCSession` activation timing.
 
 ---
 
@@ -40,7 +38,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - Highlight reel generation
 - Season stats and trends
 
-<h3>Apple Watch Companion (WORKING)</h3>
+<h3>Apple Watch Companion (DEBUGGING)</h3>
 - Watch app for remote scoring from sidelines
 - **Tap** score zones to add +1 point
 - **Swipe down** on score to subtract -1 (fix mistakes)
@@ -48,6 +46,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - **Remote Calibration**: Use Watch D-Pad to adjust court corners on Phone AR view.
 - Real-time two-way sync (phone ↔ watch)
 - End game directly from Watch
+- **Current Issue:** Watch fails to receive calendar context or active game state despite connectivity. Suspect OS version mismatch or `WCSession` daemon hang.
 
 ---
 
@@ -107,7 +106,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - Phase 2: Stats tagging
 - Phase 3: Highlights and sharing
 
-<h3>Phase 1 Progress (Updated 2026-02-06)</h3>
+<h3>Phase 1 Progress (Updated 2026-02-08)</h3>
 - [x] Basic project structure
 - [x] Camera preview working
 - [x] Floating Ubiquiti-style controls with score buttons (+1, +2, +3)
@@ -131,6 +130,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Firebase Sync**: YouTube status syncs correctly across devices.
 - [x] **Fixed**: Critical bug where `saveGame` was called before `videoURL` was assigned.
 - [x] **Cleanup**: Deleting a game removes the local video file.
+- [x] **UI**: Overlay scaled 1.5x for 4K.
 
 ---
 
