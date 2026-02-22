@@ -136,7 +136,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Ghost Cleanup**: Added "Cleanup Ghost Games" maintenance tool in Settings to remove orphaned test records (no video, no score).
 - [x] **Discard Workflow**: Added "Cancel & Discard" option to End Game dialog to stop recording without saving a record.
 - [x] **Watch Always On**: Implemented `WKExtendedRuntimeSession` to keep Watch app active and screen on during games.
-- [x] **Build System**: Cleaned ModuleCache to resolve stale dependency warnings.
+- [x] **Build System**: Cleaned ModuleCache and resolved package dependencies.
 
 ---
 
