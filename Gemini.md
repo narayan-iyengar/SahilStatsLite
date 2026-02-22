@@ -1,9 +1,9 @@
 # SahilStatsLite - Project Context
 
-> **UPDATED (2026-02-21):** Robust Sync & Watch Resiliency Complete. Added Discard Workflow.
-> 1. **Current Status:** Verifying Watch connectivity with `updateApplicationContext` for "sticky" state sync. Fixed local/cloud merge conflicts.
-> 2. **Latest Win:** Implemented "Ghost Cleanup" and "Cancel & Discard" workflow to prevent test games from cluttering logs.
-> 3. **Next Step:** Verify Watch sync under real-world intermittent conditions.
+> **UPDATED (2026-02-21):** MVP Polish Complete. Audio & Sync Upgraded.
+> 1. **Current Status:** Project stable. All MVP features (Recording, Sync, Watch, Audio) implemented and verified.
+> 2. **Latest Win:** Implemented "Court Priority" Audio (Back Mic/Cardioid) and "Always On" Watch session.
+> 3. **Next Step:** Field testing at the next game!
 
 ---
 
