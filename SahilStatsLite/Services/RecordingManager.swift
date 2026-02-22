@@ -188,7 +188,7 @@ class RecordingManager: NSObject, ObservableObject {
         error = "Camera recording requires a physical device. The simulator doesn't have camera access."
         isSessionReady = true  // Set ready so UI can show message
         return
-        #endif
+        #else
 
         let session = AVCaptureSession()
         session.beginConfiguration()
@@ -291,6 +291,7 @@ class RecordingManager: NSObject, ObservableObject {
                 }
             }
         }
+        #endif
     }
 
     /// Configure video rotation based on current device orientation
@@ -348,8 +349,8 @@ class RecordingManager: NSObject, ObservableObject {
         #if targetEnvironment(simulator)
         debugPrint("⚠️ Cannot record on simulator")
         return
-        #endif
-
+        #else
+        
         guard !isRecording else {
             debugPrint("⚠️ Already recording")
             return
@@ -368,6 +369,9 @@ class RecordingManager: NSObject, ObservableObject {
         // Configure video rotation FIRST (before enabling frame capture)
         // This ensures buffered frames have correct orientation
         configureVideoRotationForRecording()
+        
+        // Configure audio session for recording
+        configureAudioSession()
 
         // Now store URL to enable frame capture
         pendingOutputURL = outputURL
@@ -393,6 +397,7 @@ class RecordingManager: NSObject, ObservableObject {
         }
 
         debugPrint("📹 Recording started (waiting for first frame): \(outputURL.lastPathComponent)")
+        #endif
     }
 
     /// Setup asset writer with actual frame dimensions (called lazily on first frame)
