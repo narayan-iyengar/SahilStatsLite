@@ -151,9 +151,27 @@ class RecordingManager: NSObject, ObservableObject {
         if audioStatus == .notDetermined {
             _ = await AVCaptureDevice.requestAccess(for: .audio)
         }
+        
+        // Configure global audio session for video recording
+        configureAudioSession()
 
         if permissionGranted {
             await setupCaptureSession()
+        }
+    }
+    
+    private func configureAudioSession() {
+        do {
+            let session = AVAudioSession.sharedInstance()
+            // .playAndRecord allows simultaneous recording and system sounds (if needed)
+            // .defaultToSpeaker ensures audio playback goes to speaker, not receiver
+            // .allowBluetooth allows using AirPods if connected (though we prefer back mic)
+            try session.setCategory(.playAndRecord, options: [.defaultToSpeaker, .allowBluetooth])
+            try session.setMode(.videoRecording)
+            try session.setActive(true)
+            debugPrint("🎙️ AVAudioSession configured for Video Recording")
+        } catch {
+            debugPrint("⚠️ Failed to configure AVAudioSession: \(error)")
         }
     }
 
@@ -211,13 +229,47 @@ class RecordingManager: NSObject, ObservableObject {
             }
         }
 
-        // Add audio input
+        // Add audio input (Court Priority Mode)
+        // We manually configure the audio device to prioritize the BACK microphone with CARDIOID pattern
+        // This focuses on the court and reduces noise from the camera operator (you)
         if let audioDevice = AVCaptureDevice.default(for: .audio) {
             do {
                 let audioInput = try AVCaptureDeviceInput(device: audioDevice)
+                
                 if session.canAddInput(audioInput) {
                     session.addInput(audioInput)
                     debugPrint("📹 Added audio input")
+                    
+                    // COURT PRIORITY CONFIGURATION
+                    // Must be done AFTER adding input to session
+                    // We attempt to find the "Back" microphone data source
+                    if let dataSources = audioInput.device.dataSources,
+                       let backMic = dataSources.first(where: { $0.orientation == .back }) {
+                        
+                        do {
+                            try audioInput.device.lockForConfiguration()
+                            
+                            // Select Back Mic
+                            try audioInput.device.setDataSource(backMic)
+                            debugPrint("🎙️ Selected BACK microphone (facing court)")
+                            
+                            // Set Polar Pattern to Cardioid (Directional)
+                            // This rejects sound from the sides/rear (operator)
+                            if let supportedPatterns = backMic.supportedPolarPatterns,
+                               supportedPatterns.contains(.cardioid) {
+                                try backMic.setPreferredPolarPattern(.cardioid)
+                                debugPrint("🎙️ Set microphone pattern to CARDIOID (Directional)")
+                            } else {
+                                debugPrint("🎙️ Cardioid pattern not supported, using default")
+                            }
+                            
+                            audioInput.device.unlockForConfiguration()
+                        } catch {
+                            debugPrint("⚠️ Failed to configure microphone: \(error)")
+                        }
+                    } else {
+                        debugPrint("⚠️ Could not find Back Microphone data source")
+                    }
                 }
             } catch {
                 debugPrint("⚠️ Failed to setup audio: \(error.localizedDescription)")
