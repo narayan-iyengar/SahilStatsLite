@@ -2140,7 +2140,7 @@ struct SettingsView: View {
                 }
 
                 // Troubleshooting Section
-                Section("Maintenance") {
+                Section {
                     Button {
                         Task {
                             await persistenceManager.cleanupGhostGames()
@@ -2156,6 +2156,8 @@ struct SettingsView: View {
                         }
                     }
                     .disabled(persistenceManager.isSyncing)
+                } header: {
+                    Text("Maintenance")
                 } footer: {
                     Text("Removes test games with no scores and no video recordings from local storage and Firebase.")
                 }
