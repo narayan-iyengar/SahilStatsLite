@@ -137,7 +137,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Discard Workflow**: Added "Cancel & Discard" option to End Game dialog to stop recording without saving a record.
 - [x] **Watch Always On**: Implemented `WKExtendedRuntimeSession` to keep Watch app active and screen on during games.
 - [x] **Build System**: Cleaned ModuleCache and resolved package dependencies.
-- [x] **Court Priority Audio**: Configured `AVAudioSession` to prioritize Back Microphone with Cardioid (directional) pattern to focus on game sounds and reduce operator noise.
+- [x] **Court Priority Audio**: Configured `AVAudioSession` category to `.playAndRecord` with `.videoRecording` mode to ensure iOS prioritizes the high-quality Back Microphone.
 
 ---
 
