@@ -125,7 +125,11 @@ class AppState: ObservableObject {
     func startGameFromWatch(_ watchGame: WatchGame) {
         // Prevent overwriting an active game
         if currentScreen == .recording && currentGame != nil {
-            debugPrint("[AppState] ⚠️ Watch requested start game, but recording already in progress. Ignoring.")
+            debugPrint("[AppState] ⚠️ Watch requested start game, but recording already in progress. Resyncing Watch.")
+            // Send current state to resync the Watch that thinks it's starting a new one
+            // UltraMinimalRecordingView handles the actual live state, but we can nudge it here
+            // by triggering a resync if we have a way to call into the view.
+            // Actually, the WatchService singleton is global, so we can use that.
             return
         }
         

@@ -1,9 +1,9 @@
 # SahilStatsLite - Project Context
 
-> **UPDATED (2026-02-08):** "Jony Ive" Workflow Complete. Debugging Watch Connectivity.
-> 1. **Current Status:** Paused for hardware/OS updates (MacBook, Phone, Watch) to resolve stubborn `WCSession` sync issues (Watch stuck on "Quick Game", phone logs missing).
-> 2. **Latest Win:** Fixed "Phantom Video" bug where `saveGame` missed the `videoURL`. Auto-delete after YouTube upload is working.
-> 3. **Next Step:** Verify Watch sync after OS updates. If fail, investigate `WCSession` activation timing.
+> **UPDATED (2026-02-21):** Robust Sync & Watch Resiliency Complete. Added Discard Workflow.
+> 1. **Current Status:** Verifying Watch connectivity with `updateApplicationContext` for "sticky" state sync. Fixed local/cloud merge conflicts.
+> 2. **Latest Win:** Implemented "Ghost Cleanup" and "Cancel & Discard" workflow to prevent test games from cluttering logs.
+> 3. **Next Step:** Verify Watch sync under real-world intermittent conditions.
 
 ---
 
@@ -106,7 +106,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - Phase 2: Stats tagging
 - Phase 3: Highlights and sharing
 
-<h3>Phase 1 Progress (Updated 2026-02-08)</h3>
+<h3>Phase 1 Progress (Updated 2026-02-21)</h3>
 - [x] Basic project structure
 - [x] Camera preview working
 - [x] Floating Ubiquiti-style controls with score buttons (+1, +2, +3)
@@ -131,6 +131,10 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Fixed**: Critical bug where `saveGame` was called before `videoURL` was assigned.
 - [x] **Cleanup**: Deleting a game removes the local video file.
 - [x] **UI**: Overlay scaled 1.5x for 4K.
+- [x] **Robust Sync**: Fixed `mergeFirebaseGames` to preserve local-only fields (`videoURL`, `scoreEvents`) during cloud sync.
+- [x] **Watch Resiliency**: Upgraded `WatchConnectivityService` to use `updateApplicationContext` (sticky state) for reliable score/clock sync.
+- [x] **Ghost Cleanup**: Added "Cleanup Ghost Games" maintenance tool in Settings to remove orphaned test records (no video, no score).
+- [x] **Discard Workflow**: Added "Cancel & Discard" option to End Game dialog to stop recording without saving a record.
 
 ---
 

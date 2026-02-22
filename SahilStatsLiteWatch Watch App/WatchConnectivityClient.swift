@@ -360,6 +360,14 @@ extension WatchConnectivityClient: WCSessionDelegate {
         }
     }
 
+    // Receive application context from phone (reliable/sticky)
+    nonisolated func session(_ session: WCSession, didReceiveApplicationContext applicationContext: [String: Any]) {
+        Task { @MainActor in
+            debugPrint("[Watch] Received application context update")
+            handleMessage(applicationContext)
+        }
+    }
+
     @MainActor
     private func handleMessage(_ message: [String: Any]) {
         // Full game state from phone (when game starts)

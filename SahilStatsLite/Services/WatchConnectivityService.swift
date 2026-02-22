@@ -146,7 +146,10 @@ class WatchConnectivityService: NSObject, ObservableObject {
             WatchMessage.period: period,
             WatchMessage.periodIndex: periodIndex
         ]
+        
+        // Use BOTH sendMessage (immediate) and updateApplicationContext (reliable/sticky)
         sendMessage(message)
+        updateContext(message)
     }
 
     /// Send score update to watch
@@ -157,6 +160,7 @@ class WatchConnectivityService: NSObject, ObservableObject {
             WatchMessage.oppScore: oppScore
         ]
         sendMessage(message)
+        updateContext(message)
     }
 
     /// Send clock update to watch
@@ -167,6 +171,7 @@ class WatchConnectivityService: NSObject, ObservableObject {
             WatchMessage.isRunning: isRunning
         ]
         sendMessage(message)
+        updateContext(message)
     }
 
     /// Send period update to watch
@@ -179,6 +184,7 @@ class WatchConnectivityService: NSObject, ObservableObject {
             WatchMessage.isRunning: isRunning
         ]
         sendMessage(message)
+        updateContext(message)
     }
 
     /// Send end game to watch (resets watch to waiting state)
@@ -187,15 +193,20 @@ class WatchConnectivityService: NSObject, ObservableObject {
             WatchMessage.endGame: true
         ]
         sendMessage(message)
+        
+        // When ending a game, we want to CLEAR the game-specific keys from context
+        // Instead of merging, we replace with just the endGame signal
+        guard let session = session else { return }
+        do {
+            try session.updateApplicationContext(message)
+            debugPrint("[WatchConnectivity] Game ended - context cleared of active game state")
+        } catch {
+            debugPrint("[WatchConnectivity] Error clearing context: \(error)")
+        }
     }
 
     /// Send upcoming games from calendar to watch
     func sendUpcomingGames(_ games: [WatchGame]) {
-        guard let session = session, session.isReachable else {
-            debugPrint("[WatchConnectivity] Watch not reachable for games sync")
-            return
-        }
-
         // Encode games as JSON data
         do {
             let encoder = JSONEncoder()
@@ -207,8 +218,13 @@ class WatchConnectivityService: NSObject, ObservableObject {
                 WatchMessage.upcomingGames: true,
                 WatchMessage.games: gamesString
             ]
-            sendMessage(message)
-            debugPrint("[WatchConnectivity] Sent \(games.count) games to watch")
+            
+            // For games list, use sendMessage if reachable, but context is better for syncing
+            if let session = session, session.isReachable {
+                sendMessage(message)
+            }
+            updateContext(message)
+            debugPrint("[WatchConnectivity] Sent/Updated \(games.count) games in context")
         } catch {
             debugPrint("[WatchConnectivity] Error encoding games: \(error)")
         }
@@ -216,11 +232,6 @@ class WatchConnectivityService: NSObject, ObservableObject {
 
     /// Convert calendar games to watch games and send
     func syncCalendarGames() {
-        guard let session = session, session.isReachable else {
-            debugPrint("[WatchConnectivity] Cannot sync games - Watch not reachable")
-            return
-        }
-
         let calendarManager = GameCalendarManager.shared
 
         // Check calendar access
@@ -234,13 +245,12 @@ class WatchConnectivityService: NSObject, ObservableObject {
 
         let calendarGames = calendarManager.upcomingGames.prefix(10) // Limit to 10 games
 
-        debugPrint("[WatchConnectivity] Syncing \(calendarGames.count) calendar games to Watch")
+        debugPrint("[WatchConnectivity] Syncing \(calendarGames.count) calendar games to Watch context")
         
         let defaultHalfLength = UserDefaults.standard.integer(forKey: "defaultHalfLength")
         let halfLength = defaultHalfLength > 0 ? defaultHalfLength : 18
 
         let watchGames = calendarGames.map { game in
-            debugPrint("[WatchConnectivity]   - \(game.opponent) at \(game.startTime)")
             return WatchGame(
                 id: game.id,
                 opponent: game.opponent,
@@ -251,21 +261,32 @@ class WatchConnectivityService: NSObject, ObservableObject {
             )
         }
 
-        if watchGames.isEmpty {
-            debugPrint("[WatchConnectivity] No games to sync - calendar has no matching games")
-        }
-
         sendUpcomingGames(Array(watchGames))
     }
 
     private func sendMessage(_ message: [String: Any]) {
         guard let session = session, session.isReachable else {
-            debugPrint("[WatchConnectivity] Watch not reachable")
+            // Silently fail, updateContext will handle it when Watch wakes up
             return
         }
 
         session.sendMessage(message, replyHandler: nil) { error in
             debugPrint("[WatchConnectivity] Error sending message: \(error)")
+        }
+    }
+    
+    private func updateContext(_ message: [String: Any]) {
+        guard let session = session else { return }
+        
+        do {
+            // merge with existing context if possible
+            var newContext = session.applicationContext
+            for (key, value) in message {
+                newContext[key] = value
+            }
+            try session.updateApplicationContext(newContext)
+        } catch {
+            debugPrint("[WatchConnectivity] Error updating context: \(error)")
         }
     }
 }
@@ -285,6 +306,9 @@ extension WatchConnectivityService: WCSessionDelegate {
                 // Small delay to ensure Watch app is ready
                 try? await Task.sleep(nanoseconds: 500_000_000)  // 0.5 seconds
                 self.syncCalendarGames()
+                
+                // Also request state resync in case we are mid-game
+                self.onRequestState?()
             }
         }
     }
@@ -307,6 +331,9 @@ extension WatchConnectivityService: WCSessionDelegate {
             // Sync calendar games when Watch becomes reachable
             if session.isReachable {
                 self.syncCalendarGames()
+                
+                // Also request state resync in case we are mid-game
+                self.onRequestState?()
             }
         }
     }

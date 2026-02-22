@@ -2139,6 +2139,27 @@ struct SettingsView: View {
                     }
                 }
 
+                // Troubleshooting Section
+                Section("Maintenance") {
+                    Button {
+                        Task {
+                            await persistenceManager.cleanupGhostGames()
+                        }
+                    } label: {
+                        HStack {
+                            Label("Cleanup Ghost Games", systemImage: "trash")
+                                .foregroundColor(.red)
+                            Spacer()
+                            Image(systemName: "questionmark.circle")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                    }
+                    .disabled(persistenceManager.isSyncing)
+                } footer: {
+                    Text("Removes test games with no scores and no video recordings from local storage and Firebase.")
+                }
+
                 // App Info Section
                 Section("About") {
                     HStack {

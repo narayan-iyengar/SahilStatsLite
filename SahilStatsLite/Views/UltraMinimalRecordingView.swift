@@ -417,6 +417,12 @@ struct UltraMinimalRecordingView: View {
         watchService.onEndGame = { [self] in
             endGame()
         }
+
+        // Handle start game from watch (if already recording, just resync)
+        watchService.onStartGame = { [self] _ in
+            debugPrint("📱 Received start request from Watch while already recording. Resyncing.")
+            sendGameStateToWatch()
+        }
         
         // Handle state request from watch (e.g. app just launched)
         watchService.onRequestState = { [self] in
@@ -1002,26 +1008,63 @@ struct UltraMinimalRecordingView: View {
                         .fontWeight(.semibold)
                         .foregroundColor(.white)
 
-                    HStack(spacing: 20) {
-                        Button("Cancel") {
-                            showEndConfirmation = false
-                        }
-                        .buttonStyle(.bordered)
-                        .tint(.white)
-
+                    VStack(spacing: 12) {
                         Button(appState.isStatsOnly ? "Save Stats" : "End & Save") {
                             endGame()
                         }
                         .buttonStyle(.borderedProminent)
                         .tint(.orange)
+                        .frame(maxWidth: .infinity)
+
+                        Button("Cancel & Discard") {
+                            discardGame()
+                        }
+                        .buttonStyle(.bordered)
+                        .tint(.red)
+                        .frame(maxWidth: .infinity)
+                        
+                        Button("Keep Recording") {
+                            showEndConfirmation = false
+                        }
+                        .buttonStyle(.plain)
+                        .foregroundColor(.white.opacity(0.7))
+                        .padding(.top, 4)
                     }
+                    .padding(.top, 8)
                 }
             }
+            .frame(width: 300)
             .padding(30)
             .background(
-                RoundedRectangle(cornerRadius: 20)
+                RoundedRectangle(cornerRadius: 24)
                     .fill(.ultraThinMaterial)
             )
+        }
+    }
+
+    private func discardGame() {
+        isFinishingRecording = true
+        timer?.cancel()
+        
+        // Notify Watch to reset
+        watchService.sendEndGame()
+        
+        if !appState.isStatsOnly {
+            gimbalManager.stopTracking()
+            stopAutoZoom()
+            
+            Task {
+                // Just stop, don't use the URL
+                _ = await recordingManager.stopRecordingAndWait()
+                
+                await MainActor.run {
+                    isFinishingRecording = false
+                    appState.goHome()
+                }
+            }
+        } else {
+            isFinishingRecording = false
+            appState.goHome()
         }
     }
 

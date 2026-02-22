@@ -115,45 +115,60 @@ class GamePersistenceManager: ObservableObject {
 
     /// Merge games from Firebase into local storage
     private func mergeFirebaseGames(_ firebaseGames: [Game]) {
-        debugPrint("[GamePersistence] Merging \(firebaseGames.count) Firebase games")
+        debugPrint("[GamePersistence] Merging \(firebaseGames.count) Firebase games into local storage")
 
-        // Create a map of existing local games to preserve local-only fields (videoURL)
-        let localGamesMap = Dictionary(uniqueKeysWithValues: savedGames.map { ($0.id, $0) })
+        // 1. Map existing local games for quick lookup and preservation of local-only data
+        var localGamesMap = Dictionary(uniqueKeysWithValues: savedGames.map { ($0.id, $0) })
         
+        // 2. Track which cloud games we've processed
+        var processedCloudIds = Set<String>()
         var mergedGames: [Game] = []
         
-        for cloudGame in firebaseGames {
-            var finalGame = cloudGame
+        // 3. Process cloud games: update existing local records or add new ones
+        for var cloudGame in firebaseGames {
+            processedCloudIds.insert(cloudGame.id)
             
-            // If we have a local version, preserve local-only fields
             if let localGame = localGamesMap[cloudGame.id] {
-                // Preserve video URL if cloud doesn't have one (it never does)
-                // But only if the local file actually exists
+                // PRESERVE local-only fields that Firebase doesn't track
+                
+                // Video URL (Local path)
                 if let localURL = localGame.videoURL {
-                    finalGame.videoURL = localURL
-                    debugPrint("✅ [Merge] Preserved URL for \(cloudGame.id)")
-                } else {
-                    debugPrint("⚠️ [Merge] Local game \(cloudGame.id) has NO URL")
+                    cloudGame.videoURL = localURL
                 }
                 
-                // Preserve duration
+                // Score Events (Timeline for overlays - not in Firebase)
+                if !localGame.scoreEvents.isEmpty {
+                    cloudGame.scoreEvents = localGame.scoreEvents
+                }
+                
+                // Video Duration
                 if let duration = localGame.videoDuration {
-                    finalGame.videoDuration = duration
+                    cloudGame.videoDuration = duration
                 }
                 
-                // If local status is 'uploading', don't let cloud overwrite it with 'local'
-                // This prevents UI glitches during upload
-                if localGame.youtubeStatus == .uploading && finalGame.youtubeStatus == .local {
-                    finalGame.youtubeStatus = .uploading
+                // YouTube Upload Status (preserve 'uploading' state which is transient)
+                if localGame.youtubeStatus == .uploading && cloudGame.youtubeStatus == .local {
+                    cloudGame.youtubeStatus = .uploading
                 }
+                
+                debugPrint("✅ [Merge] Updated local game \(cloudGame.id) (preserved local data)")
             } else {
                 debugPrint("ℹ️ [Merge] New cloud game: \(cloudGame.id)")
             }
             
-            mergedGames.append(finalGame)
+            mergedGames.append(cloudGame)
+        }
+        
+        // 4. PRESERVE local games that haven't synced to Firebase yet
+        // In the original code, these were being deleted because only cloud games were kept!
+        for localGame in savedGames {
+            if !processedCloudIds.contains(localGame.id) {
+                mergedGames.append(localGame)
+                debugPrint("✅ [Merge] Preserved local-only game (not in cloud yet): \(localGame.id)")
+            }
         }
 
-        // Replace local games with merged games
+        // 5. Replace and save local storage
         savedGames = mergedGames.sorted { $0.date > $1.date }
         saveAllGamesToFile(savedGames)
 
@@ -161,7 +176,7 @@ class GamePersistenceManager: ObservableObject {
         isSyncing = false
         syncError = nil
 
-        debugPrint("[GamePersistence] Merged - now have \(savedGames.count) games (preserved local paths)")
+        debugPrint("[GamePersistence] Merge complete - total games: \(savedGames.count)")
     }
 
     // MARK: - Local File Operations
@@ -303,6 +318,35 @@ class GamePersistenceManager: ObservableObject {
         savedGames = []
         saveAllGamesToFile([])
         debugPrint("[GamePersistence] Cleared all local games")
+    }
+
+    /// Cleanup games that have no video URL (ghost/test games)
+    func cleanupGhostGames() async {
+        let ghostGames = savedGames.filter { game in
+            // A "ghost" game has no video URL AND has zero score (likely a test start)
+            // Or just no video URL if you want to be aggressive
+            return game.videoURL == nil && game.myScore == 0 && game.opponentScore == 0
+        }
+        
+        debugPrint("[GamePersistence] Found \(ghostGames.count) ghost games to cleanup")
+        
+        for game in ghostGames {
+            // Delete locally
+            savedGames.removeAll { $0.id == game.id }
+            
+            // Delete from Firebase
+            if AuthService.shared.isSignedIn {
+                do {
+                    try await FirebaseService.shared.deleteGame(game.id)
+                    debugPrint("[GamePersistence] Deleted ghost game \(game.id) from Firebase")
+                } catch {
+                    debugPrint("[GamePersistence] Failed to delete ghost game \(game.id) from Firebase: \(error)")
+                }
+            }
+        }
+        
+        saveAllGamesToFile(savedGames)
+        debugPrint("[GamePersistence] Ghost game cleanup complete")
     }
 
     /// Force sync from Firebase (useful for migration)
