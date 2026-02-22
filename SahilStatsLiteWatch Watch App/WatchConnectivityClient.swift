@@ -15,6 +15,7 @@
 import Foundation
 import WatchConnectivity
 import Combine
+import WatchKit
 
 // Reuse message keys from iOS app
 struct WatchMessage {
@@ -96,7 +97,15 @@ class WatchConnectivityClient: NSObject, ObservableObject {
 
     // Connection state
     @Published var isPhoneReachable: Bool = false
-    @Published var hasActiveGame: Bool = false
+    @Published var hasActiveGame: Bool = false {
+        didSet {
+            if hasActiveGame {
+                startExtendedSession()
+            } else {
+                invalidateExtendedSession()
+            }
+        }
+    }
 
     // Upcoming games from calendar (synced from phone)
     @Published var upcomingGames: [WatchGame] = []
@@ -127,10 +136,31 @@ class WatchConnectivityClient: NSObject, ObservableObject {
     @Published var turnovers: Int = 0
 
     private var session: WCSession?
+    private var extendedSession: WKExtendedRuntimeSession?
 
     private override init() {
         super.init()
         setupSession()
+    }
+    
+    // MARK: - Extended Runtime Session (Keep Screen On)
+    
+    private func startExtendedSession() {
+        // Only start if not already running
+        guard extendedSession == nil || extendedSession?.state != .running else { return }
+        
+        debugPrint("[Watch] Starting extended runtime session (Keep Screen On)")
+        extendedSession = WKExtendedRuntimeSession()
+        extendedSession?.delegate = self
+        extendedSession?.start()
+    }
+    
+    private func invalidateExtendedSession() {
+        guard let session = extendedSession else { return }
+        
+        debugPrint("[Watch] Invalidating extended runtime session")
+        session.invalidate()
+        extendedSession = nil
     }
 
     /// Configure shared instance with sample data for Xcode Canvas previews
@@ -373,6 +403,7 @@ extension WatchConnectivityClient: WCSessionDelegate {
         // Full game state from phone (when game starts)
         if message[WatchMessage.gameState] != nil {
             hasActiveGame = true
+            // ... (rest of logic handles updates)
             if let name = message[WatchMessage.teamName] as? String {
                 teamName = name
             }
@@ -455,6 +486,30 @@ extension WatchConnectivityClient: WCSessionDelegate {
             } catch {
                 debugPrint("[Watch] Error decoding games: \(error)")
             }
+        }
+    }
+}
+
+// MARK: - WKExtendedRuntimeSessionDelegate
+
+extension WatchConnectivityClient: WKExtendedRuntimeSessionDelegate {
+    nonisolated func extendedRuntimeSession(_ extendedRuntimeSession: WKExtendedRuntimeSession, didInvalidateWith reason: WKExtendedRuntimeSessionInvalidationReason, error: Error?) {
+        Task { @MainActor in
+            debugPrint("[Watch] Extended runtime session invalidated: \(reason.rawValue), error: \(String(describing: error))")
+            self.extendedSession = nil
+        }
+    }
+
+    nonisolated func extendedRuntimeSessionDidStart(_ extendedRuntimeSession: WKExtendedRuntimeSession) {
+        Task { @MainActor in
+            debugPrint("[Watch] Extended runtime session started")
+        }
+    }
+
+    nonisolated func extendedRuntimeSessionWillExpire(_ extendedRuntimeSession: WKExtendedRuntimeSession) {
+        Task { @MainActor in
+            debugPrint("[Watch] Extended runtime session expiring soon")
+            // Could notify user or try to restart? Usually it lasts 1 hour.
         }
     }
 }

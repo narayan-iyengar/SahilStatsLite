@@ -118,7 +118,7 @@ class GamePersistenceManager: ObservableObject {
         debugPrint("[GamePersistence] Merging \(firebaseGames.count) Firebase games into local storage")
 
         // 1. Map existing local games for quick lookup and preservation of local-only data
-        var localGamesMap = Dictionary(uniqueKeysWithValues: savedGames.map { ($0.id, $0) })
+        let localGamesMap = Dictionary(uniqueKeysWithValues: savedGames.map { ($0.id, $0) })
         
         // 2. Track which cloud games we've processed
         var processedCloudIds = Set<String>()
