@@ -364,7 +364,15 @@ extension WatchConnectivityClient: WCSessionDelegate {
             debugPrint("[Watch] Activation complete: \(activationState.rawValue)")
             self.isPhoneReachable = session.isReachable
             
-            // Request state immediately on activation
+            // 1. Check cached context first (Sticky State)
+            // This ensures we show the active game even if Phone is backgrounded/unreachable
+            let cachedContext = session.receivedApplicationContext
+            if !cachedContext.isEmpty {
+                debugPrint("[Watch] Loading cached application context")
+                self.handleMessage(cachedContext)
+            }
+            
+            // 2. Request fresh state if reachable
             if session.isReachable {
                 self.requestState()
             }
