@@ -141,7 +141,8 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Skynet Foreground Filter**: Added logic to reject massive bounding boxes (>50% screen height) to prevent tracking parents sitting directly in front of the camera in the bleachers.
 - [x] **Autonomous Watch Calendar**: Watch app now uses its own local `EventKit` to find upcoming games (`WatchCalendarManager`), making it fully independent of the iPhone connection for pre-game setup.
 - [x] **Watch Calendar Sync**: Phone still pushes calendar updates on request as a fallback.
-- [x] **Hide Watch Games**: Added a long-press (context menu) action on the Watch to locally hide/ignore specific calendar games.
+- [x] **Hide Watch Games**: Replaced deprecated context menu with a reliable long-press alert to locally hide/ignore specific calendar games.
+- [x] **Editable Team Names**: Added the ability to edit both Home and Away team names directly on the Watch before starting a game (Jony Ive style).
 
 ---
 
