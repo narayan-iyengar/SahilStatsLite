@@ -490,8 +490,10 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = SahilStatsLiteWatch;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.narayan.SahilStats;
 				INFOPLIST_KEY_WKBackgroundModes = "session-runtime";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "We need calendar access to find your upcoming basketball games to quickly start scoring from your wrist.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "We need calendar access to find your upcoming basketball games to quickly start scoring from your wrist.";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.narayan.SahilStats;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
@@ -526,8 +528,10 @@
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_CFBundleDisplayName = SahilStatsLiteWatch;
 				INFOPLIST_KEY_UISupportedInterfaceOrientations = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown";
-				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.narayan.SahilStats;
 				INFOPLIST_KEY_WKBackgroundModes = "session-runtime";
+				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "We need calendar access to find your upcoming basketball games to quickly start scoring from your wrist.";
+				INFOPLIST_KEY_NSCalendarsUsageDescription = "We need calendar access to find your upcoming basketball games to quickly start scoring from your wrist.";
+				INFOPLIST_KEY_WKCompanionAppBundleIdentifier = com.narayan.SahilStats;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",

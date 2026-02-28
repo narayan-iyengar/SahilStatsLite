@@ -16,6 +16,7 @@ import SwiftUI
 
 struct WatchContentView: View {
     @EnvironmentObject var connectivity: WatchConnectivityClient
+    @StateObject private var calendarManager = WatchCalendarManager.shared
     @State private var selectedTab: Int = 0
     @State private var showQuickGameConfirmation = false
 
@@ -43,6 +44,9 @@ struct WatchContentView: View {
                 gamePickerView
             }
         }
+        .onAppear {
+            calendarManager.checkAccess()
+        }
     }
 
     // MARK: - Game Picker View
@@ -62,18 +66,33 @@ struct WatchContentView: View {
                     }
                     .padding(.top, 8)
 
+                    // Show connection warning but don't block the UI anymore
                     if !connectivity.isPhoneReachable {
-                        // Phone not connected
-                        VStack(spacing: 8) {
+                        HStack(spacing: 6) {
                             Image(systemName: "iphone.slash")
-                                .font(.system(size: 24))
-                                .foregroundColor(.red.opacity(0.7))
-                            Text("Phone not connected")
-                                .font(.system(size: 11))
-                                .foregroundColor(.red.opacity(0.7))
+                            Text("Phone offline")
                         }
-                        .padding(.vertical, 20)
-                    } else if connectivity.upcomingGames.isEmpty {
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.red.opacity(0.8))
+                        .padding(.vertical, 4)
+                        .padding(.horizontal, 8)
+                        .background(Color.red.opacity(0.15))
+                        .cornerRadius(8)
+                    }
+
+                    if !calendarManager.hasCalendarAccess {
+                        VStack(spacing: 4) {
+                            Text("No Calendar Access")
+                                .font(.system(size: 11, weight: .semibold))
+                            Text("Enable in Watch Settings")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                                .multilineTextAlignment(.center)
+                        }
+                        .padding(.vertical, 8)
+                    }
+
+                    if calendarManager.upcomingGames.isEmpty {
                         // No games synced - show quick start
                         VStack(spacing: 8) {
                             Text("No games scheduled")
@@ -84,10 +103,10 @@ struct WatchContentView: View {
                         }
                         .padding(.vertical, 12)
                     } else {
-                        // Show upcoming games
+                        // Show upcoming games from WATCH calendar directly
                         VStack(spacing: 8) {
                             // Today's games
-                            let todayGames = connectivity.upcomingGames.filter { $0.isToday }
+                            let todayGames = calendarManager.upcomingGames.filter { $0.isToday }
                             if !todayGames.isEmpty {
                                 sectionHeader("Today")
                                 ForEach(todayGames) { game in
@@ -96,7 +115,7 @@ struct WatchContentView: View {
                             }
 
                             // Upcoming games (not today)
-                            let futureGames = connectivity.upcomingGames.filter { !$0.isToday }
+                            let futureGames = calendarManager.upcomingGames.filter { !$0.isToday }
                             if !futureGames.isEmpty {
                                 sectionHeader("Upcoming")
                                 ForEach(futureGames.prefix(5)) { game in
