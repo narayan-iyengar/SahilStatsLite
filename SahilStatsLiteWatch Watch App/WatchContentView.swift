@@ -81,15 +81,30 @@ struct WatchContentView: View {
                     }
 
                     if !calendarManager.hasCalendarAccess {
-                        VStack(spacing: 4) {
-                            Text("No Calendar Access")
-                                .font(.system(size: 11, weight: .semibold))
-                            Text("Enable in Watch Settings")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                                .multilineTextAlignment(.center)
+                        if calendarManager.isAccessNotDetermined {
+                            Button(action: {
+                                calendarManager.requestAccess()
+                            }) {
+                                Text("Allow Calendar Access")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .padding(.vertical, 8)
+                                    .padding(.horizontal, 12)
+                                    .background(Color.orange.opacity(0.8))
+                                    .cornerRadius(8)
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.vertical, 8)
+                        } else {
+                            VStack(spacing: 4) {
+                                Text("No Calendar Access")
+                                    .font(.system(size: 11, weight: .semibold))
+                                Text("Enable in Watch Settings")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
+                            .padding(.vertical, 8)
                         }
-                        .padding(.vertical, 8)
                     }
 
                     if calendarManager.upcomingGames.isEmpty {

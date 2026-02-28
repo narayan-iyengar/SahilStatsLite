@@ -19,6 +19,7 @@ class WatchCalendarManager: ObservableObject {
     private let eventStore = EKEventStore()
     @Published var upcomingGames: [WatchGame] = []
     @Published var hasCalendarAccess = false
+    @Published var isAccessNotDetermined = false
     @Published var ignoredEventIDs: Set<String> = []
 
     // Default teams to look for if phone sync hasn't happened
@@ -50,25 +51,41 @@ class WatchCalendarManager: ObservableObject {
         switch status {
         case .authorized, .fullAccess:
             self.hasCalendarAccess = true
+            self.isAccessNotDetermined = false
             self.loadUpcomingGames()
         case .notDetermined:
-            Task {
-                do {
-                    if #available(watchOS 10.0, *) {
-                        let granted = try await eventStore.requestFullAccessToEvents()
-                        self.hasCalendarAccess = granted
-                        if granted { self.loadUpcomingGames() }
-                    } else {
-                        let granted = try await eventStore.requestAccess(to: .event)
-                        self.hasCalendarAccess = granted
-                        if granted { self.loadUpcomingGames() }
-                    }
-                } catch {
-                    debugPrint("[WatchCalendar] Access error: \(error)")
-                }
-            }
+            self.hasCalendarAccess = false
+            self.isAccessNotDetermined = true
         default:
             self.hasCalendarAccess = false
+            self.isAccessNotDetermined = false
+        }
+    }
+    
+    func requestAccess() {
+        Task {
+            do {
+                if #available(watchOS 10.0, *) {
+                    let granted = try await eventStore.requestFullAccessToEvents()
+                    DispatchQueue.main.async {
+                        self.hasCalendarAccess = granted
+                        self.isAccessNotDetermined = false
+                        if granted { self.loadUpcomingGames() }
+                    }
+                } else {
+                    let granted = try await eventStore.requestAccess(to: .event)
+                    DispatchQueue.main.async {
+                        self.hasCalendarAccess = granted
+                        self.isAccessNotDetermined = false
+                        if granted { self.loadUpcomingGames() }
+                    }
+                }
+            } catch {
+                debugPrint("[WatchCalendar] Access error: \(error)")
+                DispatchQueue.main.async {
+                    self.isAccessNotDetermined = false
+                }
+            }
         }
     }
 
