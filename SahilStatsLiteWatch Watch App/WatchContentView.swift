@@ -231,8 +231,9 @@ struct WatchContentView: View {
             .cornerRadius(10)
         }
         .buttonStyle(.plain)
-        // Note: Simultaneous gesture ensures the NavigationLink still works for taps
-        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+        // highPriorityGesture intercepts the long press before it becomes a tap,
+        // preventing the NavigationLink from triggering accidentally.
+        .highPriorityGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
             // Haptic feedback for long press
             WKInterfaceDevice.current().play(.directionUp)
             gameToHide = game

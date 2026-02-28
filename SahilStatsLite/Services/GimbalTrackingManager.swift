@@ -64,8 +64,10 @@ final class GimbalTrackingManager: ObservableObject {
     private var trackingTask: Task<Void, Never>?
 
     // Court region for tracking (normalized 0.0-1.0)
+    // Tweak: Shifted region UP to prevent "floor staring" on tall tripods.
+    // y: 0.15 to 0.05 (higher up in the frame), height slightly reduced to ignore bottom edge.
     private var courtRegion: CGRect {
-        CGRect(x: 0.05, y: 0.15, width: 0.9, height: 0.75)
+        CGRect(x: 0.05, y: 0.05, width: 0.9, height: 0.65)
     }
 
     // MARK: - Initialization
