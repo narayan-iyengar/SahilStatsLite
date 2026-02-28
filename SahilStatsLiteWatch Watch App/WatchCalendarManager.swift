@@ -19,12 +19,30 @@ class WatchCalendarManager: ObservableObject {
     private let eventStore = EKEventStore()
     @Published var upcomingGames: [WatchGame] = []
     @Published var hasCalendarAccess = false
+    @Published var ignoredEventIDs: Set<String> = []
 
     // Default teams to look for if phone sync hasn't happened
     private let defaultTeams = ["Lava", "Uneqld", "Elements", "Wildcats"]
+    private let ignoredEventsKey = "watchIgnoredEventIDs"
 
     private init() {
+        loadIgnoredEvents()
         checkAccess()
+    }
+    
+    // MARK: - Ignore Events
+    
+    private func loadIgnoredEvents() {
+        if let saved = UserDefaults.standard.array(forKey: ignoredEventsKey) as? [String] {
+            ignoredEventIDs = Set(saved)
+        }
+    }
+    
+    func ignoreGame(_ gameID: String) {
+        ignoredEventIDs.insert(gameID)
+        UserDefaults.standard.set(Array(ignoredEventIDs), forKey: ignoredEventsKey)
+        // Refresh the list immediately
+        loadUpcomingGames()
     }
 
     func checkAccess() {
@@ -67,6 +85,11 @@ class WatchCalendarManager: ObservableObject {
         var games: [WatchGame] = []
 
         for event in events {
+            // Skip if user ignored this event
+            if ignoredEventIDs.contains(event.eventIdentifier) {
+                continue
+            }
+            
             guard let title = event.title else { continue }
             let lowerTitle = title.lowercased()
             

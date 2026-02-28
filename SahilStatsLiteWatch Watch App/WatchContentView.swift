@@ -197,6 +197,13 @@ struct WatchContentView: View {
             .cornerRadius(10)
         }
         .buttonStyle(.plain)
+        .contextMenu {
+            Button(role: .destructive, action: {
+                calendarManager.ignoreGame(game.id)
+            }) {
+                Label("Hide Game", systemImage: "eye.slash")
+            }
+        }
     }
 
     // MARK: - Quick Game Button
