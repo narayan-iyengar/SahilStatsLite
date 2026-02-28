@@ -138,6 +138,8 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Watch Always On**: Implemented `WKExtendedRuntimeSession` to keep Watch app active and screen on during games.
 - [x] **Build System**: Cleaned ModuleCache and resolved package dependencies.
 - [x] **Court Priority Audio**: Configured `AVAudioSession` category to `.playAndRecord` with `.videoRecording` mode to ensure iOS prioritizes the high-quality Back Microphone.
+- [x] **Skynet Foreground Filter**: Added logic to reject massive bounding boxes (>50% screen height) to prevent tracking parents sitting directly in front of the camera in the bleachers.
+- [x] **Watch Calendar Sync**: Fixed an issue where the Watch wouldn't show upcoming games by forcing a calendar sync whenever the Watch explicitly requests a state update.
 
 ---
 

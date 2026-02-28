@@ -131,6 +131,12 @@ class PersonClassifier {
 
         // 1. Check if on court (within heat map bounds)
         let isOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.midY))
+        
+        // 1.5. Foreground Rejection (The "Parent in Bleachers" Filter)
+        // If a person takes up more than 50% of the screen height, they are too close to be a player on the court.
+        // We force them off-court to prevent tracking them.
+        let isMassiveForegroundObject = box.height > 0.50
+        let effectiveIsOnCourt = isOnCourt && !isMassiveForegroundObject
 
         // 2. Check for ref jersey (striped pattern)
         let (isRef, refConfidence) = checkForRefJersey(in: image, box: box, pixelData: pixelData)
@@ -143,7 +149,7 @@ class PersonClassifier {
                 boundingBox: box,
                 classification: .referee,
                 confidence: refConfidence,
-                isOnCourt: isOnCourt,
+                isOnCourt: effectiveIsOnCourt,
                 colorHistogram: histogram
             )
         }
@@ -155,7 +161,7 @@ class PersonClassifier {
         let classification: ClassifiedPerson.PersonType
         let confidence: Float
 
-        if isOnCourt {
+        if effectiveIsOnCourt {
             if isKid {
                 classification = .player
                 confidence = kidConfidence

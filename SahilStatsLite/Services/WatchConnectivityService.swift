@@ -380,6 +380,11 @@ extension WatchConnectivityService: WCSessionDelegate {
         // Request state from watch
         if message[WatchMessage.requestState] != nil {
             debugPrint("[WatchConnectivity] ⌚️ Watch requested game state sync")
+            
+            // 1. Sync Calendar Games (so the Watch gets the list if it missed it)
+            syncCalendarGames()
+            
+            // 2. Sync Active Game State (if there is one)
             onRequestState?()
         }
 
