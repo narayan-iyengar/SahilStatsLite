@@ -19,6 +19,7 @@ struct WatchContentView: View {
     @StateObject private var calendarManager = WatchCalendarManager.shared
     @State private var selectedTab: Int = 0
     @State private var showQuickGameConfirmation = false
+    @State private var gameToHide: WatchGame?
 
     var body: some View {
         Group {
@@ -153,6 +154,24 @@ struct WatchContentView: View {
                 WatchQuickGameConfirmationView()
                     .environmentObject(connectivity)
             }
+            .confirmationDialog("Hide this game?", isPresented: Binding(
+                get: { gameToHide != nil },
+                set: { if !$0 { gameToHide = nil } }
+            ), titleVisibility: .visible) {
+                Button("Hide Game", role: .destructive) {
+                    if let game = gameToHide {
+                        calendarManager.ignoreGame(game.id)
+                    }
+                    gameToHide = nil
+                }
+                Button("Cancel", role: .cancel) {
+                    gameToHide = nil
+                }
+            } message: {
+                if let game = gameToHide {
+                    Text("vs \(game.opponent)")
+                }
+            }
         }
     }
 
@@ -212,13 +231,12 @@ struct WatchContentView: View {
             .cornerRadius(10)
         }
         .buttonStyle(.plain)
-        .contextMenu {
-            Button(role: .destructive, action: {
-                calendarManager.ignoreGame(game.id)
-            }) {
-                Label("Hide Game", systemImage: "eye.slash")
-            }
-        }
+        // Note: Simultaneous gesture ensures the NavigationLink still works for taps
+        .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+            // Haptic feedback for long press
+            WKInterfaceDevice.current().play(.directionUp)
+            gameToHide = game
+        })
     }
 
     // MARK: - Quick Game Button

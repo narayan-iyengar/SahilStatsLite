@@ -20,27 +20,37 @@ struct WatchGameConfirmationView: View {
 
     @State private var isStarting = false
     @State private var selectedHalfLength: Int = 18
+    @State private var editedOpponent: String = ""
+    @State private var editedTeam: String = ""
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
                 // Game info card
                 VStack(spacing: 8) {
-                    // Opponent (big)
-                    Text("vs \(game.opponent)")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundColor(.white)
-                        .multilineTextAlignment(.center)
-                        .lineLimit(2)
-
                     // Your team
                     HStack(spacing: 4) {
                         Circle()
                             .fill(Color.orange)
                             .frame(width: 6, height: 6)
-                        Text(game.teamName)
+                        TextField("My Team", text: $editedTeam)
                             .font(.system(size: 12, weight: .medium))
                             .foregroundColor(.orange)
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.center)
+                    }
+
+                    // Opponent (big)
+                    HStack(spacing: 4) {
+                        Text("vs")
+                            .font(.system(size: 14, weight: .semibold))
+                            .foregroundColor(.white.opacity(0.7))
+                        
+                        TextField("Opponent", text: $editedOpponent)
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundColor(.white)
+                            .textFieldStyle(.plain)
+                            .multilineTextAlignment(.center)
                     }
 
                     Divider()
@@ -157,6 +167,8 @@ struct WatchGameConfirmationView: View {
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
             selectedHalfLength = game.halfLength
+            editedOpponent = game.opponent
+            editedTeam = game.teamName
         }
     }
 
@@ -166,11 +178,11 @@ struct WatchGameConfirmationView: View {
         // Haptic feedback
         WKInterfaceDevice.current().play(.click)
 
-        // Create updated game object with selected half length
+        // Create updated game object with selected half length and edited names
         let updatedGame = WatchGame(
             id: game.id,
-            opponent: game.opponent,
-            teamName: game.teamName,
+            opponent: editedOpponent.isEmpty ? "Away" : editedOpponent,
+            teamName: editedTeam.isEmpty ? "Home" : editedTeam,
             location: game.location,
             startTime: game.startTime,
             halfLength: selectedHalfLength
@@ -193,19 +205,35 @@ struct WatchQuickGameConfirmationView: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var opponent: String = "Away"
+    @State private var teamName: String = "Lava"
     @State private var halfLength: Int = 18
     @State private var isStarting = false
 
     var body: some View {
         ScrollView {
             VStack(spacing: 12) {
-                // Opponent picker (simplified)
+                // Team name picker (Home)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("My Team")
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white.opacity(0.5))
+
+                    TextField("Home Team", text: $teamName)
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundColor(.orange)
+                        .textFieldStyle(.plain)
+                        .padding(10)
+                        .background(Color.white.opacity(0.1))
+                        .cornerRadius(8)
+                }
+
+                // Opponent picker
                 VStack(alignment: .leading, spacing: 6) {
                     Text("Opponent")
                         .font(.system(size: 10, weight: .medium))
                         .foregroundColor(.white.opacity(0.5))
 
-                    TextField("Team name", text: $opponent)
+                    TextField("Away Team", text: $opponent)
                         .font(.system(size: 14, weight: .semibold))
                         .textFieldStyle(.plain)
                         .padding(10)
@@ -277,7 +305,7 @@ struct WatchQuickGameConfirmationView: View {
         let game = WatchGame(
             id: UUID().uuidString,
             opponent: opponent.isEmpty ? "Away" : opponent,
-            teamName: "Home",
+            teamName: teamName.isEmpty ? "Home" : teamName,
             location: "",
             startTime: Date(),
             halfLength: halfLength
