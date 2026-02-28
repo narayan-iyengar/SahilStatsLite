@@ -201,10 +201,10 @@ struct WatchScoringView: View {
                     .cornerRadius(12)
                     .contentShape(Rectangle())
                     .highPriorityGesture(
-                        DragGesture(minimumDistance: 35)
+                        DragGesture(minimumDistance: 15)
                             .onEnded { value in
-                                let isVertical = abs(value.translation.height) > abs(value.translation.width) * 1.5
-                                let isDownward = value.translation.height > 40
+                                let isVertical = abs(value.translation.height) > abs(value.translation.width) * 1.2
+                                let isDownward = value.translation.height > 20
                                 if isDownward && isVertical {
                                     WKInterfaceDevice.current().play(.click)
                                     onSwipeDown()

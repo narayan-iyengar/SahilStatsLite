@@ -143,6 +143,8 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Watch Calendar Sync**: Phone still pushes calendar updates on request as a fallback.
 - [x] **Hide Watch Games**: Replaced deprecated context menu with a reliable long-press alert to locally hide/ignore specific calendar games.
 - [x] **Editable Team Names**: Added the ability to edit both Home and Away team names directly on the Watch before starting a game (Jony Ive style).
+- [x] **Independent Watch Clock**: Watch now runs its own local timer. It stays perfectly in sync with the iPhone, but won't freeze if the iPhone app is killed/suspended, making it a reliable standalone scoring device.
+- [x] **Better Swipe-to-Subtract**: Made the swipe-down gesture on the Watch score boxes much more sensitive (reduced minimum drag distance) so correcting scores is effortless.
 
 ---
 

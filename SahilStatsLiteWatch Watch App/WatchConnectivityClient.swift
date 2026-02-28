@@ -116,7 +116,15 @@ class WatchConnectivityClient: NSObject, ObservableObject {
     @Published var myScore: Int = 0
     @Published var oppScore: Int = 0
     @Published var remainingSeconds: Int = 18 * 60
-    @Published var isClockRunning: Bool = false
+    @Published var isClockRunning: Bool = false {
+        didSet {
+            if isClockRunning {
+                startLocalTimer()
+            } else {
+                stopLocalTimer()
+            }
+        }
+    }
     @Published var period: String = "1st Half"
     @Published var periodIndex: Int = 0
     @Published var halfLength: Int = 18
@@ -137,10 +145,32 @@ class WatchConnectivityClient: NSObject, ObservableObject {
 
     private var session: WCSession?
     private var extendedSession: WKExtendedRuntimeSession?
+    private var localTimer: AnyCancellable?
 
     private override init() {
         super.init()
         setupSession()
+    }
+    
+    // MARK: - Local Timer (Independent Clock)
+    
+    private func startLocalTimer() {
+        stopLocalTimer() // Ensure no duplicates
+        localTimer = Timer.publish(every: 1.0, on: .main, in: .common)
+            .autoconnect()
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                if self.remainingSeconds > 0 {
+                    self.remainingSeconds -= 1
+                } else {
+                    self.isClockRunning = false
+                }
+            }
+    }
+    
+    private func stopLocalTimer() {
+        localTimer?.cancel()
+        localTimer = nil
     }
     
     // MARK: - Extended Runtime Session (Keep Screen On)
