@@ -162,6 +162,7 @@ final class AutoZoomManager: ObservableObject {
     private let personClassifier = PersonClassifier()
     private let deepTracker = DeepTracker()
     private let smoothZoomController = UltraSmoothZoomController(minZoom: 1.0, maxZoom: 1.6)
+    private let ballDetector = BallDetector()
 
     @Published var trackingReliability: Float = 0
     @Published var confirmedTracks: Int = 0
@@ -258,15 +259,35 @@ final class AutoZoomManager: ObservableObject {
         // 1. Vision hint
         personClassifier.currentFocusHint = actionZoneCenter
 
-        // 2. Classify (AI receives SD buffer from RecordingManager)
+        // 2. Dual Detection (Players + Ball)
         let classifiedPeople = personClassifier.classifyPeople(in: pixelBuffer)
         let players = classifiedPeople.filter { $0.classification == .player }
+        let ballDetection = ballDetector.detectBall(in: pixelBuffer, dt: dt)
         
         // 3. Update SORT Tracker
         let activeTracks = deepTracker.update(detections: classifiedPeople, dt: dt)
 
-        // 4. Momentum-Weighted Action Center
-        let rawActionCenter = personClassifier.calculateActionCenter(from: activeTracks)
+        // 4. Calculate Raw Action Center (The "God Mode" Fusion)
+        var rawActionCenter = CGPoint(x: 0.5, y: 0.5)
+        
+        if let ball = ballDetection, ball.confidence > 0.6 {
+            // THE BALL IS THE SUN (Extreme Gravity)
+            // Add predictive lead based on ball velocity (Wayne Gretzky Rule)
+            let leadX = ball.velocity.x * 0.5 // Look ahead half a second
+            let leadY = ball.velocity.y * 0.5
+            
+            // Constrain the lookahead so it doesn't wildly snap off-screen on bad velocity spikes
+            let safeLeadX = max(-0.2, min(0.2, leadX))
+            let safeLeadY = max(-0.2, min(0.2, leadY))
+            
+            rawActionCenter = CGPoint(
+                x: max(0.1, min(0.9, ball.position.x + safeLeadX)),
+                y: max(0.1, min(0.9, ball.position.y + safeLeadY))
+            )
+        } else {
+            // PLAYERS ARE PLANETS (Fallback to momentum-weighted cluster)
+            rawActionCenter = personClassifier.calculateActionCenter(from: activeTracks)
+        }
         
         // DEADBAND: Only move the action center if the new point is > 5% away from current center
         // This stops the camera from nervously panning for every small step a player takes.
