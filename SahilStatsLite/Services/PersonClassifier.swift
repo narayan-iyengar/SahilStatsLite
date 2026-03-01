@@ -130,7 +130,17 @@ class PersonClassifier {
         let box = observation.boundingBox
 
         // 1. Check if on court (within heat map bounds)
-        let isOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.midY))
+        // Strict Masking: We check the person's feet (minY in Vision is bottom edge).
+        // If their feet are not on the court floor, they are a bystander (Bench Dad).
+        let feetY = box.minY
+        let feetX = box.midX
+        let feetPoint = CGPoint(x: feetX, y: feetY)
+        
+        // We also check midY just in case they are jumping high, 
+        // but feet are the primary indicator of standing on the court.
+        let isFeetOnCourt = courtBounds.contains(feetPoint)
+        let isCenterOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.midY))
+        let isOnCourt = isFeetOnCourt || isCenterOnCourt
         
         // 1.5. Foreground Rejection (The "Parent in Bleachers" Filter)
         // If a person takes up more than 50% of the screen height, they are too close to be a player on the court.

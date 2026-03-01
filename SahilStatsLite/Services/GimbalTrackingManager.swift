@@ -164,23 +164,7 @@ final class GimbalTrackingManager: ObservableObject {
                                 for try await trackingState in trackingStates {
                                     await MainActor.run {
                                         self.trackedSubjectCount = trackingState.trackedSubjects.count
-
-                                        // Auto-zoom based on subject count (only in track mode)
-                                        if self.gimbalMode == .track && self.trackedSubjectCount > 0 {
-                                            let optimalZoom: CGFloat
-                                            if self.trackedSubjectCount >= 5 {
-                                                optimalZoom = 1.0
-                                            } else if self.trackedSubjectCount <= 2 {
-                                                optimalZoom = 2.0
-                                            } else {
-                                                optimalZoom = 1.5
-                                            }
-
-                                            let currentZoom = RecordingManager.shared.getCurrentZoom()
-                                            if abs(currentZoom - optimalZoom) > 0.3 {
-                                                _ = RecordingManager.shared.setZoom(factor: optimalZoom)
-                                            }
-                                        }
+                                        // Removed DockKit-based auto-zoom to allow Skynet (AutoZoomManager) to be the sole dictator of zoom, preventing jitter.
                                     }
                                 }
                             } catch {

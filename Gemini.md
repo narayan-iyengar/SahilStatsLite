@@ -139,6 +139,10 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Build System**: Cleaned ModuleCache and resolved package dependencies.
 - [x] **Court Priority Audio**: Configured `AVAudioSession` category to `.playAndRecord` with `.videoRecording` mode to ensure iOS prioritizes the high-quality Back Microphone.
 - [x] **Skynet Foreground Filter**: Added logic to reject massive bounding boxes (>50% screen height) to prevent tracking parents sitting directly in front of the camera in the bleachers.
+- [x] **Tracking Smoothness Upgrades**: 
+    - Disabled DockKit's discrete auto-zoom to stop it from fighting Skynet's continuous zoom, eliminating violent jitter.
+    - Implemented a 5% "Deadband" safe zone for the Action Center to stop nervous panning on micro-movements.
+    - Added "Strict Masking" that checks if a player's feet are physically on the court floor, ignoring "Bench Dads" sitting in the background.
 - [x] **Autonomous Watch Calendar**: Watch app now uses its own local `EventKit` to find upcoming games (`WatchCalendarManager`), making it fully independent of the iPhone connection for pre-game setup.
 - [x] **Watch Calendar Sync**: Phone still pushes calendar updates on request as a fallback.
 - [x] **Hide Watch Games**: Replaced deprecated context menu with a reliable long-press alert to locally hide/ignore specific calendar games.

@@ -266,7 +266,15 @@ final class AutoZoomManager: ObservableObject {
         let activeTracks = deepTracker.update(detections: classifiedPeople, dt: dt)
 
         // 4. Momentum-Weighted Action Center
-        let actionCenter = personClassifier.calculateActionCenter(from: activeTracks)
+        let rawActionCenter = personClassifier.calculateActionCenter(from: activeTracks)
+        
+        // DEADBAND: Only move the action center if the new point is > 5% away from current center
+        // This stops the camera from nervously panning for every small step a player takes.
+        let distance = hypot(rawActionCenter.x - actionZoneCenter.x, rawActionCenter.y - actionZoneCenter.y)
+        let centerDeadband: CGFloat = 0.05
+        if distance > centerDeadband {
+            actionZoneCenter = rawActionCenter
+        }
 
         // 5. Timeout Detection (Bench Rush)
         let edgePlayers = players.filter { $0.boundingBox.midX < 0.15 || $0.boundingBox.midX > 0.85 }
@@ -282,7 +290,7 @@ final class AutoZoomManager: ObservableObject {
         trackingReliability = deepTracker.averageReliability
         confirmedTracks = deepTracker.confirmedTrackCount
         detectedPlayerCount = deepTracker.playerTrackCount
-        actionZoneCenter = actionCenter
+        // actionZoneCenter is now updated via Deadband above
         debugActionZone = deepTracker.getGroupBoundingBox(filterPlayers: true)
 
         if players.isEmpty && !isTimeout {
