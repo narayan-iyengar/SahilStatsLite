@@ -161,7 +161,8 @@ final class AutoZoomManager: ObservableObject {
 
     private let personClassifier = PersonClassifier()
     private let deepTracker = DeepTracker()
-    private let smoothZoomController = UltraSmoothZoomController(minZoom: 1.0, maxZoom: 1.6)
+    // Restrict max zoom to 1.3x to preserve game context (passing lanes) and reduce nauseating "seasick" zoom effects.
+    private let smoothZoomController = UltraSmoothZoomController(minZoom: 1.0, maxZoom: 1.3)
     private let ballDetector = BallDetector()
 
     @Published var trackingReliability: Float = 0
@@ -304,7 +305,7 @@ final class AutoZoomManager: ObservableObject {
         smoothZoomController.isTimeoutMode = isTimeout
 
         // 6. Calculate zoom
-        var recommendedZoom = deepTracker.calculateZoom(minZoom: 1.0, maxZoom: 2.0)
+        var recommendedZoom = deepTracker.calculateZoom(minZoom: 1.0, maxZoom: 1.3)
         if isTimeout { recommendedZoom = 1.0 }
 
         // Update stats
