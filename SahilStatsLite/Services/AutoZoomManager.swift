@@ -268,26 +268,38 @@ final class AutoZoomManager: ObservableObject {
         // 3. Update SORT Tracker
         let activeTracks = deepTracker.update(detections: classifiedPeople, dt: dt)
 
-        // 4. Calculate Raw Action Center (The "God Mode" Fusion)
+        // 4. Calculate Raw Action Center
         var rawActionCenter = CGPoint(x: 0.5, y: 0.5)
-        
-        if let ball = ballDetection, ball.confidence > 0.6 {
-            // THE BALL IS THE SUN (Extreme Gravity)
-            // Add predictive lead based on ball velocity (Wayne Gretzky Rule)
-            let leadX = ball.velocity.x * 0.5 // Look ahead half a second
-            let leadY = ball.velocity.y * 0.5
-            
-            // Constrain the lookahead so it doesn't wildly snap off-screen on bad velocity spikes
-            let safeLeadX = max(-0.2, min(0.2, leadX))
-            let safeLeadY = max(-0.2, min(0.2, leadY))
-            
-            rawActionCenter = CGPoint(
+
+        // Player cluster is always computed -- it anchors the camera even when ball is visible
+        let playerCenter = personClassifier.calculateActionCenter(from: activeTracks)
+
+        if let ball = ballDetection, ball.confidence > 0.75 {
+            // Ball detected with high confidence. Blend toward ball position rather than
+            // hard-snapping to it. This prevents the camera from whipping across the court
+            // on turnovers or false detections.
+            //
+            // Gretzky lead reduced to 0.2s (was 0.5s) -- less overshoot on fast breaks.
+            let leadX = ball.velocity.x * 0.2
+            let leadY = ball.velocity.y * 0.2
+            let safeLeadX = max(-0.1, min(0.1, leadX))
+            let safeLeadY = max(-0.1, min(0.1, leadY))
+
+            let ballCenter = CGPoint(
                 x: max(0.1, min(0.9, ball.position.x + safeLeadX)),
                 y: max(0.1, min(0.9, ball.position.y + safeLeadY))
             )
+
+            // 60% ball, 40% player cluster. Camera drifts toward the ball
+            // but stays anchored near the players. Much smoother than a hard snap.
+            let ballWeight: CGFloat = 0.6
+            rawActionCenter = CGPoint(
+                x: ballCenter.x * ballWeight + playerCenter.x * (1 - ballWeight),
+                y: ballCenter.y * ballWeight + playerCenter.y * (1 - ballWeight)
+            )
         } else {
-            // PLAYERS ARE PLANETS (Fallback to momentum-weighted cluster)
-            rawActionCenter = personClassifier.calculateActionCenter(from: activeTracks)
+            // No confident ball detection -- follow player cluster only
+            rawActionCenter = playerCenter
         }
         
         // DEADBAND: Only move the action center if the new point is > 5% away from current center

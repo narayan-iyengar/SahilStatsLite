@@ -1,4 +1,4 @@
-# SahilStatsLite — Handoff Notes (2026-03-22)
+# SahilStatsLite — Handoff Notes (2026-03-23)
 
 This document captures the exact changes made in the latest session, the reasoning behind
 each decision, and what to work on next. Written by Claude for continuity with Gemini or
@@ -171,6 +171,21 @@ approach was implemented but the issue persists.
 Not a code issue. XBotGo/Soloshot are always mounted 8-12 feet high. From floor level,
 players occlude each other constantly and Skynet gets confused bounding boxes. A taller
 tripod dramatically improves detection quality before any code change.
+
+---
+
+## Latest Change (2026-03-23) — Ball Tracking Smoothing
+
+**File:** `SahilStatsLite/Services/AutoZoomManager.swift`
+
+Problem: Ball tracker was hard-snapping the camera across the court on turnovers/fast breaks.
+
+Changes:
+- Confidence threshold raised 0.6 → 0.75 (less trigger-happy)
+- Gretzky predictive lead reduced 0.5s → 0.2s (less overshoot)
+- Lead constraint tightened 0.2 → 0.1 (tighter bound)
+- Hard snap replaced with 60/40 blend (ball/players) -- camera drifts toward
+  ball but stays anchored near player cluster. No more violent cross-court whip.
 
 ---
 
