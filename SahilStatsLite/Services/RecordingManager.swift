@@ -44,7 +44,7 @@ class RecordingManager: NSObject, ObservableObject {
     /// Called on background queue - do NOT update UI directly
     nonisolated(unsafe) var onFrameForAI: ((_ pixelBuffer: CVPixelBuffer) -> Void)?
     private nonisolated(unsafe) var lastAIFrameTime: CFAbsoluteTime = 0
-    private let aiFrameInterval: CFAbsoluteTime = 0.2  // 5 FPS for AI processing
+    private let aiFrameInterval: CFAbsoluteTime = 0.067  // 15 FPS for AI processing
 
     // MARK: - Capture Session
 

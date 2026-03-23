@@ -3,7 +3,9 @@
 //  SahilStatsLite
 //
 //  PURPOSE: DockKit gimbal integration for Insta360 Flow Pro 2. Controls
-//           physical pan/tilt tracking, stabilization mode, and region of interest.
+//           physical pan/tilt as a 2-axis stabilizer guided by Skynet.
+//           DockKit system tracking AI is DISABLED. Skynet is the sole tracking brain.
+//           Skynet calls updateTrackingROI(center:) each frame to steer the physical gimbal.
 //  KEY TYPES: GimbalTrackingManager (singleton), GimbalMode (off/stabilize/track)
 //  DEPENDS ON: DockKit (iOS 18+), AVFoundation
 //
@@ -62,11 +64,13 @@ final class GimbalTrackingManager: ObservableObject {
     #endif
 
     private var trackingTask: Task<Void, Never>?
+    private var roiUpdateTask: Task<Void, Never>?
 
-    // Court region for tracking (normalized 0.0-1.0)
-    private var courtRegion: CGRect {
-        CGRect(x: 0.05, y: 0.15, width: 0.9, height: 0.75)
-    }
+    // Minimum movement (normalized) before we bother updating the ROI
+    private let roiDeadband: CGFloat = 0.08
+    private var lastROICenter: CGPoint = CGPoint(x: 0.5, y: 0.5)
+    // ROI box size sent to DockKit (30% of frame). Smaller = less DockKit hunting.
+    private let roiSize: CGFloat = 0.30
 
     // MARK: - Initialization
 
@@ -88,12 +92,19 @@ final class GimbalTrackingManager: ObservableObject {
 
                     for await stateChange in stateChanges {
                         debugPrint("[DockKit] State change received!")
-                        await MainActor.run {
-                            if let accessory = stateChange.accessory {
+                        if let accessory = stateChange.accessory {
+                            // Immediately disable Insta360's own tracking AI the moment the
+                            // gimbal connects. This is the DockKit equivalent of Lock mode —
+                            // the gimbal stabilizes but does not track on its own.
+                            // Skynet will steer it via updateTrackingROI(center:).
+                            try? await manager.setSystemTrackingEnabled(false)
+                            debugPrint("[DockKit] ✅ Gimbal connected: \(accessory.identifier.name) — Lock mode engaged")
+                            await MainActor.run {
                                 self.dockAccessory = accessory
                                 self.isDockKitAvailable = true
-                                debugPrint("[DockKit] ✅ Gimbal connected: \(accessory.identifier.name)")
-                            } else {
+                            }
+                        } else {
+                            await MainActor.run {
                                 self.dockAccessory = nil
                                 self.isDockKitAvailable = false
                                 debugPrint("[DockKit] ❌ Gimbal disconnected")
@@ -136,43 +147,17 @@ final class GimbalTrackingManager: ObservableObject {
         if #available(iOS 18.0, *) {
             isTrackingActive = true
             lastError = nil
+            lastROICenter = CGPoint(x: 0.5, y: 0.5)
 
             Task {
                 do {
-                    guard let accessory = dockAccessory else { return }
-
-                    // Only enable system tracking in track mode
-                    if gimbalMode == .track {
-                        // Set region of interest to court area
-                        try await accessory.setRegionOfInterest(courtRegion)
-
-                        // Enable system tracking
-                        let manager = DockAccessoryManager.shared
-                        try await manager.setSystemTrackingEnabled(true)
-                        debugPrint("[Gimbal] Auto-tracking ENABLED")
-                    } else {
-                        // Stabilize mode - gimbal is connected but no auto-tracking
-                        debugPrint("[Gimbal] Stabilize mode - tracking DISABLED, manual aim")
-                    }
-
-                    // Monitor tracking state (only in track mode)
-                    if gimbalMode == .track {
-                        trackingTask = Task {
-                            do {
-                                let trackingStates = try accessory.trackingStates
-
-                                for try await trackingState in trackingStates {
-                                    await MainActor.run {
-                                        self.trackedSubjectCount = trackingState.trackedSubjects.count
-                                        // Removed DockKit-based auto-zoom to allow Skynet (AutoZoomManager) to be the sole dictator of zoom, preventing jitter.
-                                    }
-                                }
-                            } catch {
-                                debugPrint("Tracking state error: \(error)")
-                            }
-                        }
-                    }
-
+                    let manager = DockAccessoryManager.shared
+                    // CRITICAL: Disable DockKit's own tracking AI entirely.
+                    // The Insta360 Flow Pro 2 is used as a pure 2-axis physical stabilizer.
+                    // Skynet (AutoZoomManager) is the sole tracking brain. It calls
+                    // updateTrackingROI(center:) each frame to steer where the gimbal points.
+                    try await manager.setSystemTrackingEnabled(false)
+                    debugPrint("[Gimbal] System tracking DISABLED — Skynet is in command")
                 } catch {
                     await MainActor.run {
                         self.lastError = error.localizedDescription
@@ -187,30 +172,49 @@ final class GimbalTrackingManager: ObservableObject {
     func stopTracking() {
         guard isTrackingActive else { return }
 
-        #if canImport(DockKit)
-        if #available(iOS 18.0, *) {
-            trackingTask?.cancel()
-            trackingTask = nil
+        trackingTask?.cancel()
+        trackingTask = nil
+        roiUpdateTask?.cancel()
+        roiUpdateTask = nil
 
-            Task {
+        isTrackingActive = false
+        trackedSubjectCount = 0
+    }
+
+    // MARK: - Skynet-Driven Physical Gimbal Steering
+
+    /// Called by AutoZoomManager each frame with Skynet's computed action center (normalized 0–1).
+    /// Translates that center into a DockKit region of interest so the gimbal physically pans/tilts
+    /// toward the action. Only updates DockKit if the center has moved past the deadband.
+    func updateTrackingROI(center: CGPoint) {
+        guard gimbalMode == .track, isDockKitAvailable, isTrackingActive else { return }
+
+        let movement = hypot(center.x - lastROICenter.x, center.y - lastROICenter.y)
+        guard movement > roiDeadband else { return }
+        lastROICenter = center
+
+        roiUpdateTask?.cancel()
+        roiUpdateTask = Task {
+            #if canImport(DockKit)
+            if #available(iOS 18.0, *) {
+                guard let accessory = dockAccessory else { return }
+                let half = roiSize / 2
+                let roi = CGRect(
+                    x: max(0, center.x - half),
+                    y: max(0, center.y - half),
+                    width: roiSize,
+                    height: roiSize
+                )
                 do {
-                    let manager = DockAccessoryManager.shared
-                    try await manager.setSystemTrackingEnabled(false)
+                    try await accessory.setRegionOfInterest(roi)
+                    debugPrint("[Gimbal] ROI → (\(String(format: "%.2f", center.x)), \(String(format: "%.2f", center.y)))")
                 } catch {
-                    debugPrint("Error stopping tracking: \(error)")
-                }
-
-                await MainActor.run {
-                    self.isTrackingActive = false
-                    self.trackedSubjectCount = 0
+                    // Non-fatal — Skynet keeps running even if gimbal ROI update fails
+                    debugPrint("[Gimbal] ROI update failed: \(error.localizedDescription)")
                 }
             }
-        } else {
-            isTrackingActive = false
+            #endif
         }
-        #else
-        isTrackingActive = false
-        #endif
     }
 
     // MARK: - Status

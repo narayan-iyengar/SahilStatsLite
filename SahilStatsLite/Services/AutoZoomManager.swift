@@ -296,6 +296,9 @@ final class AutoZoomManager: ObservableObject {
         let centerDeadband: CGFloat = 0.05
         if distance > centerDeadband {
             actionZoneCenter = rawActionCenter
+            // Steer the physical gimbal: Skynet tells DockKit where the action is.
+            // GimbalTrackingManager has its own deadband so this is cheap to call every frame.
+            GimbalTrackingManager.shared.updateTrackingROI(center: actionZoneCenter)
         }
 
         // 5. Timeout Detection (Bench Rush)

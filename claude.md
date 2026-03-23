@@ -1,10 +1,9 @@
 # SahilStatsLite - Project Context
 
-> **UPDATED (2026-02-06):** "Earth Shattering" Tracking & Workflow Overhaul.
-> 1. **Visual Re-ID:** Tracking now uses color histograms to ignore distractors (parents/refs).
-> 2. **Jony Ive Workflow:** Record → Auto-Save to Photos → Manual Upload → Auto-Delete from App. No friction.
-> 3. **Watch on YouTube:** Direct link in Game Log after upload.
-> 4. **Robustness:** Fixed "Phantom Video" bug, Watch Sync, Firebase Status Sync, and **Critical Video URL Save Bug**.
+> **UPDATED (2026-02-21):** MVP Polish Complete. Audio & Sync Upgraded.
+> 1. **Current Status:** Project stable. All MVP features (Recording, Sync, Watch, Audio) implemented and verified.
+> 2. **Latest Win:** Implemented "Court Priority" Audio (Back Mic/Cardioid) and "Always On" Watch session.
+> 3. **Next Step:** Field testing at the next game!
 
 ---
 
@@ -39,7 +38,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - Highlight reel generation
 - Season stats and trends
 
-<h3>Apple Watch Companion (WORKING)</h3>
+<h3>Apple Watch Companion (DEBUGGING)</h3>
 - Watch app for remote scoring from sidelines
 - **Tap** score zones to add +1 point
 - **Swipe down** on score to subtract -1 (fix mistakes)
@@ -47,6 +46,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - **Remote Calibration**: Use Watch D-Pad to adjust court corners on Phone AR view.
 - Real-time two-way sync (phone ↔ watch)
 - End game directly from Watch
+- **Current Issue:** Watch fails to receive calendar context or active game state despite connectivity. Suspect OS version mismatch or `WCSession` daemon hang.
 
 ---
 
@@ -106,7 +106,7 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - Phase 2: Stats tagging
 - Phase 3: Highlights and sharing
 
-<h3>Phase 1 Progress (Updated 2026-02-06)</h3>
+<h3>Phase 1 Progress (Updated 2026-02-21)</h3>
 - [x] Basic project structure
 - [x] Camera preview working
 - [x] Floating Ubiquiti-style controls with score buttons (+1, +2, +3)
@@ -129,6 +129,28 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Auto-Cleanup**: Delete local file after successful YouTube upload.
 - [x] **Firebase Sync**: YouTube status syncs correctly across devices.
 - [x] **Fixed**: Critical bug where `saveGame` was called before `videoURL` was assigned.
+- [x] **Cleanup**: Deleting a game removes the local video file.
+- [x] **UI**: Overlay scaled 1.5x for 4K.
+- [x] **Robust Sync**: Fixed `mergeFirebaseGames` to preserve local-only fields (`videoURL`, `scoreEvents`) during cloud sync.
+- [x] **Watch Resiliency**: Upgraded `WatchConnectivityService` to use `updateApplicationContext` (sticky state) for reliable score/clock sync.
+- [x] **Ghost Cleanup**: Added "Cleanup Ghost Games" maintenance tool in Settings to remove orphaned test records (no video, no score).
+- [x] **Discard Workflow**: Added "Cancel & Discard" option to End Game dialog to stop recording without saving a record.
+- [x] **Watch Always On**: Implemented `WKExtendedRuntimeSession` to keep Watch app active and screen on during games.
+- [x] **Build System**: Cleaned ModuleCache and resolved package dependencies.
+- [x] **Court Priority Audio**: Configured `AVAudioSession` category to `.playAndRecord` with `.videoRecording` mode to ensure iOS prioritizes the high-quality Back Microphone.
+- [x] **Skynet Foreground Filter**: Added logic to reject massive bounding boxes (>50% screen height) to prevent tracking parents sitting directly in front of the camera in the bleachers.
+- [x] **Tracking Smoothness Upgrades**:
+    - Disabled DockKit's discrete auto-zoom to stop it from fighting Skynet's continuous zoom, eliminating violent jitter.
+    - Implemented a 5% "Deadband" safe zone for the Action Center to stop nervous panning on micro-movements.
+    - Added "Strict Masking" that checks if a player's feet are physically on the court floor, ignoring "Bench Dads" sitting in the background.
+    - **Context-First Zoom Cap:** Restricted Skynet's maximum optical zoom from 1.6x down to **1.3x**. This preserves game context (passing lanes, spacing) and eliminates the nauseating "seasick" effect of constant in-and-out zooming.
+- [x] **Skynet God Mode (Ball Tracking Fusion)**: Awakened the experimental `BallDetector` and wired it into `AutoZoomManager`. If the orange basketball is detected with high confidence, Skynet now abandons generic player-cluster tracking and aggressively locks the Action Center directly onto the ball, applying predictive velocity kinematics (The Wayne Gretzky Rule) to pan *ahead* of fast breaks.
+- [x] **Autonomous Watch Calendar**: Watch app now uses its own local `EventKit` to find upcoming games (`WatchCalendarManager`), making it fully independent of the iPhone connection for pre-game setup.
+- [x] **Watch Calendar Sync**: Phone still pushes calendar updates on request as a fallback.
+- [x] **Hide Watch Games**: Replaced deprecated context menu with a reliable long-press alert to locally hide/ignore specific calendar games.
+- [x] **Editable Team Names**: Added the ability to edit both Home and Away team names directly on the Watch before starting a game (Jony Ive style).
+- [x] **Independent Watch Clock**: Watch now runs its own local timer. It stays perfectly in sync with the iPhone, but won't freeze if the iPhone app is killed/suspended, making it a reliable standalone scoring device.
+- [x] **Better Swipe-to-Subtract**: Made the swipe-down gesture on the Watch score boxes much more sensitive (reduced minimum drag distance) so correcting scores is effortless.
 
 ---
 
