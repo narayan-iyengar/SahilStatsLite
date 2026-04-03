@@ -56,12 +56,18 @@ class PersonClassifier {
     // Reuse CIContext across frames — creating one per frame costs GPU allocations at 15fps.
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
 
+    // YOLOv8n CoreML detector — primary path when model is in bundle.
+    // Falls back to rectRequest if model absent (no code changes needed).
+    private let yoloDetector = YOLODetector()
+
     // Reuse Vision request objects — avoids allocation overhead at 15fps.
+    // rectRequest is fallback only when YOLO model is not present.
     private let rectRequest: VNDetectHumanRectanglesRequest = {
         let r = VNDetectHumanRectanglesRequest()
         r.upperBodyOnly = false
         return r
     }()
+    // poseRequest runs in both YOLO and fallback paths for ankle-based court contact.
     private let poseRequest = VNDetectHumanBodyPoseRequest()
 
     // MARK: - Team Jersey Color Learning
@@ -189,9 +195,9 @@ class PersonClassifier {
         return PersonPose(floorContactPoint: floorPoint, isStanding: isStanding)
     }
 
-    private func findMatchingPose(for rect: VNHumanObservation,
-                                  in poses: [VNHumanBodyPoseObservation]) -> VNHumanBodyPoseObservation? {
-        let center = CGPoint(x: rect.boundingBox.midX, y: rect.boundingBox.midY)
+    private func findMatchingPoseByRect(_ box: CGRect,
+                                        in poses: [VNHumanBodyPoseObservation]) -> VNHumanBodyPoseObservation? {
+        let center = CGPoint(x: box.midX, y: box.midY)
         return poses
             .filter { hypot(center.x - $0.boundingBox.midX, center.y - $0.boundingBox.midY) < 0.15 }
             .min(by: { hypot(center.x - $0.boundingBox.midX, center.y - $0.boundingBox.midY) <
@@ -200,44 +206,66 @@ class PersonClassifier {
 
     // MARK: - Main Classification
 
-    /// Classify people from a CVPixelBuffer (convenience overload)
+    /// Primary entry point. Uses YOLOv8n when the model is present in the bundle;
+    /// falls back to VNDetectHumanRectanglesRequest otherwise. Body pose runs in both paths.
     func classifyPeople(in pixelBuffer: CVPixelBuffer) -> [ClassifiedPerson] {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else {
-            return []
+        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return [] }
+
+        if yoloDetector.isAvailable {
+            // YOLO path: sports-optimized detection, better occlusion handling
+            let detections = yoloDetector.detect(in: pixelBuffer)
+            return classifyFromBoxes(detections.map { ($0.boundingBox, $0.confidence) },
+                                     image: cgImage)
+        } else {
+            // Fallback: Apple Vision generic rectangle detector
+            return classifyPeople(in: cgImage)
         }
-        return classifyPeople(in: cgImage)
     }
 
-    /// Classify people from a CGImage (primary method, supports low-res AI input)
+    /// Fallback classification using VNDetectHumanRectanglesRequest.
+    /// Used when yolov8n.mlpackage is not in the bundle.
     func classifyPeople(in image: CGImage) -> [ClassifiedPerson] {
-        // Run rectangle detection + body pose in a single handler call.
-        // Vision batches them efficiently — essentially free to add pose alongside rects.
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         try? handler.perform([rectRequest, poseRequest])
 
-        guard let observations = rectRequest.results, !observations.isEmpty else {
-            return []
-        }
-
+        guard let observations = rectRequest.results, !observations.isEmpty else { return [] }
         let poseObservations = poseRequest.results ?? []
-
-        // Get pixel data once for all classifications (efficiency)
         let pixelData = getPixelData(from: image)
 
-        return observations.map { observation in
-            let pose = findMatchingPose(for: observation, in: poseObservations).map { extractPose($0) }
-            return classifyPerson(observation: observation, pose: pose, in: image, pixelData: pixelData)
+        return observations.map { obs in
+            let pose = findMatchingPoseByRect(obs.boundingBox, in: poseObservations).map { extractPose($0) }
+            return classifyPersonFromRect(obs.boundingBox, confidence: Float(obs.confidence),
+                                         pose: pose, in: image, pixelData: pixelData)
+        }
+    }
+
+    /// Shared classification engine for both YOLO and Vision-detected boxes.
+    /// Runs body pose once, gets pixel data once, then classifies each box.
+    private func classifyFromBoxes(_ boxes: [(CGRect, Float)], image: CGImage) -> [ClassifiedPerson] {
+        guard !boxes.isEmpty else { return [] }
+
+        // Body pose runs alongside YOLO — gives ankle positions for accurate court contact
+        let handler = VNImageRequestHandler(cgImage: image, options: [:])
+        try? handler.perform([poseRequest])
+        let poseObservations = poseRequest.results ?? []
+
+        let pixelData = getPixelData(from: image)
+
+        return boxes.map { (box, confidence) in
+            let pose = findMatchingPoseByRect(box, in: poseObservations).map { extractPose($0) }
+            return classifyPersonFromRect(box, confidence: confidence,
+                                         pose: pose, in: image, pixelData: pixelData)
         }
     }
 
     // MARK: - Individual Classification
 
-    private func classifyPerson(observation: VNHumanObservation,
-                                pose: PersonPose?,
-                                in image: CGImage,
-                                pixelData: [UInt8]?) -> ClassifiedPerson {
-        let box = observation.boundingBox
+    private func classifyPersonFromRect(_ box: CGRect,
+                                        confidence: Float,
+                                        pose: PersonPose?,
+                                        in image: CGImage,
+                                        pixelData: [UInt8]?) -> ClassifiedPerson {
 
         // Foreground rejection: person taller than 50% of frame is too close to be on court.
         let isMassiveForegroundObject = box.height > 0.50
@@ -277,13 +305,13 @@ class PersonClassifier {
             )
         }
 
-        // Court bounds + standing = player. No age heuristic needed.
-        // DeepTracker appearance matching filters non-team members naturally over time.
+        // Court bounds + standing = player. No age heuristic.
+        // DeepTracker appearance matching filters non-team members over time.
         let classification: ClassifiedPerson.PersonType = isOnCourt ? .player : .spectator
         return ClassifiedPerson(
             boundingBox: box,
             classification: classification,
-            confidence: Float(observation.confidence),
+            confidence: confidence,
             isOnCourt: isOnCourt,
             colorHistogram: histogram
         )
