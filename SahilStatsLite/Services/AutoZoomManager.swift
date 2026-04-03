@@ -172,7 +172,7 @@ final class AutoZoomManager: ObservableObject {
     private nonisolated(unsafe) let ballDetector = BallDetector()
 
     // Shadow of actionZoneCenter readable from skynetQueue without crossing actor boundary.
-    private nonisolated(unsafe) var _actionZoneCenter: CGPoint = CGPoint(x: 0.5, y: 0.5)
+    private nonisolated(unsafe) var bgActionCenter: CGPoint = CGPoint(x: 0.5, y: 0.5)
 
     @Published var trackingReliability: Float = 0
     @Published var confirmedTracks: Int = 0
@@ -223,7 +223,7 @@ final class AutoZoomManager: ObservableObject {
         smoothZoomController.reset()
         frameCount = 0
         actionZoneCenter = CGPoint(x: 0.5, y: 0.5)
-        _actionZoneCenter = CGPoint(x: 0.5, y: 0.5)
+        bgActionCenter = CGPoint(x: 0.5, y: 0.5)
         debugPrint("🔍 [AutoZoom] Stopped")
     }
 
@@ -241,7 +241,7 @@ final class AutoZoomManager: ObservableObject {
         recentZoomTargets = []
 
         actionZoneCenter = CGPoint(x: 0.5, y: 0.5)
-        _actionZoneCenter = CGPoint(x: 0.5, y: 0.5)
+        bgActionCenter = CGPoint(x: 0.5, y: 0.5)
 
         // Finalize team color profiles from warmup data before resetting tracking.
         // From this point on, Skynet weights players by jersey color match.
@@ -287,7 +287,7 @@ final class AutoZoomManager: ObservableObject {
         let dt = lastFrameTime > 0 ? now - lastFrameTime : 1.0/15.0
         lastFrameTime = now
 
-        let currentCenter = _actionZoneCenter
+        let currentCenter = bgActionCenter
         personClassifier.currentFocusHint = currentCenter
 
         // Vision detection + ball + SORT tracking (all on background thread)
@@ -319,7 +319,7 @@ final class AutoZoomManager: ObservableObject {
         var newActionCenter: CGPoint? = nil
         if distance > 0.03 {
             newActionCenter = rawActionCenter
-            _actionZoneCenter = rawActionCenter
+            bgActionCenter = rawActionCenter
         }
 
         // Timeout detection: bench rush = 60%+ players clustered at screen edges
