@@ -198,10 +198,26 @@ class PersonClassifier {
     private func findMatchingPoseByRect(_ box: CGRect,
                                         in poses: [VNHumanBodyPoseObservation]) -> VNHumanBodyPoseObservation? {
         let center = CGPoint(x: box.midX, y: box.midY)
-        return poses
-            .filter { hypot(center.x - $0.boundingBox.midX, center.y - $0.boundingBox.midY) < 0.15 }
-            .min(by: { hypot(center.x - $0.boundingBox.midX, center.y - $0.boundingBox.midY) <
-                        hypot(center.x - $1.boundingBox.midX, center.y - $1.boundingBox.midY) })
+        // VNHumanBodyPoseObservation has no boundingBox — estimate position from torso joints.
+        return poses.min(by: { a, b in
+            poseDistance(a, to: center) < poseDistance(b, to: center)
+        }).flatMap { pose in
+            poseDistance(pose, to: center) < 0.15 ? pose : nil
+        }
+    }
+
+    /// Estimate the center of a body pose from available torso joints (neck, hips, shoulders).
+    /// Falls back to a simple average of all recognized points if torso joints are unavailable.
+    private func poseDistance(_ pose: VNHumanBodyPoseObservation, to point: CGPoint) -> CGFloat {
+        let torsoJoints: [VNHumanBodyPoseObservation.JointName] = [.neck, .leftHip, .rightHip, .leftShoulder, .rightShoulder]
+        let points = torsoJoints.compactMap { name -> CGPoint? in
+            guard let p = try? pose.recognizedPoint(name), p.confidence > 0.2 else { return nil }
+            return p.location
+        }
+        guard !points.isEmpty else { return CGFloat.greatestFiniteMagnitude }
+        let cx = points.map(\.x).reduce(0, +) / CGFloat(points.count)
+        let cy = points.map(\.y).reduce(0, +) / CGFloat(points.count)
+        return hypot(point.x - cx, point.y - cy)
     }
 
     // MARK: - Main Classification
