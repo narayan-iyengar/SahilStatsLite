@@ -1,9 +1,9 @@
 # SahilStatsLite - Project Context
 
-> **UPDATED (2026-02-21):** MVP Polish Complete. Audio & Sync Upgraded.
-> 1. **Current Status:** Project stable. All MVP features (Recording, Sync, Watch, Audio) implemented and verified.
-> 2. **Latest Win:** Implemented "Court Priority" Audio (Back Mic/Cardioid) and "Always On" Watch session.
-> 3. **Next Step:** Field testing at the next game!
+> **UPDATED (2026-04-03):** Skynet v5.1 — Major tracking and performance overhaul.
+> 1. **Current Status:** Build clean. YOLOv8n CoreML active. Vision runs off main thread. All critical bugs fixed.
+> 2. **Latest Wins:** YOLOv8n sports-optimized detector, body pose ankle-based court contact, team jersey color learning, Vision off main thread, pan-only gimbal, age classifier removed.
+> 3. **Next Step:** Field test at next game. Watch thermal budget and Watch sync.
 
 ---
 
@@ -138,13 +138,18 @@ A hybrid of **XBotGO** (auto-tracking) + **ScoreCam** (video with score overlay)
 - [x] **Watch Always On**: Implemented `WKExtendedRuntimeSession` to keep Watch app active and screen on during games.
 - [x] **Build System**: Cleaned ModuleCache and resolved package dependencies.
 - [x] **Court Priority Audio**: Configured `AVAudioSession` category to `.playAndRecord` with `.videoRecording` mode to ensure iOS prioritizes the high-quality Back Microphone.
-- [x] **Skynet Foreground Filter**: Added logic to reject massive bounding boxes (>50% screen height) to prevent tracking parents sitting directly in front of the camera in the bleachers.
-- [x] **Tracking Smoothness Upgrades**:
-    - Disabled DockKit's discrete auto-zoom to stop it from fighting Skynet's continuous zoom, eliminating violent jitter.
-    - Implemented a 5% "Deadband" safe zone for the Action Center to stop nervous panning on micro-movements.
-    - Added "Strict Masking" that checks if a player's feet are physically on the court floor, ignoring "Bench Dads" sitting in the background.
-    - **Context-First Zoom Cap:** Restricted Skynet's maximum optical zoom from 1.6x down to **1.3x**. This preserves game context (passing lanes, spacing) and eliminates the nauseating "seasick" effect of constant in-and-out zooming.
-- [x] **Skynet God Mode (Ball Tracking Fusion)**: Awakened the experimental `BallDetector` and wired it into `AutoZoomManager`. If the orange basketball is detected with high confidence, Skynet now abandons generic player-cluster tracking and aggressively locks the Action Center directly onto the ball, applying predictive velocity kinematics (The Wayne Gretzky Rule) to pan *ahead* of fast breaks.
+- [x] **Skynet Foreground Filter**: Rejects bounding boxes >50% screen height.
+- [x] **Tracking Smoothness Upgrades**: Pan-only gimbal (tall narrow ROI strip), 2.5% X deadband, 1.3x zoom cap, 3% action center deadband.
+- [x] **Skynet God Mode (Ball Tracking Fusion)**: BallDetector wired into AutoZoomManager. 60/40 ball/player blend with 0.2s Gretzky lead.
+- [x] **Vision Off Main Thread**: AutoZoomManager dispatches Vision+Kalman to `skynetQueue`. Only `@Published` writes happen on `@MainActor`. Eliminates UI freezes.
+- [x] **CIContext Pooled**: PersonClassifier reuses a single CIContext (was allocating one per frame at 15fps).
+- [x] **Age Classifier Removed**: Replaced with court geometry + body pose standing detection.
+- [x] **Body Pose Detection**: `VNDetectHumanBodyPoseRequest` runs alongside main detector. Ankle positions for court contact, knee/ankle ratio for sitting detection.
+- [x] **Team Jersey Color Learning**: Accumulates histograms during warmup, clusters to 2 team profiles at game start. Weights action center by jersey color match.
+- [x] **ObservationMomentum Dt Fixed**: DeepTracker uses actual frame dt instead of hardcoded 1/30 for velocity calculation.
+- [x] **YOLOv8n CoreML**: Replaced `VNDetectHumanRectanglesRequest` with sports-optimized YOLO detection. Letterbox 640x360→640x640, decode [1,84,8400], NMS, reverse letterbox. Falls back to Vision if model absent.
+- [x] **processInterval Fixed**: Was 0.25 (4fps). Now 0.067 (15fps) — Vision actually runs at the intended rate.
+- [x] **Direct GitHub Push**: Confirmed HTTPS push works from PAN work Mac. SCP workflow no longer needed.
 - [x] **Autonomous Watch Calendar**: Watch app now uses its own local `EventKit` to find upcoming games (`WatchCalendarManager`), making it fully independent of the iPhone connection for pre-game setup.
 - [x] **Watch Calendar Sync**: Phone still pushes calendar updates on request as a fallback.
 - [x] **Hide Watch Games**: Replaced deprecated context menu with a reliable long-press alert to locally hide/ignore specific calendar games.
