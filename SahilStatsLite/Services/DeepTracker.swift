@@ -289,6 +289,9 @@ class TrackedObject {
     }
     var state: State = .tentative
 
+    // Last actual frame dt — used by observationCentricBox prediction
+    var lastDt: Double = 1.0 / 15.0
+
     // Thresholds (inspired by Deep Track 4.0 patent)
     static let confirmHits = 3        // Frames to confirm track
     static let maxMisses = 15         // Frames before deletion (~0.5 sec at 30fps)
@@ -310,7 +313,8 @@ class TrackedObject {
 
     /// Predict position for next frame
     /// OC-SORT enhancement: Uses observation momentum when available
-    func predict(dt: Double = 1.0/30.0) -> CGPoint {
+    func predict(dt: Double = 1.0/15.0) -> CGPoint {
+        lastDt = dt
         missStreak += 1
         hitStreak = 0
 
@@ -343,13 +347,14 @@ class TrackedObject {
 
     /// Update with matched detection
     /// OC-SORT enhancement: Updates observation history and momentum
-    func update(detection: ClassifiedPerson) {
+    func update(detection: ClassifiedPerson, dt: Double) {
         let center = CGPoint(x: detection.boundingBox.midX, y: detection.boundingBox.midY)
         _ = kalman.update(measurement: center)
 
         boundingBox = detection.boundingBox
         classification = detection.classification
         lastSeen = Date()
+        lastDt = dt
 
         // Update color histogram with Exponential Moving Average (EMA)
         // Helps adapt to lighting changes while maintaining identity
@@ -365,12 +370,12 @@ class TrackedObject {
             }
         }
 
-        // OC-SORT: Update observation history and calculate momentum
+        // OC-SORT: Update observation history and momentum using actual frame dt
         if let lastObs = lastObservedPosition {
-            // Calculate observation-based velocity (handles camera motion better)
+            let safeDt = dt > 0 ? dt : 1.0 / 15.0
             observationMomentum = CGPoint(
-                x: (center.x - lastObs.x) / (1.0 / 30.0),  // Velocity per second
-                y: (center.y - lastObs.y) / (1.0 / 30.0)
+                x: (center.x - lastObs.x) / safeDt,
+                y: (center.y - lastObs.y) / safeDt
             )
         }
 
@@ -404,11 +409,10 @@ class TrackedObject {
             return predictedBoundingBox
         }
 
-        // Predict position using observation momentum
-        let dt = 1.0 / 30.0
+        // Use actual last frame dt so velocity extrapolation is accurate
         let predictedCenter = CGPoint(
-            x: lastObs.x + observationMomentum.x * dt,
-            y: lastObs.y + observationMomentum.y * dt
+            x: lastObs.x + observationMomentum.x * lastDt,
+            y: lastObs.y + observationMomentum.y * lastDt
         )
 
         return CGRect(
@@ -617,7 +621,7 @@ class DeepTracker {
 
         // 3. Update matched tracks
         for (trackIdx, detectionIdx) in matched {
-            tracks[trackIdx].update(detection: detections[detectionIdx])
+            tracks[trackIdx].update(detection: detections[detectionIdx], dt: dt)
         }
 
         // 4. Handle unmatched tracks (potential occlusion)

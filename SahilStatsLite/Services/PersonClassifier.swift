@@ -47,27 +47,14 @@ class PersonClassifier {
 
     // MARK: - Configuration
 
-    /// Expected kid height as fraction of frame (youth basketball ~8-12 year olds)
-    /// At typical gym camera distance, kids are roughly 15-30% of frame height
-    private let kidHeightRange: ClosedRange<CGFloat> = 0.10...0.35
-
-    /// Adults are typically 20%+ taller than kids at same distance
-    private let adultHeightMultiplier: CGFloat = 1.20
-
     /// Minimum stripe transitions to classify as ref
     private let minStripeTransitions = 3
 
     /// Court bounds (learned from heat map, updated dynamically)
     var courtBounds: CGRect = CGRect(x: 0.05, y: 0.10, width: 0.90, height: 0.60)
 
-    // MARK: - Rolling Statistics
-
-    /// Track heights over multiple frames to establish baseline
-    private var recentHeights: [CGFloat] = []
-    private let maxHeightHistory = 50
-
-    /// Baseline kid height (25th percentile of all detections)
-    private var baselineKidHeight: CGFloat = 0.20
+    // Reuse CIContext across frames — creating one per frame costs GPU allocations at 15fps.
+    private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
 
     // MARK: - Broadcast-Quality Centroid Smoothing (v3)
 
@@ -80,11 +67,11 @@ class PersonClassifier {
 
     // MARK: - State Reset
 
-    /// Reset tracking state for game start (keeps learned court bounds + height stats from warmup)
+    /// Reset tracking state for game start (keeps learned court bounds from warmup)
     func resetTrackingState() {
         centroidHistory.removeAll()
         currentFocusHint = CGPoint(x: 0.5, y: 0.5)
-        // courtBounds, baselineKidHeight, recentHeights are KEPT (warmup calibration)
+        // courtBounds is KEPT (warmup calibration)
     }
 
     // MARK: - Main Classification
@@ -92,8 +79,7 @@ class PersonClassifier {
     /// Classify people from a CVPixelBuffer (convenience overload)
     func classifyPeople(in pixelBuffer: CVPixelBuffer) -> [ClassifiedPerson] {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
-        let context = CIContext()
-        guard let cgImage = context.createCGImage(ciImage, from: ciImage.extent) else {
+        guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else {
             return []
         }
         return classifyPeople(in: cgImage)
@@ -112,9 +98,6 @@ class PersonClassifier {
             return []
         }
 
-        // Update height statistics
-        updateHeightStatistics(from: observations)
-        
         // Get pixel data once for all classifications (efficiency)
         let pixelData = getPixelData(from: image)
 
@@ -129,126 +112,40 @@ class PersonClassifier {
     private func classifyPerson(observation: VNHumanObservation, in image: CGImage, pixelData: [UInt8]?) -> ClassifiedPerson {
         let box = observation.boundingBox
 
-        // 1. Check if on court (within heat map bounds)
-        // Strict Masking: We check the person's feet (minY in Vision is bottom edge).
-        // If their feet are not on the court floor, they are a bystander (Bench Dad).
-        let feetY = box.minY
-        let feetX = box.midX
-        let feetPoint = CGPoint(x: feetX, y: feetY)
-        
-        // We also check midY just in case they are jumping high, 
-        // but feet are the primary indicator of standing on the court.
-        let isFeetOnCourt = courtBounds.contains(feetPoint)
-        let isCenterOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.midY))
-        let isOnCourt = isFeetOnCourt || isCenterOnCourt
-        
-        // 1.5. Foreground Rejection (The "Parent in Bleachers" Filter)
-        // If a person takes up more than 50% of the screen height, they are too close to be a player on the court.
-        // We force them off-court to prevent tracking them.
+        // Foreground Rejection: person taking >50% of frame height is too close to be a court player.
         let isMassiveForegroundObject = box.height > 0.50
-        let effectiveIsOnCourt = isOnCourt && !isMassiveForegroundObject
 
-        // 2. Check for ref jersey (striped pattern)
-        let (isRef, refConfidence) = checkForRefJersey(in: image, box: box, pixelData: pixelData)
-        
-        // 3. Extract visual appearance (Color Histogram) for Re-ID tracking continuity
+        // Court Masking: check feet (minY in Vision coords = bottom of box = floor contact point).
+        // Also accept if center is on court (handles jumping).
+        let feetOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.minY))
+        let centerOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.midY))
+        let isOnCourt = (feetOnCourt || centerOnCourt) && !isMassiveForegroundObject
+
+        // Extract appearance histogram for Re-ID continuity
         let histogram = extractColorHistogram(in: image, box: box, pixelData: pixelData)
 
+        // Ref detection: stripe pattern check
+        let (isRef, refConfidence) = checkForRefJersey(in: image, box: box, pixelData: pixelData)
         if isRef {
             return ClassifiedPerson(
                 boundingBox: box,
                 classification: .referee,
                 confidence: refConfidence,
-                isOnCourt: effectiveIsOnCourt,
+                isOnCourt: isOnCourt,
                 colorHistogram: histogram
             )
         }
 
-        // 4. Classify as kid or adult
-        let (isKid, kidConfidence) = classifyAge(box: box)
-
-        // 5. Determine final classification
-        let classification: ClassifiedPerson.PersonType
-        let confidence: Float
-
-        if effectiveIsOnCourt {
-            if isKid {
-                classification = .player
-                confidence = kidConfidence
-            } else {
-                // Adult on court - could be ref without visible stripes, or coach
-                classification = .coach  // Default to ignore
-                confidence = kidConfidence
-            }
-        } else {
-            if isKid {
-                classification = .benchPlayer
-                confidence = kidConfidence
-            } else {
-                classification = .coach
-                confidence = kidConfidence
-            }
-        }
-
+        // Anyone inside court bounds = player. No age heuristic.
+        // DeepTracker's appearance matching filters non-team members naturally over time.
+        let classification: ClassifiedPerson.PersonType = isOnCourt ? .player : .spectator
         return ClassifiedPerson(
             boundingBox: box,
             classification: classification,
-            confidence: confidence,
+            confidence: Float(observation.confidence),
             isOnCourt: isOnCourt,
             colorHistogram: histogram
         )
-    }
-
-    // MARK: - Age Classification (Kid vs Adult)
-
-    private func classifyAge(box: CGRect) -> (isKid: Bool, confidence: Float) {
-        let height = box.height
-
-        // Method 1: Compare to baseline kid height
-        let heightRatio = height / baselineKidHeight
-
-        // Method 2: Check if within expected kid height range
-        let inKidRange = kidHeightRange.contains(height)
-
-        // Method 3: Check aspect ratio (kids tend to be more square-ish)
-        let aspectRatio = box.width / box.height
-        let kidAspectRange: ClosedRange<CGFloat> = 0.25...0.55
-        let hasKidAspect = kidAspectRange.contains(aspectRatio)
-
-        // Combine heuristics
-        var kidScore: Float = 0
-        var totalWeight: Float = 0
-
-        // Height ratio (weight: 3)
-        if heightRatio < 1.15 {
-            kidScore += 3.0
-        } else if heightRatio > 1.30 {
-            kidScore += 0
-        } else {
-            kidScore += 1.5  // Uncertain
-        }
-        totalWeight += 3.0
-
-        // Absolute height range (weight: 2)
-        if inKidRange {
-            kidScore += 2.0
-        } else if height > kidHeightRange.upperBound * 1.3 {
-            kidScore += 0  // Definitely too tall
-        } else {
-            kidScore += 1.0  // Might be close kid
-        }
-        totalWeight += 2.0
-
-        // Aspect ratio (weight: 1)
-        if hasKidAspect {
-            kidScore += 1.0
-        }
-        totalWeight += 1.0
-
-        let normalizedScore = kidScore / totalWeight
-        let isKid = normalizedScore > 0.5
-
-        return (isKid, normalizedScore)
     }
 
     // MARK: - Ref Jersey Detection (Improved)
@@ -506,26 +403,6 @@ class PersonClassifier {
 
         context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
         return pixelData
-    }
-
-    // MARK: - Statistics Update
-
-    private func updateHeightStatistics(from observations: [VNHumanObservation]) {
-        for obs in observations {
-            recentHeights.append(obs.boundingBox.height)
-        }
-
-        // Keep only recent history
-        if recentHeights.count > maxHeightHistory {
-            recentHeights = Array(recentHeights.suffix(maxHeightHistory))
-        }
-
-        // Update baseline (25th percentile = typical kid height)
-        if recentHeights.count >= 10 {
-            let sorted = recentHeights.sorted()
-            let p25Index = sorted.count / 4
-            baselineKidHeight = sorted[p25Index]
-        }
     }
 
     // MARK: - Court Bounds Update
