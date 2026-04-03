@@ -66,11 +66,13 @@ final class GimbalTrackingManager: ObservableObject {
     private var trackingTask: Task<Void, Never>?
     private var roiUpdateTask: Task<Void, Never>?
 
-    // Minimum movement (normalized) before we bother updating the ROI
-    private let roiDeadband: CGFloat = 0.08
+    // Pan-only deadband: minimum X movement (normalized) before updating the ROI.
+    // Compared on X axis only since we lock tilt (pan-only mode).
+    private let roiDeadband: CGFloat = 0.025
     private var lastROICenter: CGPoint = CGPoint(x: 0.5, y: 0.5)
-    // ROI box size sent to DockKit (30% of frame). Smaller = less DockKit hunting.
-    private let roiSize: CGFloat = 0.30
+    // ROI strip width sent to DockKit (25% of frame width, full height).
+    // Tall + narrow tells DockKit to pan horizontally only — no tilt adjustment.
+    private let roiWidth: CGFloat = 0.25
 
     // MARK: - Initialization
 
@@ -184,13 +186,15 @@ final class GimbalTrackingManager: ObservableObject {
     // MARK: - Skynet-Driven Physical Gimbal Steering
 
     /// Called by AutoZoomManager each frame with Skynet's computed action center (normalized 0–1).
-    /// Translates that center into a DockKit region of interest so the gimbal physically pans/tilts
-    /// toward the action. Only updates DockKit if the center has moved past the deadband.
+    /// Pan-only mode: only tracks horizontal (X) position. Sends a tall, full-height ROI strip
+    /// so DockKit pans left/right toward the action without adjusting tilt. Basketball players
+    /// stay at a consistent height relative to the camera, so tilt adjustment only adds jitter.
     func updateTrackingROI(center: CGPoint) {
         guard gimbalMode == .track, isDockKitAvailable, isTrackingActive else { return }
 
-        let movement = hypot(center.x - lastROICenter.x, center.y - lastROICenter.y)
-        guard movement > roiDeadband else { return }
+        // Pan-only deadband: only compare X. Tilt is locked, so Y drift is intentionally ignored.
+        let panMovement = abs(center.x - lastROICenter.x)
+        guard panMovement > roiDeadband else { return }
         lastROICenter = center
 
         roiUpdateTask?.cancel()
@@ -198,16 +202,19 @@ final class GimbalTrackingManager: ObservableObject {
             #if canImport(DockKit)
             if #available(iOS 18.0, *) {
                 guard let accessory = dockAccessory else { return }
-                let half = roiSize / 2
+                // Pan-only ROI: a tall, narrow vertical strip centered on the action's X position.
+                // Full height (y: 0.05, height: 0.90) tells DockKit the subject spans the full
+                // vertical range — so it only needs to pan, not tilt.
+                let halfWidth = roiWidth / 2
                 let roi = CGRect(
-                    x: max(0, center.x - half),
-                    y: max(0, center.y - half),
-                    width: roiSize,
-                    height: roiSize
+                    x: max(0, min(1 - roiWidth, center.x - halfWidth)),
+                    y: 0.05,
+                    width: roiWidth,
+                    height: 0.90
                 )
                 do {
                     try await accessory.setRegionOfInterest(roi)
-                    debugPrint("[Gimbal] ROI → (\(String(format: "%.2f", center.x)), \(String(format: "%.2f", center.y)))")
+                    debugPrint("[Gimbal] Pan → x:\(String(format: "%.2f", center.x))")
                 } catch {
                     // Non-fatal — Skynet keeps running even if gimbal ROI update fails
                     debugPrint("[Gimbal] ROI update failed: \(error.localizedDescription)")

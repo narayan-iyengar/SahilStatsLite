@@ -154,7 +154,9 @@ final class AutoZoomManager: ObservableObject {
     // MARK: - Processing State
 
     private nonisolated(unsafe) var lastProcessTime: CFAbsoluteTime = 0
-    private let processInterval: CFAbsoluteTime = 0.25
+    // Match RecordingManager's aiFrameInterval (0.067 = 15fps).
+    // If thermals are a problem during a full game, raise to 0.1 (10fps).
+    private let processInterval: CFAbsoluteTime = 0.067
     private var smoothZoomTimer: Timer?
     private var recentZoomTargets: [CGFloat] = []
     private let rollingAverageCount = 5
@@ -305,7 +307,7 @@ final class AutoZoomManager: ObservableObject {
         // DEADBAND: Only move the action center if the new point is > 5% away from current center
         // This stops the camera from nervously panning for every small step a player takes.
         let distance = hypot(rawActionCenter.x - actionZoneCenter.x, rawActionCenter.y - actionZoneCenter.y)
-        let centerDeadband: CGFloat = 0.05
+        let centerDeadband: CGFloat = 0.03
         if distance > centerDeadband {
             actionZoneCenter = rawActionCenter
             // Steer the physical gimbal: Skynet tells DockKit where the action is.
