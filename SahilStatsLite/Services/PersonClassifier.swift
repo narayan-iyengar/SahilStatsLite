@@ -56,6 +56,21 @@ class PersonClassifier {
     // Reuse CIContext across frames — creating one per frame costs GPU allocations at 15fps.
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
 
+    // Reuse Vision request objects — avoids allocation overhead at 15fps.
+    private let rectRequest: VNDetectHumanRectanglesRequest = {
+        let r = VNDetectHumanRectanglesRequest()
+        r.upperBodyOnly = false
+        return r
+    }()
+    private let poseRequest = VNDetectHumanBodyPoseRequest()
+
+    // MARK: - Team Jersey Color Learning
+
+    // Histograms accumulated during warmup (before game clock starts)
+    private var warmupHistograms: [[Float]] = []
+    // Two learned team color profiles (home + away). Empty until finalizeTeamColors() is called.
+    private(set) var teamColorProfiles: [[Float]] = []
+
     // MARK: - Broadcast-Quality Centroid Smoothing (v3)
 
     /// Rolling centroid history for jitter elimination
@@ -71,7 +86,116 @@ class PersonClassifier {
     func resetTrackingState() {
         centroidHistory.removeAll()
         currentFocusHint = CGPoint(x: 0.5, y: 0.5)
-        // courtBounds is KEPT (warmup calibration)
+        // courtBounds and teamColorProfiles are KEPT (warmup calibration)
+    }
+
+    // MARK: - Team Color Learning
+
+    /// Accumulate a player color histogram during warmup.
+    /// Called for every player detection before the game clock starts.
+    func accumulateWarmupHistogram(_ histogram: [Float]) {
+        warmupHistograms.append(histogram)
+        if warmupHistograms.count > 600 { warmupHistograms.removeFirst() }
+    }
+
+    /// Called at game start (clock tap). Clusters warmup histograms into 2 team color profiles.
+    /// Uses dominant-hue bucketing — basketball jerseys always have a strong, distinct hue.
+    func finalizeTeamColors() {
+        guard warmupHistograms.count >= 8 else {
+            debugPrint("[PersonClassifier] Too few warmup samples for color learning (\(warmupHistograms.count))")
+            return
+        }
+
+        // Find dominant hue bin (0-15, covering 360° / 16 = 22.5° each) per histogram
+        let dominantHues: [Int] = warmupHistograms.map { hist in
+            hist.prefix(16).enumerated().max(by: { $0.element < $1.element })?.offset ?? 0
+        }
+
+        // Count occurrences of each dominant hue
+        var hueCounts = [Int: Int]()
+        for hue in dominantHues { hueCounts[hue, default: 0] += 1 }
+
+        // Top 2 hue peaks = two team colors
+        let topHues = hueCounts.sorted { $0.value > $1.value }.prefix(2).map { $0.key }
+        guard !topHues.isEmpty else { return }
+
+        // Group histograms by nearest team hue
+        var groups: [[Int]] = Array(repeating: [], count: topHues.count)
+        for (idx, hue) in dominantHues.enumerated() {
+            let nearest = topHues.enumerated().min(by: { abs($0.element - hue) < abs($1.element - hue) })?.offset ?? 0
+            groups[nearest].append(idx)
+        }
+
+        // Average histogram per group = team color profile
+        teamColorProfiles = groups.compactMap { indices -> [Float]? in
+            guard !indices.isEmpty else { return nil }
+            var avg = [Float](repeating: 0, count: 20)
+            for i in indices {
+                for j in 0..<20 { avg[j] += warmupHistograms[i][j] }
+            }
+            return avg.map { $0 / Float(indices.count) }
+        }
+
+        debugPrint("[PersonClassifier] ✅ Team colors learned: \(teamColorProfiles.count) profiles from \(warmupHistograms.count) samples")
+    }
+
+    /// Histogram intersection score vs learned team profiles (0 = stranger, 1 = perfect team match).
+    /// Returns 0.5 (neutral) if no profiles have been learned yet.
+    func teamColorScore(for histogram: [Float]) -> Float {
+        guard !teamColorProfiles.isEmpty else { return 0.5 }
+        return teamColorProfiles.map { profile -> Float in
+            zip(histogram, profile).reduce(0) { $0 + min($1.0, $1.1) }
+        }.max() ?? 0.5
+    }
+
+    // MARK: - Body Pose
+
+    private struct PersonPose {
+        /// Actual ankle position in Vision coords (Y=0 at bottom). Nil if not detected.
+        let floorContactPoint: CGPoint?
+        /// True if knee is detectably above ankle (standing), false if likely seated/crouching.
+        let isStanding: Bool
+    }
+
+    private func extractPose(_ obs: VNHumanBodyPoseObservation) -> PersonPose {
+        func joint(_ name: VNHumanBodyPoseObservation.JointName) -> CGPoint? {
+            guard let p = try? obs.recognizedPoint(name), p.confidence > 0.3 else { return nil }
+            return p.location
+        }
+        let leftAnkle  = joint(.leftAnkle)
+        let rightAnkle = joint(.rightAnkle)
+        let leftKnee   = joint(.leftKnee)
+        let rightKnee  = joint(.rightKnee)
+
+        // Floor contact: midpoint of visible ankles at the lowest Y (Vision: Y=0 is floor)
+        let floorPoint: CGPoint? = {
+            switch (leftAnkle, rightAnkle) {
+            case let (l?, r?):
+                return CGPoint(x: (l.x + r.x) / 2, y: min(l.y, r.y))
+            case let (l?, nil): return l
+            case let (nil, r?): return r
+            default: return nil
+            }
+        }()
+
+        // Standing: knee Y must be meaningfully above ankle Y in Vision space.
+        // Seated people have knees near hip level or folded; this threshold filters them.
+        var isStanding = true
+        if let lK = leftKnee, let lA = leftAnkle {
+            isStanding = (lK.y - lA.y) > 0.04
+        } else if let rK = rightKnee, let rA = rightAnkle {
+            isStanding = (rK.y - rA.y) > 0.04
+        }
+        return PersonPose(floorContactPoint: floorPoint, isStanding: isStanding)
+    }
+
+    private func findMatchingPose(for rect: VNHumanObservation,
+                                  in poses: [VNHumanBodyPoseObservation]) -> VNHumanBodyPoseObservation? {
+        let center = CGPoint(x: rect.boundingBox.midX, y: rect.boundingBox.midY)
+        return poses
+            .filter { hypot(center.x - $0.boundingBox.midX, center.y - $0.boundingBox.midY) < 0.15 }
+            .min(by: { hypot(center.x - $0.boundingBox.midX, center.y - $0.boundingBox.midY) <
+                        hypot(center.x - $1.boundingBox.midX, center.y - $1.boundingBox.midY) })
     }
 
     // MARK: - Main Classification
@@ -87,42 +211,59 @@ class PersonClassifier {
 
     /// Classify people from a CGImage (primary method, supports low-res AI input)
     func classifyPeople(in image: CGImage) -> [ClassifiedPerson] {
-        // Detect all humans
-        let request = VNDetectHumanRectanglesRequest()
-        request.upperBodyOnly = false
-
+        // Run rectangle detection + body pose in a single handler call.
+        // Vision batches them efficiently — essentially free to add pose alongside rects.
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
-        try? handler.perform([request])
+        try? handler.perform([rectRequest, poseRequest])
 
-        guard let observations = request.results, !observations.isEmpty else {
+        guard let observations = rectRequest.results, !observations.isEmpty else {
             return []
         }
+
+        let poseObservations = poseRequest.results ?? []
 
         // Get pixel data once for all classifications (efficiency)
         let pixelData = getPixelData(from: image)
 
-        // Classify each person
         return observations.map { observation in
-            classifyPerson(observation: observation, in: image, pixelData: pixelData)
+            let pose = findMatchingPose(for: observation, in: poseObservations).map { extractPose($0) }
+            return classifyPerson(observation: observation, pose: pose, in: image, pixelData: pixelData)
         }
     }
 
     // MARK: - Individual Classification
 
-    private func classifyPerson(observation: VNHumanObservation, in image: CGImage, pixelData: [UInt8]?) -> ClassifiedPerson {
+    private func classifyPerson(observation: VNHumanObservation,
+                                pose: PersonPose?,
+                                in image: CGImage,
+                                pixelData: [UInt8]?) -> ClassifiedPerson {
         let box = observation.boundingBox
 
-        // Foreground Rejection: person taking >50% of frame height is too close to be a court player.
+        // Foreground rejection: person taller than 50% of frame is too close to be on court.
         let isMassiveForegroundObject = box.height > 0.50
 
-        // Court Masking: check feet (minY in Vision coords = bottom of box = floor contact point).
-        // Also accept if center is on court (handles jumping).
-        let feetOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.minY))
-        let centerOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.midY))
-        let isOnCourt = (feetOnCourt || centerOnCourt) && !isMassiveForegroundObject
+        // Court masking via pose (preferred) or bounding box bottom (fallback).
+        // Pose ankle positions are actual foot contact points — much more accurate than box.minY,
+        // which can be the bottom of a bleacher or a bag on the floor.
+        let isOnCourt: Bool
+        if let pose = pose, let anklePoint = pose.floorContactPoint {
+            // Pose-based: actual ankle touches court AND person is standing (not seated in stands)
+            isOnCourt = courtBounds.contains(anklePoint) && pose.isStanding && !isMassiveForegroundObject
+        } else {
+            // Fallback: bounding box bottom as approximate floor contact
+            let feetOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.minY))
+            let centerOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.midY))
+            isOnCourt = (feetOnCourt || centerOnCourt) && !isMassiveForegroundObject
+        }
 
         // Extract appearance histogram for Re-ID continuity
         let histogram = extractColorHistogram(in: image, box: box, pixelData: pixelData)
+
+        // Accumulate histogram during warmup for team color learning.
+        // teamColorProfiles is empty until finalizeTeamColors() is called at game start.
+        if isOnCourt, let hist = histogram, teamColorProfiles.isEmpty {
+            accumulateWarmupHistogram(hist)
+        }
 
         // Ref detection: stripe pattern check
         let (isRef, refConfidence) = checkForRefJersey(in: image, box: box, pixelData: pixelData)
@@ -136,8 +277,8 @@ class PersonClassifier {
             )
         }
 
-        // Anyone inside court bounds = player. No age heuristic.
-        // DeepTracker's appearance matching filters non-team members naturally over time.
+        // Court bounds + standing = player. No age heuristic needed.
+        // DeepTracker appearance matching filters non-team members naturally over time.
         let classification: ClassifiedPerson.PersonType = isOnCourt ? .player : .spectator
         return ClassifiedPerson(
             boundingBox: box,
@@ -477,11 +618,18 @@ extension PersonClassifier {
             weight *= proxWeight
 
             // Momentum Attention: moving players are 1x-3x more important
-            // Uses Kalman-filtered velocity (much smoother than naive matching)
             let vel = track.kalman.velocity
             let velocityMag = sqrt(vel.x * vel.x + vel.y * vel.y)
             let momentumWeight = min(3.0, 1.0 + velocityMag * 20.0)
             weight *= CGFloat(momentumWeight)
+
+            // Team color alignment: players whose jersey matches a learned team profile
+            // get up to 1.5x weight. Random passers-by with no matching jersey get 0.5x.
+            // Has no effect during warmup (teamColorProfiles is empty until game start).
+            if let histogram = track.colorHistogram {
+                let colorScore = teamColorScore(for: histogram)
+                weight *= CGFloat(0.5 + colorScore)
+            }
 
             weightedX += box.midX * weight
             weightedY += box.midY * weight

@@ -243,9 +243,12 @@ final class AutoZoomManager: ObservableObject {
         actionZoneCenter = CGPoint(x: 0.5, y: 0.5)
         _actionZoneCenter = CGPoint(x: 0.5, y: 0.5)
 
+        // Finalize team color profiles from warmup data before resetting tracking.
+        // From this point on, Skynet weights players by jersey color match.
+        personClassifier.finalizeTeamColors()
         personClassifier.resetTrackingState()
 
-        debugPrint("🔍 [AutoZoom] Tracking state reset for game start (court bounds preserved)")
+        debugPrint("🔍 [AutoZoom] Tracking state reset for game start (court bounds + team colors preserved)")
     }
 
     // MARK: - Frame Processing
