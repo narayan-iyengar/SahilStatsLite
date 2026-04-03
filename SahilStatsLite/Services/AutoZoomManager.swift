@@ -2,17 +2,21 @@
 //  AutoZoomManager.swift
 //  SahilStatsLite
 //
-//  PURPOSE: AI-powered auto-zoom orchestrator (Skynet v4.1). Receives SD frames
-//           from RecordingManager, runs Vision detection, calculates optimal zoom.
+//  PURPOSE: AI-powered auto-zoom orchestrator (Skynet v5.1). Receives SD frames
+//           from RecordingManager, runs Vision detection on a background queue,
+//           calculates optimal zoom and gimbal position.
 //           Starts during warmup for calibration; resets tracking on game start.
-//  KEY TYPES: AutoZoomManager (singleton), UltraSmoothZoomController, AutoZoomMode
+//  KEY TYPES: AutoZoomManager (singleton, @MainActor), SkynetCore (background state)
 //  DEPENDS ON: PersonClassifier, DeepTracker, RecordingManager
 //
-//  FEATURES:
-//  - v3.1 Golden Smoothing for broadcast-quality motion
-//  - Momentum-Weighted Attention via TrackedObject velocities (1x-3x capped)
-//  - Timeout Detection (60%+ players at edges → zoom out)
-//  - Warmup calibration (resetTrackingState keeps court bounds)
+//  ARCHITECTURE:
+//  - SkynetCore (file-scope, no actor isolation) owns all background tracking state.
+//    Accessed only from skynetCore.queue (background) and from @MainActor resets.
+//  - AutoZoomManager (@MainActor) owns all @Published UI state and coordinates
+//    the handoff between background computation and UI updates.
+//  - processFrame() throttles and dispatches to skynetCore.queue.
+//  - computeSkynet() runs entirely on background — zero MainActor access.
+//  - applySkynetResult() runs on @MainActor — only @Published writes happen here.
 //
 //  NOTE: Keep this header updated when modifying this file.
 //
@@ -59,7 +63,6 @@ class UltraSmoothZoomController {
         }
 
         if highConfidenceStreak >= minStreakForUpdate {
-            // In timeout mode, we force zoom out to 1.0
             targetZoom = isTimeoutMode ? 1.0 : max(minZoom, min(maxZoom, target))
         }
 
@@ -126,6 +129,49 @@ enum AutoZoomMode: String, CaseIterable, Sendable {
     }
 }
 
+// MARK: - Skynet Core (background tracking state)
+
+/// Owns all mutable state accessed from the background skynet queue.
+/// Declared at file scope so it has NO actor isolation — calling its methods
+/// from any concurrency context generates no Swift concurrency warnings.
+///
+/// Thread safety contract: all properties and methods are accessed exclusively
+/// from skynetCore.queue, except during explicit resets which happen only when
+/// no game is in flight (safe from @MainActor).
+private final class SkynetCore: @unchecked Sendable {
+
+    let personClassifier = PersonClassifier()
+    let deepTracker = DeepTracker()
+    let smoothZoomController = UltraSmoothZoomController(minZoom: 1.0, maxZoom: 1.3)
+    let ballDetector = BallDetector()
+
+    /// Dedicated serial queue for Vision + Kalman computation.
+    let queue = DispatchQueue(label: "com.sahilstats.skynet", qos: .userInitiated)
+
+    /// Match RecordingManager's aiFrameInterval (0.067 = 15fps).
+    /// Raise to 0.1 (10fps) if phone thermals are a concern during a full game.
+    let processInterval: CFAbsoluteTime = 0.067
+
+    var bgActionCenter: CGPoint = CGPoint(x: 0.5, y: 0.5)
+    var frameCount: Int = 0
+    var lastFrameTime: CFAbsoluteTime = 0
+    var lastProcessTime: CFAbsoluteTime = 0
+    var isCurrentlyProcessing: Bool = false
+
+    /// Hard reset — called from @MainActor at game start or stop.
+    func resetTracking() {
+        deepTracker.reset()
+        smoothZoomController.reset()
+        bgActionCenter = CGPoint(x: 0.5, y: 0.5)
+        frameCount = 0
+        lastFrameTime = 0
+        isCurrentlyProcessing = false
+    }
+}
+
+/// Single shared instance — file scope, no actor isolation.
+private let skynetCore = SkynetCore()
+
 // MARK: - Auto Zoom Manager
 
 @MainActor
@@ -141,6 +187,8 @@ final class AutoZoomManager: ObservableObject {
     @Published var detectedPlayerCount: Int = 0
     @Published var actionZoneCenter: CGPoint = CGPoint(x: 0.5, y: 0.5)
     @Published var isTimeoutMode: Bool = false
+    @Published var trackingReliability: Float = 0
+    @Published var confirmedTracks: Int = 0
 
     // Debug visualization
     @Published var debugActionZone: CGRect = .zero
@@ -151,39 +199,17 @@ final class AutoZoomManager: ObservableObject {
     private let minZoom: CGFloat = 1.0
     private let maxZoom: CGFloat = 3.0
 
-    // MARK: - Processing State
+    // MARK: - UI-only State
 
-    private nonisolated(unsafe) var lastProcessTime: CFAbsoluteTime = 0
-    // Match RecordingManager's aiFrameInterval (0.067 = 15fps).
-    // If thermals are a problem during a full game, raise to 0.1 (10fps).
-    private let processInterval: CFAbsoluteTime = 0.067
     private var smoothZoomTimer: Timer?
     private var recentZoomTargets: [CGFloat] = []
     private let rollingAverageCount = 5
 
-    // Skynet computation runs on this background queue — Vision stays off the main thread.
-    private let skynetQueue = DispatchQueue(label: "com.sahilstats.skynet", qos: .userInitiated)
+    // MARK: - Background Result Type
 
-    // These objects are only touched from skynetQueue (and from @MainActor during reset,
-    // which is safe because reset always happens when no game is in flight).
-    private nonisolated(unsafe) let personClassifier = PersonClassifier()
-    private nonisolated(unsafe) let deepTracker = DeepTracker()
-    private nonisolated(unsafe) let smoothZoomController = UltraSmoothZoomController(minZoom: 1.0, maxZoom: 1.3)
-    private nonisolated(unsafe) let ballDetector = BallDetector()
-
-    // Shadow of actionZoneCenter readable from skynetQueue without crossing actor boundary.
-    private nonisolated(unsafe) var bgActionCenter: CGPoint = CGPoint(x: 0.5, y: 0.5)
-
-    @Published var trackingReliability: Float = 0
-    @Published var confirmedTracks: Int = 0
-
-    private nonisolated(unsafe) var lastFrameTime: CFAbsoluteTime = 0
-    private nonisolated(unsafe) var isCurrentlyProcessing: Bool = false
-    private nonisolated(unsafe) var frameCount: Int = 0
-
-    // All values computed on skynetQueue, applied on @MainActor in one batch.
+    /// All values computed on skynetCore.queue, applied on @MainActor in one batch.
     private struct SkynetResult {
-        let newActionCenter: CGPoint?  // nil = within deadband, no gimbal update needed
+        let newActionCenter: CGPoint?   // nil = within deadband, no gimbal update needed
         let newTargetZoom: CGFloat
         let playerCount: Int
         let trackingReliability: Float
@@ -202,53 +228,45 @@ final class AutoZoomManager: ObservableObject {
     func start() {
         guard mode != .off else { return }
         isProcessing = true
-        isCurrentlyProcessing = false
+        skynetCore.isCurrentlyProcessing = false
         currentZoom = RecordingManager.shared.getCurrentZoom()
         targetZoom = currentZoom
         recentZoomTargets = []
-        frameCount = 0
-        smoothZoomController.reset()
+        skynetCore.frameCount = 0
+        skynetCore.smoothZoomController.reset()
         startSmoothZoomLoop()
-        debugPrint("🔍 [AutoZoom] Started v4.2 (Vision off main thread)")
+        debugPrint("🔍 [AutoZoom] Started v5.1 (SkynetCore, zero concurrency warnings)")
     }
 
     func stop() {
         isProcessing = false
-        isCurrentlyProcessing = false
+        skynetCore.isCurrentlyProcessing = false
         smoothZoomTimer?.invalidate()
         smoothZoomTimer = nil
-        deepTracker.reset()
+        skynetCore.resetTracking()
         trackingReliability = 0
         confirmedTracks = 0
-        smoothZoomController.reset()
-        frameCount = 0
         actionZoneCenter = CGPoint(x: 0.5, y: 0.5)
-        bgActionCenter = CGPoint(x: 0.5, y: 0.5)
         debugPrint("🔍 [AutoZoom] Stopped")
     }
 
-    /// Reset tracking state for game start (keeps learned court bounds from warmup)
-    /// Call this when the game clock starts to get fresh tracking without losing calibration
+    /// Reset tracking state for game start (keeps learned court bounds + team colors from warmup).
+    /// Call this when the game clock starts to get fresh tracking without losing calibration.
     func resetTrackingState() {
-        deepTracker.reset()
+        // Finalize team color profiles before resetting — locks in jersey colors learned during warmup
+        skynetCore.personClassifier.finalizeTeamColors()
+        skynetCore.personClassifier.resetTrackingState()
+        skynetCore.resetTracking()
+
         trackingReliability = 0
         confirmedTracks = 0
         isTimeoutMode = false
-
-        smoothZoomController.reset()
         currentZoom = 1.0
         targetZoom = 1.0
         recentZoomTargets = []
-
         actionZoneCenter = CGPoint(x: 0.5, y: 0.5)
-        bgActionCenter = CGPoint(x: 0.5, y: 0.5)
 
-        // Finalize team color profiles from warmup data before resetting tracking.
-        // From this point on, Skynet weights players by jersey color match.
-        personClassifier.finalizeTeamColors()
-        personClassifier.resetTrackingState()
-
-        debugPrint("🔍 [AutoZoom] Tracking state reset for game start (court bounds + team colors preserved)")
+        debugPrint("🔍 [AutoZoom] Tracking reset for game start (court bounds + team colors preserved)")
     }
 
     // MARK: - Frame Processing
@@ -259,49 +277,50 @@ final class AutoZoomManager: ObservableObject {
 
     nonisolated func processFrame(_ pixelBuffer: CVPixelBuffer) {
         let now = CFAbsoluteTimeGetCurrent()
-        guard now - lastProcessTime >= processInterval else { return }
-        guard !isCurrentlyProcessing else { return }
+        // skynetCore is file-scope with no actor isolation — safe to access from anywhere
+        guard now - skynetCore.lastProcessTime >= skynetCore.processInterval else { return }
+        guard !skynetCore.isCurrentlyProcessing else { return }
 
-        lastProcessTime = now
-        isCurrentlyProcessing = true
+        skynetCore.lastProcessTime = now
+        skynetCore.isCurrentlyProcessing = true
 
         let sendableBuffer = UnsafeSendableBuffer(buffer: pixelBuffer)
 
-        // Run Vision + Kalman on background queue — never blocks the main thread.
-        skynetQueue.async { [weak self] in
-            guard let self = self else { return }
-            let result = self.computeSkynet(sendableBuffer.buffer)
+        skynetCore.queue.async { [weak self] in
+            guard let self else { return }
+            let result = computeSkynet(sendableBuffer.buffer)
             Task { @MainActor [weak self] in
-                guard let self = self else { return }
+                guard let self else { return }
                 self.applySkynetResult(result)
-                self.isCurrentlyProcessing = false
+                skynetCore.isCurrentlyProcessing = false
             }
         }
     }
 
-    /// All Vision/Kalman computation — runs on skynetQueue, zero MainActor access.
+    /// All Vision/Kalman computation — runs on skynetCore.queue, zero MainActor access.
+    /// Uses skynetCore directly (file-scope, no isolation) — no concurrency warnings.
     private nonisolated func computeSkynet(_ pixelBuffer: CVPixelBuffer) -> SkynetResult {
-        frameCount += 1
+        skynetCore.frameCount += 1
 
         let now = CFAbsoluteTimeGetCurrent()
-        let dt = lastFrameTime > 0 ? now - lastFrameTime : 1.0/15.0
-        lastFrameTime = now
+        let dt = skynetCore.lastFrameTime > 0 ? now - skynetCore.lastFrameTime : 1.0/15.0
+        skynetCore.lastFrameTime = now
 
-        let currentCenter = bgActionCenter
-        personClassifier.currentFocusHint = currentCenter
+        let currentCenter = skynetCore.bgActionCenter
+        skynetCore.personClassifier.currentFocusHint = currentCenter
 
-        // Vision detection + ball + SORT tracking (all on background thread)
-        let classifiedPeople = personClassifier.classifyPeople(in: pixelBuffer)
+        // Vision detection + ball + SORT tracking
+        let classifiedPeople = skynetCore.personClassifier.classifyPeople(in: pixelBuffer)
         let players = classifiedPeople.filter { $0.classification == .player }
-        let ballDetection = ballDetector.detectBall(in: pixelBuffer, dt: dt)
-        let activeTracks = deepTracker.update(detections: classifiedPeople, dt: dt)
+        let ballDetection = skynetCore.ballDetector.detectBall(in: pixelBuffer, dt: dt)
+        let activeTracks = skynetCore.deepTracker.update(detections: classifiedPeople, dt: dt)
 
         // Player cluster anchors camera; ball blends in at 60% when detected with high confidence
-        let playerCenter = personClassifier.calculateActionCenter(from: activeTracks)
+        let playerCenter = skynetCore.personClassifier.calculateActionCenter(from: activeTracks)
         var rawActionCenter = playerCenter
 
         if let ball = ballDetection, ball.confidence > 0.75 {
-            // Gretzky lead: predict 0.2s ahead, capped at ±10% of frame to prevent cross-court whip
+            // Gretzky lead: predict 0.2s ahead, capped at ±10% of frame
             let safeLeadX = max(-0.1, min(0.1, ball.velocity.x * 0.2))
             let safeLeadY = max(-0.1, min(0.1, ball.velocity.y * 0.2))
             let ballCenter = CGPoint(
@@ -319,21 +338,21 @@ final class AutoZoomManager: ObservableObject {
         var newActionCenter: CGPoint? = nil
         if distance > 0.03 {
             newActionCenter = rawActionCenter
-            bgActionCenter = rawActionCenter
+            skynetCore.bgActionCenter = rawActionCenter
         }
 
         // Timeout detection: bench rush = 60%+ players clustered at screen edges
         let edgePlayers = players.filter { $0.boundingBox.midX < 0.15 || $0.boundingBox.midX > 0.85 }
         let isTimeout = players.count >= 3 && Float(edgePlayers.count) / Float(players.count) > 0.6
-        smoothZoomController.isTimeoutMode = isTimeout
+        skynetCore.smoothZoomController.isTimeoutMode = isTimeout
 
-        let reliability = deepTracker.averageReliability
-        var recommendedZoom = deepTracker.calculateZoom(minZoom: 1.0, maxZoom: 1.3)
+        let reliability = skynetCore.deepTracker.averageReliability
+        var recommendedZoom = skynetCore.deepTracker.calculateZoom(minZoom: 1.0, maxZoom: 1.3)
         if isTimeout || players.isEmpty { recommendedZoom = 1.0 }
 
-        let smoothedZoom = smoothZoomController.update(target: Double(recommendedZoom), confidence: reliability)
+        let smoothedZoom = skynetCore.smoothZoomController.update(target: Double(recommendedZoom), confidence: reliability)
 
-        if frameCount % 30 == 0 {
+        if skynetCore.frameCount % 30 == 0 {
             let status = isTimeout ? "⌛️ TIMEOUT" : "✅ TRACKING"
             debugPrint("🤖 [Skynet] \(status) | Players: \(players.count) | Reliability: \(String(format: "%.0f%%", reliability * 100)) | Zoom: \(String(format: "%.2f", smoothedZoom))x")
         }
@@ -341,11 +360,11 @@ final class AutoZoomManager: ObservableObject {
         return SkynetResult(
             newActionCenter: newActionCenter,
             newTargetZoom: CGFloat(smoothedZoom),
-            playerCount: deepTracker.playerTrackCount,
+            playerCount: skynetCore.deepTracker.playerTrackCount,
             trackingReliability: reliability,
-            confirmedTracks: deepTracker.confirmedTrackCount,
+            confirmedTracks: skynetCore.deepTracker.confirmedTrackCount,
             isTimeout: isTimeout,
-            debugActionZone: deepTracker.getGroupBoundingBox(filterPlayers: true),
+            debugActionZone: skynetCore.deepTracker.getGroupBoundingBox(filterPlayers: true),
             noPlayers: players.isEmpty
         )
     }
