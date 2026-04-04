@@ -274,11 +274,16 @@ class WatchConnectivityService: NSObject, ObservableObject {
                 WatchMessage.games: gamesString
             ]
             
-            // For games list, use sendMessage if reachable, but context is better for syncing
             if let session = session, session.isReachable {
                 sendMessage(message)
             }
-            updateContext(message)
+            // Merge only the games keys — calendar list doesn't conflict with game state flags
+            if let session = session {
+                var ctx = session.applicationContext
+                ctx[WatchMessage.upcomingGames] = true
+                ctx[WatchMessage.games] = gamesString
+                try? session.updateApplicationContext(ctx)
+            }
             debugPrint("[WatchConnectivity] Sent/Updated \(games.count) games in context")
         } catch {
             debugPrint("[WatchConnectivity] Error encoding games: \(error)")
