@@ -598,29 +598,20 @@ class BallDetector {
 /// - Horizontal motion is mostly constant (minimal air resistance)
 class BallKalmanFilter {
 
-    private var state: [Double]  // [x, y, vx, vy]
-    private var P: [[Double]]    // Covariance matrix
+    private nonisolated(unsafe) var state: [Double]  // [x, y, vx, vy]
+    private nonisolated(unsafe) var P: [[Double]]    // Covariance matrix
+    private nonisolated(unsafe) var Q: [[Double]]
 
-    // Process noise (tuned for basketball dynamics)
-    // Higher values = more responsive to sudden changes (good for shots, passes)
-    // Lower values = smoother tracking (good for rolling ball)
-    private var Q: [[Double]]
-
-    // Measurement noise (detection uncertainty from color segmentation)
-    // HSV detection has ~1-2% position error in normalized coords
     private let R: [[Double]] = [
-        [0.003, 0],     // ~0.3% position noise
+        [0.003, 0],
         [0, 0.003]
     ]
 
-    // Gravity constant (normalized, positive = down in screen coords)
-    private let gravity: Double = 0.5  // ~0.5 screen heights per second^2
+    private let gravity: Double = 0.5
+    private nonisolated(unsafe) var isInFlight: Bool = false
+    private nonisolated(unsafe) var flightStartTime: Double = 0
 
-    // Track if ball is likely in free flight (for gravity compensation)
-    private var isInFlight: Bool = false
-    private var flightStartTime: Double = 0
-
-    init(initialPosition: CGPoint) {
+    nonisolated init(initialPosition: CGPoint) {
         state = [Double(initialPosition.x), Double(initialPosition.y), 0, 0]
 
         // Initial covariance - moderate position uncertainty, high velocity uncertainty
@@ -643,16 +634,16 @@ class BallKalmanFilter {
         ]
     }
 
-    var position: CGPoint {
+    nonisolated var position: CGPoint {
         CGPoint(x: state[0], y: state[1])
     }
 
-    var velocity: CGPoint {
+    nonisolated var velocity: CGPoint {
         CGPoint(x: state[2], y: state[3])
     }
 
     /// Predict next state with optional gravity compensation
-    func predict(dt: Double) {
+    nonisolated func predict(dt: Double) {
         // Horizontal motion: constant velocity (air resistance negligible)
         state[0] += state[2] * dt
 
@@ -694,7 +685,7 @@ class BallKalmanFilter {
         P[3][3] = min(P[3][3], 5.0)
     }
 
-    func update(measurement: CGPoint) {
+    nonisolated func update(measurement: CGPoint) {
         let z = [Double(measurement.x), Double(measurement.y)]
 
         // Innovation (measurement residual)
@@ -733,7 +724,7 @@ class BallKalmanFilter {
     }
 
     /// Reset flight state (call when ball is caught or dribbled)
-    func resetFlightState() {
+    nonisolated func resetFlightState() {
         isInFlight = false
     }
 }
