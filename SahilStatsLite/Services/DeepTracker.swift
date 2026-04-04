@@ -609,7 +609,7 @@ class DeepTracker {
 
     /// Process new detections and update tracks
     /// Returns: Active tracks sorted by reliability
-    func update(detections: [ClassifiedPerson], dt: Double = 1.0/30.0) -> [TrackedObject] {
+    nonisolated func update(detections: [ClassifiedPerson], dt: Double = 1.0/30.0) -> [TrackedObject] {
 
         // 1. Predict all tracks forward
         for track in tracks {
@@ -846,7 +846,7 @@ class DeepTracker {
     }
 
     /// Get group bounding box (Deep Track 4.0's white envelope)
-    func getGroupBoundingBox(filterPlayers: Bool = true) -> CGRect {
+    nonisolated func getGroupBoundingBox(filterPlayers: Bool = true) -> CGRect {
         let activeTracks = tracks.filter { track in
             guard track.isTrackable else { return false }
             if filterPlayers {
@@ -883,7 +883,7 @@ class DeepTracker {
     }
 
     /// Calculate zoom based on player spread (Deep Track 4.0's Active Zoom)
-    func calculateZoom(minZoom: CGFloat = 1.0, maxZoom: CGFloat = 2.0) -> CGFloat {
+    nonisolated func calculateZoom(minZoom: CGFloat = 1.0, maxZoom: CGFloat = 2.0) -> CGFloat {
         let groupBox = getGroupBoundingBox()
         let spread = max(groupBox.width, groupBox.height)
 
@@ -905,11 +905,11 @@ class DeepTracker {
 
     // MARK: - Stats
 
-    var confirmedTrackCount: Int {
+    nonisolated var confirmedTrackCount: Int {
         tracks.filter { $0.state == .confirmed }.count
     }
 
-    var playerTrackCount: Int {
+    nonisolated var playerTrackCount: Int {
         tracks.filter { $0.classification == .player && $0.isTrackable }.count
     }
 
@@ -918,7 +918,7 @@ class DeepTracker {
     }
 
     /// Average reliability of confirmed tracks
-    var averageReliability: Float {
+    nonisolated var averageReliability: Float {
         let confirmed = tracks.filter { $0.state == .confirmed }
         guard !confirmed.isEmpty else { return 0 }
         return confirmed.map { $0.reliabilityScore }.reduce(0, +) / Float(confirmed.count)
@@ -926,7 +926,7 @@ class DeepTracker {
 
     // MARK: - Reset
 
-    func reset() {
+    nonisolated func reset() {
         tracks.removeAll()
         nextTrackId = 0
         primaryTrackId = nil

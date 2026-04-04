@@ -84,12 +84,12 @@ class PersonClassifier {
     private let centroidHistorySize = 8  // Average over ~8 detection cycles
 
     /// Current focus hint for proximity weighting (set by AutoZoomManager)
-    var currentFocusHint: CGPoint = CGPoint(x: 0.5, y: 0.5)
+    nonisolated(unsafe) var currentFocusHint: CGPoint = CGPoint(x: 0.5, y: 0.5)
 
     // MARK: - State Reset
 
     /// Reset tracking state for game start (keeps learned court bounds from warmup)
-    func resetTrackingState() {
+    nonisolated func resetTrackingState() {
         centroidHistory.removeAll()
         currentFocusHint = CGPoint(x: 0.5, y: 0.5)
         // courtBounds and teamColorProfiles are KEPT (warmup calibration)
@@ -99,14 +99,14 @@ class PersonClassifier {
 
     /// Accumulate a player color histogram during warmup.
     /// Called for every player detection before the game clock starts.
-    func accumulateWarmupHistogram(_ histogram: [Float]) {
+    nonisolated func accumulateWarmupHistogram(_ histogram: [Float]) {
         warmupHistograms.append(histogram)
         if warmupHistograms.count > 600 { warmupHistograms.removeFirst() }
     }
 
     /// Called at game start (clock tap). Clusters warmup histograms into 2 team color profiles.
     /// Uses dominant-hue bucketing — basketball jerseys always have a strong, distinct hue.
-    func finalizeTeamColors() {
+    nonisolated func finalizeTeamColors() {
         guard warmupHistograms.count >= 8 else {
             debugPrint("[PersonClassifier] Too few warmup samples for color learning (\(warmupHistograms.count))")
             return
@@ -147,7 +147,7 @@ class PersonClassifier {
 
     /// Histogram intersection score vs learned team profiles (0 = stranger, 1 = perfect team match).
     /// Returns 0.5 (neutral) if no profiles have been learned yet.
-    func teamColorScore(for histogram: [Float]) -> Float {
+    nonisolated func teamColorScore(for histogram: [Float]) -> Float {
         guard !teamColorProfiles.isEmpty else { return 0.5 }
         return teamColorProfiles.map { profile -> Float in
             zip(histogram, profile).reduce(0) { $0 + min($1.0, $1.1) }
@@ -222,7 +222,8 @@ class PersonClassifier {
 
     // MARK: - Main Classification
 
-    /// Primary entry point. Uses YOLOv8n when the model is present in the bundle;
+    /// Primary entry point. Uses YOLOv8n when the model is present in the bundle.
+    nonisolated
     /// falls back to VNDetectHumanRectanglesRequest otherwise. Body pose runs in both paths.
     func classifyPeople(in pixelBuffer: CVPixelBuffer) -> [ClassifiedPerson] {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
@@ -636,7 +637,7 @@ extension PersonClassifier {
     /// v3.1: Calculate action center from Kalman-filtered TrackedObjects with Momentum Attention
     /// Uses DeepTracker's Kalman velocity instead of naive frame-to-frame matching.
     /// Moving players are weighted 1x-3x higher than stationary ones.
-    func calculateActionCenter(from tracks: [TrackedObject]) -> CGPoint {
+    nonisolated func calculateActionCenter(from tracks: [TrackedObject]) -> CGPoint {
         let trackable = tracks.filter { $0.classification == .player || $0.classification == .referee }
         guard !trackable.isEmpty else { return CGPoint(x: 0.5, y: 0.5) }
 

@@ -42,15 +42,15 @@ class UltraSmoothZoomController {
     private var highConfidenceStreak: Int = 0
     private let minStreakForUpdate: Int = 6
 
-    var isTimeoutMode: Bool = false
+    nonisolated(unsafe) var isTimeoutMode: Bool = false
 
-    init(minZoom: Double = 1.0, maxZoom: Double = 1.5) {
+    nonisolated init(minZoom: Double = 1.0, maxZoom: Double = 1.5) {
         self.minZoom = minZoom
         self.maxZoom = maxZoom
         self.smoothZoom = minZoom
     }
 
-    func update(target: Double, confidence: Float) -> Double {
+    nonisolated func update(target: Double, confidence: Float) -> Double {
         if confidence > 0.4 {
             highConfidenceStreak += 1
         } else {
@@ -75,7 +75,7 @@ class UltraSmoothZoomController {
         return smoothZoom
     }
 
-    func reset() {
+    nonisolated func reset() {
         smoothZoom = minZoom
         zoomVelocity = 0
         targetZoom = minZoom
@@ -124,7 +124,7 @@ enum AutoZoomMode: String, CaseIterable, Sendable {
 /// Swift actor that owns all Skynet tracking state.
 /// Actor isolation guarantees exclusive access — no data races, no nonisolated(unsafe),
 /// no Swift concurrency warnings. Runs on Swift's cooperative thread pool (off main thread).
-actor SkynetProcessor {
+private actor SkynetProcessor {
 
     private let personClassifier = PersonClassifier()
     private let deepTracker = DeepTracker()
@@ -142,13 +142,14 @@ actor SkynetProcessor {
     private var isProcessing: Bool = false
 
     /// Entry point for each camera frame. Returns nil if throttled or already processing.
-    func tryCompute(_ pixelBuffer: CVPixelBuffer) -> SkynetResult? {
+    /// Takes UnsafeSendableBuffer so CVPixelBuffer never crosses the actor boundary directly.
+    func tryCompute(_ wrapper: UnsafeSendableBuffer) -> SkynetResult? {
         let now = CFAbsoluteTimeGetCurrent()
         guard !isProcessing, now - lastProcessTime >= processInterval else { return nil }
         isProcessing = true
         lastProcessTime = now
         defer { isProcessing = false }
-        return compute(pixelBuffer, now: now)
+        return compute(wrapper.buffer, now: now)
     }
 
     /// Finalizes team colors and resets tracking state (called at game start).
@@ -179,7 +180,8 @@ actor SkynetProcessor {
         personClassifier.currentFocusHint = currentCenter
 
         let classifiedPeople = personClassifier.classifyPeople(in: pixelBuffer)
-        let players = classifiedPeople.filter { $0.classification == .player }
+        // Pattern match instead of == to avoid @MainActor Equatable conformance warning
+        let players = classifiedPeople.filter { if case .player = $0.classification { return true }; return false }
         let ballDetection = ballDetector.detectBall(in: pixelBuffer, dt: dt)
         let activeTracks = deepTracker.update(detections: classifiedPeople, dt: dt)
 
@@ -329,7 +331,7 @@ final class AutoZoomManager: ObservableObject {
     nonisolated func processFrame(_ pixelBuffer: CVPixelBuffer) {
         let sendable = UnsafeSendableBuffer(buffer: pixelBuffer)
         Task {
-            guard let result = await skynetProcessor.tryCompute(sendable.buffer) else { return }
+            guard let result = await skynetProcessor.tryCompute(sendable) else { return }
             await MainActor.run { [weak self] in
                 self?.applySkynetResult(result)
             }

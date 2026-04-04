@@ -96,7 +96,7 @@ class BallDetector {
     ///   - pixelBuffer: The video frame
     ///   - dt: Time since last frame (for Kalman prediction)
     /// - Returns: Ball detection if found, nil otherwise
-    func detectBall(in pixelBuffer: CVPixelBuffer, dt: Double = 1.0/30.0) -> BallDetection? {
+    nonisolated func detectBall(in pixelBuffer: CVPixelBuffer, dt: Double = 1.0/30.0) -> BallDetection? {
         let currentTime = lastProcessedTime + dt
         lastProcessedTime = currentTime
 
