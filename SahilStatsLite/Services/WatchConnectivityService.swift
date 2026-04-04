@@ -132,59 +132,114 @@ class WatchConnectivityService: NSObject, ObservableObject {
 
     // MARK: - Send to Watch
 
-    /// Send full game state to watch (when game starts)
+    /// Single source of truth. Replaces the ENTIRE application context on every call —
+    /// no merging, no conflicting flags accumulating across a game.
+    ///
+    /// clockStartedAt: wall-clock timestamp when clock last started (0 = paused).
+    /// secondsAtClockStart: how many seconds remained when clock started.
+    /// Watch computes remaining = secondsAtClockStart - elapsed(since clockStartedAt).
+    /// This eliminates BLE delay drift entirely — both devices read Date() independently.
+    func sendFullSnapshot(
+        hasActiveGame: Bool,
+        teamName: String,
+        opponent: String,
+        myScore: Int,
+        oppScore: Int,
+        clockStartedAt: TimeInterval,   // 0 when paused
+        secondsAtClockStart: Int,       // remaining seconds at moment clock started
+        remainingSeconds: Int,          // paused value (used when clockStartedAt == 0)
+        isClockRunning: Bool,
+        period: String,
+        periodIndex: Int
+    ) {
+        let snapshot: [String: Any] = [
+            "hasActiveGame":      hasActiveGame,
+            WatchMessage.teamName:       teamName,
+            WatchMessage.opponent:       opponent,
+            WatchMessage.myScore:        myScore,
+            WatchMessage.oppScore:       oppScore,
+            "clockStartedAt":     clockStartedAt,
+            "secondsAtClockStart": secondsAtClockStart,
+            WatchMessage.remainingSeconds: remainingSeconds,
+            WatchMessage.isRunning:      isClockRunning,
+            WatchMessage.period:         period,
+            WatchMessage.periodIndex:    periodIndex
+        ]
+
+        // sendMessage: immediate delivery when Watch is in foreground
+        sendMessage(snapshot)
+
+        // updateApplicationContext: overwrites entire context (no merge) — delivered
+        // reliably when Watch app next activates, even if currently backgrounded.
+        guard let session = session else { return }
+        do {
+            try session.updateApplicationContext(snapshot)
+        } catch {
+            debugPrint("[WatchConnectivity] Snapshot context error: \(error)")
+        }
+    }
+
+    // Convenience wrappers so existing call sites don't need full refactor at once.
+    // These all call sendFullSnapshot — keeping the single-context guarantee.
+
     func sendGameState(teamName: String, opponent: String, myScore: Int, oppScore: Int,
-                       remainingSeconds: Int, isClockRunning: Bool, period: String, periodIndex: Int) {
-        let message: [String: Any] = [
-            WatchMessage.gameState: true,
-            WatchMessage.teamName: teamName,
-            WatchMessage.opponent: opponent,
-            WatchMessage.myScore: myScore,
-            WatchMessage.oppScore: oppScore,
-            WatchMessage.remainingSeconds: remainingSeconds,
-            WatchMessage.isRunning: isClockRunning,
-            WatchMessage.period: period,
-            WatchMessage.periodIndex: periodIndex
-        ]
-        
-        // Use BOTH sendMessage (immediate) and updateApplicationContext (reliable/sticky)
-        sendMessage(message)
-        updateContext(message)
+                       remainingSeconds: Int, isClockRunning: Bool, period: String, periodIndex: Int,
+                       clockStartedAt: TimeInterval = 0, secondsAtClockStart: Int = 0) {
+        sendFullSnapshot(hasActiveGame: true, teamName: teamName, opponent: opponent,
+                         myScore: myScore, oppScore: oppScore,
+                         clockStartedAt: clockStartedAt, secondsAtClockStart: secondsAtClockStart,
+                         remainingSeconds: remainingSeconds, isClockRunning: isClockRunning,
+                         period: period, periodIndex: periodIndex)
     }
 
-    /// Send score update to watch
-    func sendScoreUpdate(myScore: Int, oppScore: Int) {
-        let message: [String: Any] = [
-            WatchMessage.scoreUpdate: true,
-            WatchMessage.myScore: myScore,
-            WatchMessage.oppScore: oppScore
-        ]
-        sendMessage(message)
-        updateContext(message)
+    func sendScoreUpdate(myScore: Int, oppScore: Int,
+                         teamName: String = "", opponent: String = "",
+                         remainingSeconds: Int = 0, isClockRunning: Bool = false,
+                         period: String = "", periodIndex: Int = 0,
+                         clockStartedAt: TimeInterval = 0, secondsAtClockStart: Int = 0) {
+        sendFullSnapshot(hasActiveGame: true, teamName: teamName, opponent: opponent,
+                         myScore: myScore, oppScore: oppScore,
+                         clockStartedAt: clockStartedAt, secondsAtClockStart: secondsAtClockStart,
+                         remainingSeconds: remainingSeconds, isClockRunning: isClockRunning,
+                         period: period, periodIndex: periodIndex)
     }
 
-    /// Send clock update to watch
-    func sendClockUpdate(remainingSeconds: Int, isRunning: Bool) {
-        let message: [String: Any] = [
-            WatchMessage.clockUpdate: true,
+    func sendClockUpdate(remainingSeconds: Int, isRunning: Bool,
+                         clockStartedAt: TimeInterval = 0, secondsAtClockStart: Int = 0) {
+        // Clock-only updates still push a full snapshot to keep context consistent.
+        // Callers that have full state should use sendFullSnapshot directly.
+        let snapshot: [String: Any] = [
+            "hasActiveGame":       true,
             WatchMessage.remainingSeconds: remainingSeconds,
-            WatchMessage.isRunning: isRunning
+            WatchMessage.isRunning:       isRunning,
+            "clockStartedAt":      clockStartedAt,
+            "secondsAtClockStart": secondsAtClockStart
         ]
-        sendMessage(message)
-        updateContext(message)
+        sendMessage(snapshot)
+        guard let session = session else { return }
+        // Merge only the clock keys into the existing snapshot so we don't wipe game info.
+        // This is the only place a merge is acceptable — clock is a subset, not a conflicting flag.
+        var ctx = session.applicationContext
+        for (k, v) in snapshot { ctx[k] = v }
+        try? session.updateApplicationContext(ctx)
     }
 
-    /// Send period update to watch
-    func sendPeriodUpdate(period: String, periodIndex: Int, remainingSeconds: Int, isRunning: Bool) {
-        let message: [String: Any] = [
-            WatchMessage.periodUpdate: true,
-            WatchMessage.period: period,
-            WatchMessage.periodIndex: periodIndex,
+    func sendPeriodUpdate(period: String, periodIndex: Int, remainingSeconds: Int, isRunning: Bool,
+                          clockStartedAt: TimeInterval = 0, secondsAtClockStart: Int = 0) {
+        let snapshot: [String: Any] = [
+            "hasActiveGame":       true,
+            WatchMessage.period:          period,
+            WatchMessage.periodIndex:     periodIndex,
             WatchMessage.remainingSeconds: remainingSeconds,
-            WatchMessage.isRunning: isRunning
+            WatchMessage.isRunning:       isRunning,
+            "clockStartedAt":      clockStartedAt,
+            "secondsAtClockStart": secondsAtClockStart
         ]
-        sendMessage(message)
-        updateContext(message)
+        sendMessage(snapshot)
+        guard let session = session else { return }
+        var ctx = session.applicationContext
+        for (k, v) in snapshot { ctx[k] = v }
+        try? session.updateApplicationContext(ctx)
     }
 
     /// Send end game to watch (resets watch to waiting state)
@@ -265,31 +320,13 @@ class WatchConnectivityService: NSObject, ObservableObject {
     }
 
     private func sendMessage(_ message: [String: Any]) {
-        guard let session = session, session.isReachable else {
-            // Silently fail, updateContext will handle it when Watch wakes up
-            return
-        }
-
+        guard let session = session, session.isReachable else { return }
         session.sendMessage(message, replyHandler: nil) { error in
-            debugPrint("[WatchConnectivity] Error sending message: \(error)")
-        }
-    }
-    
-    private func updateContext(_ message: [String: Any]) {
-        guard let session = session else { return }
-        
-        do {
-            // merge with existing context if possible
-            var newContext = session.applicationContext
-            for (key, value) in message {
-                newContext[key] = value
-            }
-            try session.updateApplicationContext(newContext)
-        } catch {
-            debugPrint("[WatchConnectivity] Error updating context: \(error)")
+            debugPrint("[WatchConnectivity] sendMessage error: \(error)")
         }
     }
 }
+
 
 // MARK: - WCSessionDelegate
 
@@ -338,11 +375,16 @@ extension WatchConnectivityService: WCSessionDelegate {
         }
     }
 
-    // Receive messages from watch
+    // Receive real-time messages from Watch (requires Watch in foreground)
     nonisolated func session(_ session: WCSession, didReceiveMessage message: [String: Any]) {
-        Task { @MainActor in
-            handleMessage(message)
-        }
+        Task { @MainActor in handleMessage(message) }
+    }
+
+    // Receive queued messages from Watch (transferUserInfo — guaranteed delivery,
+    // works even when phone is backgrounded/screen off during a game).
+    // Watch uses this for all score and stat updates.
+    nonisolated func session(_ session: WCSession, didReceiveUserInfo userInfo: [String: Any]) {
+        Task { @MainActor in handleMessage(userInfo) }
     }
 
     @MainActor

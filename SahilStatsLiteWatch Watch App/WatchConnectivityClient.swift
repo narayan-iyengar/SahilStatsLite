@@ -152,22 +152,39 @@ class WatchConnectivityClient: NSObject, ObservableObject {
         setupSession()
     }
     
-    // MARK: - Local Timer (Independent Clock)
-    
+    // MARK: - Wall Clock (Zero-Drift Display Timer)
+
+    // When the clock is running, the phone sends a wall-clock timestamp
+    // (clockStartedAt) and the seconds remaining at that moment (secondsAtClockStart).
+    // The Watch computes remaining time from Date() directly — no BLE delay drift,
+    // no two timers diverging. The local timer here just refreshes the display.
+    private var clockStartedAt: TimeInterval = 0       // 0 = paused
+    private var secondsAtClockStart: Int = 0
+
+    private var computedRemainingSeconds: Int {
+        guard clockStartedAt > 0 else { return remainingSeconds }
+        let elapsed = Int(Date().timeIntervalSince1970 - clockStartedAt)
+        return max(0, secondsAtClockStart - elapsed)
+    }
+
     private func startLocalTimer() {
-        stopLocalTimer() // Ensure no duplicates
+        stopLocalTimer()
+        // Refresh display once per second — not counting down, just triggering UI update.
         localTimer = Timer.publish(every: 1.0, on: .main, in: .common)
             .autoconnect()
             .sink { [weak self] _ in
                 guard let self = self else { return }
-                if self.remainingSeconds > 0 {
-                    self.remainingSeconds -= 1
-                } else {
+                let computed = self.computedRemainingSeconds
+                if computed != self.remainingSeconds {
+                    self.remainingSeconds = computed
+                }
+                if computed == 0 {
                     self.isClockRunning = false
+                    self.clockStartedAt = 0
                 }
             }
     }
-    
+
     private func stopLocalTimer() {
         localTimer?.cancel()
         localTimer = nil
@@ -231,37 +248,25 @@ class WatchConnectivityClient: NSObject, ObservableObject {
 
     /// Add score (team: "my" or "opp", points: 1, 2, or 3)
     func addScore(team: String, points: Int) {
-        // Update local state immediately for responsiveness
-        if team == "my" {
-            myScore += points
-        } else {
-            oppScore += points
-        }
-
-        let message: [String: Any] = [
+        if team == "my" { myScore += points } else { oppScore += points }
+        // transferUserInfo: guaranteed delivery even if phone screen is off mid-game
+        sendUserInfo([
             WatchMessage.scoreUpdate: true,
             WatchMessage.team: team,
             WatchMessage.points: points
-        ]
-        sendMessage(message)
+        ])
     }
 
     /// Subtract score (for fixing mistakes)
     func subtractScore(team: String, points: Int) {
-        // Update local state immediately for responsiveness
-        if team == "my" {
-            myScore = max(0, myScore - points)
-        } else {
-            oppScore = max(0, oppScore - points)
-        }
-
-        let message: [String: Any] = [
+        if team == "my" { myScore = max(0, myScore - points) }
+        else { oppScore = max(0, oppScore - points) }
+        sendUserInfo([
             WatchMessage.scoreUpdate: true,
             WatchMessage.team: team,
             WatchMessage.points: points,
             WatchMessage.isSubtract: true
-        ]
-        sendMessage(message)
+        ])
     }
 
     /// Start a new game from watch with full game details
@@ -305,24 +310,17 @@ class WatchConnectivityClient: NSObject, ObservableObject {
     /// Toggle clock (pause/play)
     func toggleClock() {
         isClockRunning.toggle()
-
-        let message: [String: Any] = [
-            WatchMessage.clockUpdate: true
-        ]
-        sendMessage(message)
+        // Clock toggle: use sendUserInfo so it's delivered even if phone backgrounded
+        sendUserInfo([WatchMessage.clockUpdate: true])
     }
 
     /// Advance period
     func advancePeriod() {
-        let message: [String: Any] = [
-            WatchMessage.periodUpdate: true
-        ]
-        sendMessage(message)
+        sendUserInfo([WatchMessage.periodUpdate: true])
     }
 
     /// Update a stat (sent to phone)
     func updateStat(_ statType: String, value: Int) {
-        // Update local state immediately
         switch statType {
         case "fg2Made": fg2Made += value
         case "fg2Att": fg2Att += value
@@ -337,25 +335,21 @@ class WatchConnectivityClient: NSObject, ObservableObject {
         case "turnovers": turnovers += value
         default: break
         }
-
-        let message: [String: Any] = [
+        sendUserInfo([
             WatchMessage.statUpdate: true,
             WatchMessage.statType: statType,
             WatchMessage.statValue: value
-        ]
-        sendMessage(message)
+        ])
     }
 
-    /// End game
+    /// End game — use sendMessage (immediate) so spinner shows quickly,
+    /// but also sendUserInfo as a backup in case sendMessage fails.
     func endGame() {
         isEnding = true
-        
-        let message: [String: Any] = [
-            WatchMessage.endGame: true
-        ]
-        sendMessage(message)
-        
-        // Timeout safeguard: Force end if phone doesn't reply in 5s
+        let msg: [String: Any] = [WatchMessage.endGame: true]
+        sendMessage(msg)
+        sendUserInfo(msg)
+
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) { [weak self] in
             guard let self = self else { return }
             if self.isEnding {
@@ -374,14 +368,19 @@ class WatchConnectivityClient: NSObject, ObservableObject {
         sendMessage(message)
     }
 
-    private func sendMessage(_ message: [String: Any]) {
-        guard let session = session, session.isReachable else {
-            debugPrint("[Watch] Phone not reachable")
-            return
-        }
+    /// Guaranteed delivery — queued and delivered even when phone is backgrounded.
+    /// Use for all scoring and stat updates so nothing is lost mid-game.
+    private func sendUserInfo(_ message: [String: Any]) {
+        guard let session = session else { return }
+        session.transferUserInfo(message)
+    }
 
+    /// Immediate delivery — for time-sensitive requests only (e.g. requestState).
+    /// Silently dropped if phone not reachable.
+    private func sendMessage(_ message: [String: Any]) {
+        guard let session = session, session.isReachable else { return }
         session.sendMessage(message, replyHandler: nil) { error in
-            debugPrint("[Watch] Error sending message: \(error)")
+            debugPrint("[Watch] sendMessage error: \(error)")
         }
     }
 }
@@ -438,35 +437,25 @@ extension WatchConnectivityClient: WCSessionDelegate {
 
     @MainActor
     private func handleMessage(_ message: [String: Any]) {
-        // Full game state from phone (when game starts)
-        if message[WatchMessage.gameState] != nil {
-            hasActiveGame = true
-            // ... (rest of logic handles updates)
-            if let name = message[WatchMessage.teamName] as? String {
-                teamName = name
+        // Full game state snapshot from phone.
+        // Also handles the new "hasActiveGame" key that replaces the old gameState flag.
+        let isFullSnapshot = message["hasActiveGame"] != nil
+        let isLegacyGameState = message[WatchMessage.gameState] != nil
+
+        if isFullSnapshot || isLegacyGameState {
+            if let active = message["hasActiveGame"] as? Bool {
+                hasActiveGame = active
+            } else if isLegacyGameState {
+                hasActiveGame = true
             }
-            if let opp = message[WatchMessage.opponent] as? String {
-                opponent = opp
-            }
-            if let my = message[WatchMessage.myScore] as? Int {
-                myScore = my
-            }
-            if let opp = message[WatchMessage.oppScore] as? Int {
-                oppScore = opp
-            }
-            if let secs = message[WatchMessage.remainingSeconds] as? Int {
-                remainingSeconds = secs
-            }
-            if let running = message[WatchMessage.isRunning] as? Bool {
-                isClockRunning = running
-            }
-            if let per = message[WatchMessage.period] as? String {
-                period = per
-            }
-            if let idx = message[WatchMessage.periodIndex] as? Int {
-                periodIndex = idx
-            }
-            debugPrint("[Watch] Received game state: \(teamName) vs \(opponent)")
+            if let name = message[WatchMessage.teamName] as? String, !name.isEmpty { teamName = name }
+            if let opp  = message[WatchMessage.opponent] as? String,  !opp.isEmpty  { opponent = opp }
+            if let my   = message[WatchMessage.myScore] as? Int  { myScore = my }
+            if let opp  = message[WatchMessage.oppScore] as? Int { oppScore = opp }
+            if let per  = message[WatchMessage.period] as? String    { period = per }
+            if let idx  = message[WatchMessage.periodIndex] as? Int  { periodIndex = idx }
+            applyClockState(from: message)
+            debugPrint("[Watch] Snapshot applied: \(teamName) vs \(opponent) | \(myScore)-\(oppScore)")
         }
 
         // Score update from phone
@@ -479,36 +468,22 @@ extension WatchConnectivityClient: WCSessionDelegate {
             }
         }
 
-        // Clock update from phone
+        // Clock update from phone — apply wall clock timestamps if present
         if message[WatchMessage.clockUpdate] != nil {
-            if let secs = message[WatchMessage.remainingSeconds] as? Int {
-                remainingSeconds = secs
-            }
-            if let running = message[WatchMessage.isRunning] as? Bool {
-                isClockRunning = running
-            }
-        }
-
-        // Period update from phone
-        if message[WatchMessage.periodUpdate] != nil {
-            if let per = message[WatchMessage.period] as? String {
-                period = per
-            }
-            if let idx = message[WatchMessage.periodIndex] as? Int {
-                periodIndex = idx
-            }
-            if let secs = message[WatchMessage.remainingSeconds] as? Int {
-                remainingSeconds = secs
-            }
-            if let running = message[WatchMessage.isRunning] as? Bool {
-                isClockRunning = running
-            }
+            applyClockState(from: message)
         }
 
         // End game from phone
         if message[WatchMessage.endGame] != nil {
             hasActiveGame = false
             isEnding = false
+        }
+
+        // Period update from phone
+        if message[WatchMessage.periodUpdate] != nil {
+            if let per = message[WatchMessage.period] as? String   { period = per }
+            if let idx = message[WatchMessage.periodIndex] as? Int { periodIndex = idx }
+            applyClockState(from: message)
         }
 
         // Upcoming games from phone (calendar sync)
@@ -524,6 +499,33 @@ extension WatchConnectivityClient: WCSessionDelegate {
             } catch {
                 debugPrint("[Watch] Error decoding games: \(error)")
             }
+        }
+    }
+
+    /// Apply clock state from a message or snapshot.
+    /// Uses wall clock timestamps when available (zero drift).
+    /// Falls back to remainingSeconds directly when clock is paused.
+    @MainActor
+    private func applyClockState(from message: [String: Any]) {
+        let startedAt = message["clockStartedAt"] as? TimeInterval ?? 0
+        let secsAtStart = message["secondsAtClockStart"] as? Int ?? 0
+        let running = message[WatchMessage.isRunning] as? Bool ?? false
+
+        if running && startedAt > 0 {
+            // Clock is running — compute remaining from wall clock, zero drift
+            clockStartedAt = startedAt
+            secondsAtClockStart = secsAtStart
+            let elapsed = Int(Date().timeIntervalSince1970 - startedAt)
+            remainingSeconds = max(0, secsAtStart - elapsed)
+            isClockRunning = true
+        } else {
+            // Clock is paused — use the explicit remaining seconds value
+            clockStartedAt = 0
+            secondsAtClockStart = 0
+            if let secs = message[WatchMessage.remainingSeconds] as? Int {
+                remainingSeconds = secs
+            }
+            isClockRunning = false
         }
     }
 }

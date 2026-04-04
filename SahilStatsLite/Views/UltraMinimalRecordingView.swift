@@ -36,6 +36,11 @@ struct UltraMinimalRecordingView: View {
     @State private var period: String = "1st Half"
     @State private var isClockRunning: Bool = false
 
+    // Wall clock sync: recorded when clock starts/resumes so Watch can compute
+    // remaining time from Date() without drift. Reset to 0 when paused.
+    @State private var clockStartedAt: TimeInterval = 0
+    @State private var secondsAtClockStart: Int = 0
+
     // Player stats (Sahil)
     @State private var playerStats = PlayerStats()
 
@@ -434,31 +439,36 @@ struct UltraMinimalRecordingView: View {
     private func sendGameStateToWatch() {
         let periodNames = ["1st Half", "2nd Half", "OT", "OT2", "OT3"]
         let periodIdx = periodNames.firstIndex(of: period) ?? 0
-
         watchService.sendGameState(
             teamName: appState.currentGame?.teamName ?? "Home",
             opponent: appState.currentGame?.opponent ?? "Away",
-            myScore: myScore,
-            oppScore: opponentScore,
-            remainingSeconds: remainingSeconds,
-            isClockRunning: isClockRunning,
-            period: period,
-            periodIndex: periodIdx
+            myScore: myScore, oppScore: opponentScore,
+            remainingSeconds: remainingSeconds, isClockRunning: isClockRunning,
+            period: period, periodIndex: periodIdx,
+            clockStartedAt: clockStartedAt, secondsAtClockStart: secondsAtClockStart
         )
     }
 
     private func sendScoreToWatch() {
-        watchService.sendScoreUpdate(myScore: myScore, oppScore: opponentScore)
+        // Score updates push a full snapshot so Watch always has consistent state
+        sendGameStateToWatch()
     }
 
     private func sendClockToWatch() {
-        watchService.sendClockUpdate(remainingSeconds: remainingSeconds, isRunning: isClockRunning)
+        watchService.sendClockUpdate(
+            remainingSeconds: remainingSeconds, isRunning: isClockRunning,
+            clockStartedAt: clockStartedAt, secondsAtClockStart: secondsAtClockStart
+        )
     }
 
     private func sendPeriodToWatch() {
         let periodNames = ["1st Half", "2nd Half", "OT", "OT2", "OT3"]
         let periodIdx = periodNames.firstIndex(of: period) ?? 0
-        watchService.sendPeriodUpdate(period: period, periodIndex: periodIdx, remainingSeconds: remainingSeconds, isRunning: isClockRunning)
+        watchService.sendPeriodUpdate(
+            period: period, periodIndex: periodIdx,
+            remainingSeconds: remainingSeconds, isRunning: isClockRunning,
+            clockStartedAt: clockStartedAt, secondsAtClockStart: secondsAtClockStart
+        )
     }
 
     // MARK: - Camera Preview
@@ -830,8 +840,13 @@ struct UltraMinimalRecordingView: View {
         }
 
         if isClockRunning {
+            // Record wall clock timestamp for zero-drift Watch sync
+            clockStartedAt = Date().timeIntervalSince1970
+            secondsAtClockStart = remainingSeconds
             startTimerIfNeeded()
         } else {
+            clockStartedAt = 0
+            secondsAtClockStart = 0
             stopTimer()
         }
         updateOverlayState()
