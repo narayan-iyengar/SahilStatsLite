@@ -16,6 +16,11 @@ import SwiftUI
 struct SahilStatsLiteWatchApp: App {
     @StateObject private var connectivityService = WatchConnectivityClient.shared
 
+    init() {
+        // Build stamp — compare with iOS console output to confirm both are in sync.
+        debugPrint("⌚️ [Watch] Build: \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? "?") | \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") ?? "?")")
+    }
+
     var body: some Scene {
         WindowGroup {
             WatchContentView()

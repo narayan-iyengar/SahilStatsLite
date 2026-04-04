@@ -20,6 +20,11 @@ import Combine
 struct SahilStatsLiteApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) var delegate
 
+    init() {
+        // Build stamp — compare with Watch console output to confirm both are in sync.
+        debugPrint("📱 [iOS] Build: \(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") ?? "?") | \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") ?? "?")")
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView()
