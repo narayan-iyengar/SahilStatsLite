@@ -159,7 +159,7 @@ final class GimbalTrackingManager: ObservableObject {
         if #available(iOS 18.0, *) {
             isTrackingActive = true
             lastError = nil
-            lastROICenter = CGPoint(x: 0.5, y: 0.5)
+            lastActionCenterX = 0.5
 
             Task {
                 do {
