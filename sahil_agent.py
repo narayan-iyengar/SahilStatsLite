@@ -37,7 +37,7 @@ REMOTE_REPO  = "/Users/narayan/SahilStats/SahilStatsLite/SahilStatsLite"
 BUILD_DIR    = "/tmp/SahilStatsBuild"
 IOS_DEPLOY   = "/opt/homebrew/bin/ios-deploy"
 IPHONE_UDID  = "00008140-000078682693001C"   # ios-deploy UDID
-WATCH_DC     = "4532002B-DBB1-5C2B-B91A-7E51BB05486A"   # Watch Ultra 2 devicectl ID (paired)
+WATCH_DC     = "1F6B54B5-D413-548A-A90C-351867F22E2C"   # Watch Series 8 — remote scoring device
 MODEL        = "claude-sonnet-4-6"
 
 XCODEBUILD = f"""
@@ -145,7 +145,7 @@ echo "iPhone: installed and launched"
     return _ssh(f"bash -s << 'EOF'\n{script}\nEOF")
 
 def deploy_watch() -> str:
-    """Install the Watch app on Apple Watch Ultra 2 via xcrun devicectl."""
+    """Install the Watch app on Apple Watch Series 8 (the remote scoring watch) via xcrun devicectl."""
     script = f"""
 WATCH=$(find {BUILD_DIR} -name "SahilStatsLiteWatch Watch App.app" -path "*/watchos*" | head -1)
 if [ -z "$WATCH" ]; then echo "ERROR: Watch app not found. Run build first."; exit 1; fi
@@ -153,7 +153,7 @@ BUILD_VER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$WATCH/Info.pli
 echo "Installing Watch v$BUILD_VER: $WATCH"
 xcrun devicectl device install app --device {WATCH_DC} "$WATCH" 2>&1 | tail -5
 echo "$BUILD_VER" > /tmp/_sahil_last_watch_deploy.txt
-echo "Watch Ultra 2: installed v$BUILD_VER"
+echo "Watch Series 8 (scoring remote): installed v$BUILD_VER"
 """
     return _ssh(f"bash -s << 'EOF'\n{script}\nEOF")
 
@@ -324,7 +324,7 @@ TOOLS = [
     {
         "name": "check_sync",
         "description": (
-            "Verify iPhone and Watch Ultra 2 are running the same build. "
+            "Verify iPhone and Watch Series 8 (remote scoring watch) are running the same build. "
             "Compares installed build number on iPhone (via devicectl) against "
             "last build artifact in /tmp/SahilStatsBuild. "
             "Watch sync is inferred from deploy log since watchOS apps cannot "
@@ -394,7 +394,8 @@ Key architecture:
 
 Devices:
 - iPhone: Narayan's iPhone (Series 16 Pro Max) — ios-deploy UDID 00008140-000078682693001C
-- Watch:  Apple Watch Series 8 — xcrun devicectl ID 1F6B54B5-D413-548A-A90C-351867F22E2C
+- Watch:  Apple Watch Series 8 (remote scoring device) — xcrun devicectl ID 1F6B54B5-D413-548A-A90C-351867F22E2C
+         (Ultra 2 is daily wear only — do not deploy to it)
 
 No em-dashes. No placeholders. Lead with action.
 
