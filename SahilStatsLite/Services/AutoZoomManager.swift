@@ -126,7 +126,7 @@ enum AutoZoomMode: String, CaseIterable, Sendable {
 
 /// Wraps CVPixelBuffer (non-Sendable) for safe passage across actor boundaries.
 private struct UnsafeSendableBuffer: @unchecked Sendable {
-    let buffer: CVPixelBuffer
+    nonisolated(unsafe) let buffer: CVPixelBuffer
 }
 
 // MARK: - Skynet Processor (Actor)

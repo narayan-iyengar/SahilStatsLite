@@ -43,44 +43,42 @@ class BallDetector {
 
     // MARK: - Kalman Filter for Ball
 
-    private var kalman: BallKalmanFilter?
-    private var consecutiveMisses: Int = 0
-    private let maxMissesBeforeReset = 15  // ~0.5s at 30fps
+    // nonisolated(unsafe) on all stored vars — BallDetector is @MainActor-inferred
+    // because it was historically stored on @MainActor AutoZoomManager. These annotations
+    // are compile-time only and have zero runtime performance impact.
+    private nonisolated(unsafe) var kalman: BallKalmanFilter?
+    private nonisolated(unsafe) var consecutiveMisses: Int = 0
+    private let maxMissesBeforeReset = 15
 
-    // MARK: - Trajectory History (for motion-based validation)
+    // MARK: - Trajectory History
 
-    private var trajectoryHistory: [TrajectoryPoint] = []
-    private let maxTrajectoryHistory = 20  // ~0.7s at 30fps
-    private var lastProcessedTime: Double = 0
+    private nonisolated(unsafe) var trajectoryHistory: [TrajectoryPoint] = []
+    private let maxTrajectoryHistory = 20
+    private nonisolated(unsafe) var lastProcessedTime: Double = 0
 
     // MARK: - Color Thresholds (HSV)
 
-    // Basketball orange/brown - will be adapted online
-    private var hueMin: CGFloat = 5
-    private var hueMax: CGFloat = 25
-    private var satMin: CGFloat = 0.4
-    private var satMax: CGFloat = 1.0
-    private var valMin: CGFloat = 0.3
-    private var valMax: CGFloat = 1.0
+    private nonisolated(unsafe) var hueMin: CGFloat = 5
+    private nonisolated(unsafe) var hueMax: CGFloat = 25
+    private nonisolated(unsafe) var satMin: CGFloat = 0.4
+    private nonisolated(unsafe) var satMax: CGFloat = 1.0
+    private nonisolated(unsafe) var valMin: CGFloat = 0.3
+    private nonisolated(unsafe) var valMax: CGFloat = 1.0
 
-    // Online color learning
-    private var colorSamples: [(h: CGFloat, s: CGFloat, v: CGFloat)] = []
+    private nonisolated(unsafe) var colorSamples: [(h: CGFloat, s: CGFloat, v: CGFloat)] = []
     private let maxColorSamples = 50
-    private var isCalibrated: Bool = false
+    private nonisolated(unsafe) var isCalibrated: Bool = false
 
     // MARK: - Size Constraints
 
-    // Ball should be roughly 1-8% of frame width depending on distance/zoom
     private let minBallRadiusRatio: CGFloat = 0.005
     private let maxBallRadiusRatio: CGFloat = 0.08
 
-    // MARK: - Hoop Filtering (avoid false positives from basketball hoop rim)
+    // MARK: - Hoop Filtering
 
-    // Reject detections in upper portion of frame where hoops are located
-    private let hoopZoneMaxY: CGFloat = 0.25  // Upper 25% is hoop zone
+    private let hoopZoneMaxY: CGFloat = 0.25
 
-    // Track recent positions for motion-based filtering
-    private var recentDetectionPositions: [CGPoint] = []
+    private nonisolated(unsafe) var recentDetectionPositions: [CGPoint] = []
     private let motionHistorySize = 10
 
     // MARK: - Physics Constants (normalized to frame coordinates)
@@ -203,7 +201,7 @@ class BallDetector {
     // MARK: - Trajectory Validation
 
     /// Add confirmed detection to trajectory history
-    private func addToTrajectoryHistory(position: CGPoint, radius: CGFloat, confidence: Float, timestamp: Double) {
+    nonisolated private func addToTrajectoryHistory(position: CGPoint, radius: CGFloat, confidence: Float, timestamp: Double) {
         let point = TrajectoryPoint(position: position, timestamp: timestamp, radius: radius, confidence: confidence)
         trajectoryHistory.append(point)
 
@@ -215,7 +213,7 @@ class BallDetector {
 
     /// Filter candidates based on trajectory consistency
     /// Uses motion history to reject impossible ball positions
-    private func filterCandidatesByTrajectory(_ candidates: [(center: CGPoint, radius: CGFloat, confidence: Float)], currentTime: Double) -> [(center: CGPoint, radius: CGFloat, confidence: Float)] {
+    nonisolated private func filterCandidatesByTrajectory(_ candidates: [(center: CGPoint, radius: CGFloat, confidence: Float)], currentTime: Double) -> [(center: CGPoint, radius: CGFloat, confidence: Float)] {
         guard trajectoryHistory.count >= 3 else {
             // Not enough history - accept all candidates
             return candidates
@@ -287,7 +285,7 @@ class BallDetector {
 
     // MARK: - Color Segmentation
 
-    private func findBallCandidates(in pixelBuffer: CVPixelBuffer) -> [(center: CGPoint, radius: CGFloat, confidence: Float)] {
+    nonisolated private func findBallCandidates(in pixelBuffer: CVPixelBuffer) -> [(center: CGPoint, radius: CGFloat, confidence: Float)] {
         var candidates: [(center: CGPoint, radius: CGFloat, confidence: Float)] = []
 
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
@@ -418,7 +416,7 @@ class BallDetector {
         return candidates
     }
 
-    private func isOrangePixel(baseAddress: UnsafeMutableRawPointer, x: Int, y: Int,
+    nonisolated private func isOrangePixel(baseAddress: UnsafeMutableRawPointer, x: Int, y: Int,
                                bytesPerRow: Int, pixelFormat: OSType) -> Bool {
         // Handle different pixel formats
         let offset: Int
@@ -454,7 +452,7 @@ class BallDetector {
                v >= valMin && v <= valMax
     }
 
-    private func rgbToHSV(r: CGFloat, g: CGFloat, b: CGFloat) -> (h: CGFloat, s: CGFloat, v: CGFloat) {
+    nonisolated private func rgbToHSV(r: CGFloat, g: CGFloat, b: CGFloat) -> (h: CGFloat, s: CGFloat, v: CGFloat) {
         let maxC = max(r, g, b)
         let minC = min(r, g, b)
         let delta = maxC - minC
@@ -482,7 +480,7 @@ class BallDetector {
 
     // MARK: - Online Color Learning
 
-    private func learnColorFromRegion(_ pixelBuffer: CVPixelBuffer, center: CGPoint, radius: CGFloat) {
+    nonisolated private func learnColorFromRegion(_ pixelBuffer: CVPixelBuffer, center: CGPoint, radius: CGFloat) {
         guard !isCalibrated || colorSamples.count < maxColorSamples else { return }
 
         // Sample the center region of the detected ball
@@ -548,7 +546,7 @@ class BallDetector {
         }
     }
 
-    private func updateColorThresholds() {
+    nonisolated private func updateColorThresholds() {
         guard colorSamples.count >= 10 else { return }
 
         let hues = colorSamples.map { $0.h }.sorted()
