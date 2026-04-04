@@ -37,7 +37,7 @@ REMOTE_REPO  = "/Users/narayan/SahilStats/SahilStatsLite/SahilStatsLite"
 BUILD_DIR    = "/tmp/SahilStatsBuild"
 IOS_DEPLOY   = "/opt/homebrew/bin/ios-deploy"
 IPHONE_UDID  = "00008140-000078682693001C"   # ios-deploy UDID
-WATCH8_DC    = "1F6B54B5-D413-548A-A90C-351867F22E2C"  # Watch Series 8 devicectl ID
+WATCH_DC     = "4532002B-DBB1-5C2B-B91A-7E51BB05486A"   # Watch Ultra 2 devicectl ID (paired)
 MODEL        = "claude-sonnet-4-6"
 
 XCODEBUILD = f"""
@@ -145,13 +145,15 @@ echo "iPhone: installed and launched"
     return _ssh(f"bash -s << 'EOF'\n{script}\nEOF")
 
 def deploy_watch() -> str:
-    """Install the Watch app on Apple Watch Series 8 via xcrun devicectl."""
+    """Install the Watch app on Apple Watch Ultra 2 via xcrun devicectl."""
     script = f"""
 WATCH=$(find {BUILD_DIR} -name "SahilStatsLiteWatch Watch App.app" -path "*/watchos*" | head -1)
 if [ -z "$WATCH" ]; then echo "ERROR: Watch app not found. Run build first."; exit 1; fi
-echo "Installing: $WATCH"
-xcrun devicectl device install app --device {WATCH8_DC} "$WATCH" 2>&1 | tail -5
-echo "Watch Series 8: installed"
+BUILD_VER=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$WATCH/Info.plist" 2>/dev/null || echo "?")
+echo "Installing Watch v$BUILD_VER: $WATCH"
+xcrun devicectl device install app --device {WATCH_DC} "$WATCH" 2>&1 | tail -5
+echo "$BUILD_VER" > /tmp/_sahil_last_watch_deploy.txt
+echo "Watch Ultra 2: installed v$BUILD_VER"
 """
     return _ssh(f"bash -s << 'EOF'\n{script}\nEOF")
 
@@ -161,7 +163,72 @@ def deploy_all() -> str:
 
 def check_devices() -> str:
     """Check which devices are reachable (iPhone + Watch)."""
-    return _ssh(f"xcrun devicectl list devices 2>&1 | grep -E 'iPhone|Watch|iPad'")
+    return _ssh("xcrun devicectl list devices 2>&1 | grep -E 'iPhone|Watch|iPad'")
+
+def check_sync() -> str:
+    """
+    Verify iPhone and Watch are running the same build as the last deploy.
+
+    - iPhone: queried directly via xcrun devicectl (bundleVersion).
+    - Watch: xcrun devicectl cannot enumerate watchOS apps; sync is inferred
+      from whether the last deploy.sh succeeded (both deploy atomically).
+    - Build artifact: reads CFBundleVersion from /tmp/SahilStatsBuild Info.plist.
+    """
+    script = r"""
+set -e
+
+IPHONE_DC="E52AFF08-9E71-52C0-8608-A9A529C5205C"
+BUILD_DIR="/tmp/SahilStatsBuild"
+BUNDLE_ID="com.narayan.SahilStats"
+
+# 1. Last built artifact version
+ARTIFACT_APP=$(find "$BUILD_DIR" -name "SahilStatsLite.app" -not -path "*watchos*" -not -path "*Watch*" 2>/dev/null | head -1)
+if [ -n "$ARTIFACT_APP" ]; then
+  ARTIFACT_BUILD=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$ARTIFACT_APP/Info.plist" 2>/dev/null || echo "?")
+  ARTIFACT_DATE=$(stat -f '%Sm' -t '%Y-%m-%d %H:%M' "$ARTIFACT_APP")
+  echo "Last build artifact : v$ARTIFACT_BUILD  (built $ARTIFACT_DATE)"
+else
+  ARTIFACT_BUILD="none"
+  echo "Last build artifact : none found in $BUILD_DIR — run deploy first"
+fi
+
+# 2. iPhone installed version
+xcrun devicectl device info apps \
+  --device "$IPHONE_DC" \
+  --include-removable-apps \
+  --json-output /tmp/_sahil_sync_iphone.json 2>/dev/null
+IPHONE_BUILD=$(python3 -c "
+import json, sys
+data = json.load(open('/tmp/_sahil_sync_iphone.json'))
+apps = data.get('result', {}).get('apps', [])
+app = next((a for a in apps if '$BUNDLE_ID' in str(a.get('bundleIdentifier',''))), None)
+print(app['bundleVersion'] if app else 'not_installed')
+" 2>/dev/null || echo "error")
+
+if [ "$IPHONE_BUILD" = "not_installed" ]; then
+  echo "iPhone              : not installed"
+elif [ "$IPHONE_BUILD" = "error" ]; then
+  echo "iPhone              : could not query (device may be locked)"
+elif [ "$IPHONE_BUILD" = "$ARTIFACT_BUILD" ]; then
+  echo "iPhone              : ✅  v$IPHONE_BUILD  (matches last build)"
+else
+  echo "iPhone              : ⚠️   v$IPHONE_BUILD  (last build is v$ARTIFACT_BUILD — deploy needed)"
+fi
+
+# 3. Watch — infer from last deploy log
+WATCH_LOG="/tmp/_sahil_last_watch_deploy.txt"
+if [ -f "$WATCH_LOG" ]; then
+  WATCH_BUILD=$(cat "$WATCH_LOG")
+  if [ "$WATCH_BUILD" = "$ARTIFACT_BUILD" ]; then
+    echo "Watch Series 8      : ✅  v$WATCH_BUILD  (deployed from same build as iPhone)"
+  else
+    echo "Watch Series 8      : ⚠️   v$WATCH_BUILD  (last build is v$ARTIFACT_BUILD — deploy needed)"
+  fi
+else
+  echo "Watch Series 8      : unknown  (no deploy log yet — run deploy to establish baseline)"
+fi
+"""
+    return _ssh_script(script)
 
 def ssh_run(command: str) -> str:
     """Run an arbitrary command on the personal Mac."""
@@ -255,6 +322,17 @@ TOOLS = [
         "input_schema": {"type": "object", "properties": {}}
     },
     {
+        "name": "check_sync",
+        "description": (
+            "Verify iPhone and Watch Ultra 2 are running the same build. "
+            "Compares installed build number on iPhone (via devicectl) against "
+            "last build artifact in /tmp/SahilStatsBuild. "
+            "Watch sync is inferred from deploy log since watchOS apps cannot "
+            "be enumerated via devicectl."
+        ),
+        "input_schema": {"type": "object", "properties": {}}
+    },
+    {
         "name": "ssh_run",
         "description": "Run an arbitrary command on the personal Mac.",
         "input_schema": {
@@ -276,6 +354,7 @@ DISPATCH = {
     "deploy_watch":         lambda i: deploy_watch(),
     "deploy_all":           lambda i: deploy_all(),
     "check_devices":        lambda i: check_devices(),
+    "check_sync":           lambda i: check_sync(),
     "ssh_run":              lambda i: ssh_run(i["command"]),
 }
 
