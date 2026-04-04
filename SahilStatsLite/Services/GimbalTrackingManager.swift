@@ -239,13 +239,23 @@ final class GimbalTrackingManager: ObservableObject {
                 let rawVelocity = Kp * error
                 let panVelocity = max(-maxPanVelocity, min(maxPanVelocity, rawVelocity))
 
-                // Y axis = yaw (pan). X/Z locked to 0 (no tilt or roll commands).
+                // Y axis = yaw (pan). X/Z locked to 0.
+                // NOTE: axis may need flipping to X if gimbal tilts instead of pans —
+                // verify at warmup and swap Vector3D(x: panVelocity, y: 0, z: 0) if needed.
                 let velocity = Vector3D(x: 0, y: panVelocity, z: 0)
                 do {
                     try await accessory.setAngularVelocity(velocity)
                     debugPrint("[Gimbal] PID pan → err:\(String(format: "%.3f", error)) vel:\(String(format: "%.2f", panVelocity)) rad/s")
                 } catch {
-                    debugPrint("[Gimbal] setAngularVelocity failed: \(error.localizedDescription)")
+                    // setAngularVelocity unsupported or failed — fall back to ROI hint (old method).
+                    // This ensures the game is never broken by an untested API.
+                    debugPrint("[Gimbal] setAngularVelocity failed, falling back to ROI: \(error.localizedDescription)")
+                    let halfWidth: CGFloat = 0.25 / 2
+                    let roi = CGRect(
+                        x: max(0, min(0.75, CGFloat(center.x) - halfWidth)),
+                        y: 0.05, width: 0.25, height: 0.90
+                    )
+                    try? await accessory.setRegionOfInterest(roi)
                 }
             }
             #endif
