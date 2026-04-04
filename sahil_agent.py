@@ -1,222 +1,207 @@
 #!/usr/bin/env python3
 """
-SahilStats Agent — Full development workflow for SahilStatsLite.
+SahilStats Agent — Zero-intervention development workflow.
 
-Handles the complete loop autonomously:
-  - Read and edit Swift files on the work Mac
-  - Commit and push to GitHub
-  - Pull, build, and deploy to iPhone + Apple Watch via SSH to personal Mac
-  - Verify builds remotely without deploying
-  - No per-command approval prompts — user launches once, agent runs freely
+The agent handles the complete loop autonomously:
+  1. Read and edit Swift files
+  2. Commit and push to GitHub
+  3. Pull on personal Mac
+  4. Build — if errors/warnings appear, read the affected files, fix them,
+     commit, and rebuild. Repeat until clean.
+  5. Deploy to iPhone (ios-deploy)
+  6. Deploy to Apple Watch Series 8 (xcrun devicectl) — separately, not
+     relying on auto-sync which is unreliable.
+
+No per-command approval. User describes a task; agent does everything.
 
 Usage:
-  python3 sahil_agent.py
-  python3 sahil_agent.py "fix the gimbal deadband"   # single-shot mode
-
-Requirements:
-  pip3 install anthropic truststore
-  SSH access to narayan@Narayans-MacBook-Pro.local
-  ios-deploy installed on personal Mac (/opt/homebrew/bin/ios-deploy)
+  python3 sahil_agent.py                    # interactive
+  python3 sahil_agent.py "fix X and deploy" # single-shot
 """
 
-import os
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import truststore
-truststore.inject_into_ssl()  # Trust PAN corporate CA
-
+truststore.inject_into_ssl()
 import anthropic
 
 # ── Config ────────────────────────────────────────────────────────────────────
 
-REPO_ROOT     = Path.home() / "personal/SahilStatsLite"
-PERSONAL_MAC  = "narayan@Narayans-MacBook-Pro.local"
-REMOTE_REPO   = "/Users/narayan/SahilStats/SahilStatsLite/SahilStatsLite"
-DEPLOY_SCRIPT = "/Users/narayan/SahilStats/deploy.sh"
-MODEL         = "claude-sonnet-4-6"
+REPO         = Path.home() / "personal/SahilStatsLite"
+PERSONAL_MAC = "narayan@Narayans-MacBook-Pro.local"
+REMOTE_REPO  = "/Users/narayan/SahilStats/SahilStatsLite/SahilStatsLite"
+BUILD_DIR    = "/tmp/SahilStatsBuild"
+IOS_DEPLOY   = "/opt/homebrew/bin/ios-deploy"
+IPHONE_UDID  = "00008140-000078682693001C"   # ios-deploy UDID
+WATCH8_DC    = "1F6B54B5-D413-548A-A90C-351867F22E2C"  # Watch Series 8 devicectl ID
+MODEL        = "claude-sonnet-4-6"
 
-# ── Load project context ───────────────────────────────────────────────────────
+XCODEBUILD = f"""
+xcodebuild \\
+  -scheme SahilStatsLite \\
+  -configuration Debug \\
+  -destination 'id={IPHONE_UDID}' \\
+  -derivedDataPath {BUILD_DIR} \\
+  -allowProvisioningUpdates \\
+  DEVELOPMENT_TEAM=TTV9QQRD5H \\
+  CODE_SIGN_STYLE=Automatic \\
+  2>&1 | grep -E '^.*error:|Build succeeded|Build FAILED' | grep -v SourcePackages | head -50
+"""
+
+# ── Load context ───────────────────────────────────────────────────────────────
 
 def load_context() -> str:
     parts = []
     for fname in ["claude.md", "HANDOFF.md"]:
-        p = REPO_ROOT / fname
+        p = REPO / fname
         if p.exists():
             parts.append(f"--- {fname} ---\n{p.read_text()}")
     return "\n\n".join(parts)
 
-# ── Tool implementations ───────────────────────────────────────────────────────
+# ── Helpers ────────────────────────────────────────────────────────────────────
+
+def _local(cmd: str, cwd=None) -> str:
+    r = subprocess.run(cmd, shell=True, capture_output=True, text=True, cwd=cwd or str(REPO))
+    out = r.stdout.strip()
+    err = r.stderr.strip()
+    return (out + ("\n" + err if err else "")).strip() or "(no output)"
+
+def _ssh(cmd: str, timeout=300) -> str:
+    r = subprocess.run(["ssh", PERSONAL_MAC, cmd],
+                       capture_output=True, text=True, timeout=timeout)
+    out = r.stdout.strip()
+    err = r.stderr.strip()
+    return (out + ("\n" + err if err else "")).strip() or "(no output)"
+
+def _ssh_script(script: str, timeout=600) -> str:
+    r = subprocess.run(["ssh", PERSONAL_MAC, "bash", "-s"],
+                       input=script, capture_output=True, text=True, timeout=timeout)
+    out = r.stdout.strip()
+    err = r.stderr.strip()
+    return (out + ("\n" + err if err else "")).strip() or "(no output)"
+
+# ── Tools ─────────────────────────────────────────────────────────────────────
 
 def read_file(path: str) -> str:
-    full = REPO_ROOT / path
-    if not full.exists():
-        return f"ERROR: {path} not found"
-    return full.read_text()
+    f = REPO / path
+    return f.read_text() if f.exists() else f"ERROR: {path} not found"
 
 def write_file(path: str, content: str) -> str:
-    full = REPO_ROOT / path
-    full.parent.mkdir(parents=True, exist_ok=True)
-    full.write_text(content)
+    f = REPO / path
+    f.parent.mkdir(parents=True, exist_ok=True)
+    f.write_text(content)
     return f"Written: {path}"
 
 def list_files(directory: str = "") -> str:
-    target = REPO_ROOT / directory if directory else REPO_ROOT
+    target = REPO / directory if directory else REPO
     if not target.exists():
         return f"ERROR: {directory} not found"
     files = sorted(
-        str(f.relative_to(REPO_ROOT))
+        str(f.relative_to(REPO))
         for f in target.rglob("*")
         if f.is_file() and ".git" not in f.parts and ".DS_Store" not in str(f)
     )
     return "\n".join(files)
 
 def run_local(command: str) -> str:
-    """Run a shell command on the work Mac in the repo directory."""
-    result = subprocess.run(
-        command, shell=True, capture_output=True, text=True, cwd=str(REPO_ROOT)
-    )
-    out = result.stdout.strip()
-    err = result.stderr.strip()
-    return (out + ("\n" + err if err else "")).strip() or "(no output)"
-
-def ssh_run(command: str) -> str:
-    """Run an arbitrary command on the personal Mac via SSH."""
-    result = subprocess.run(
-        ["ssh", PERSONAL_MAC, command],
-        capture_output=True, text=True, timeout=300
-    )
-    out = result.stdout.strip()
-    err = result.stderr.strip()
-    return (out + ("\n" + err if err else "")).strip() or "(no output)"
+    return _local(command)
 
 def git_commit_and_push(files: list[str], message: str) -> str:
-    """Stage specific files, commit, and push to GitHub."""
-    output = []
-
-    # Stage files
+    results = []
     for f in files:
-        r = subprocess.run(["git", "add", f], capture_output=True, text=True, cwd=str(REPO_ROOT))
-        if r.returncode != 0:
-            return f"git add failed for {f}: {r.stderr}"
-        output.append(f"Staged: {f}")
+        r = _local(f"git add {f}")
+        results.append(f"staged: {f}")
+    msg = f"{message}\n\nCo-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>"
+    commit = _local(f'git commit -m {json.dumps(msg)}')
+    push = _local("git push origin main")
+    return "\n".join(results + [commit, push])
 
-    # Commit
-    full_message = f"{message}\n\nCo-Authored-By: Claude Sonnet 4.6 (1M context) <noreply@anthropic.com>"
-    r = subprocess.run(
-        ["git", "commit", "-m", full_message],
-        capture_output=True, text=True, cwd=str(REPO_ROOT)
-    )
-    if r.returncode != 0:
-        return f"git commit failed: {r.stderr}"
-    output.append(f"Committed: {message[:60]}")
-
-    # Push
-    r = subprocess.run(
-        ["git", "push", "origin", "main"],
-        capture_output=True, text=True, cwd=str(REPO_ROOT), timeout=30
-    )
-    if r.returncode != 0:
-        return f"git push failed: {r.stderr}"
-    output.append("Pushed to GitHub.")
-    return "\n".join(output)
-
-def build_only() -> str:
-    """Pull latest on personal Mac and build (no deploy). Returns build result."""
-    cmd = f"""
+def build() -> str:
+    """Pull latest on personal Mac and build. Returns full error/warning output."""
+    script = f"""
 set -e
 cd {REMOTE_REPO}
-git pull origin main 2>&1 | tail -3
-echo '==> Building...'
-xcodebuild \\
-  -scheme SahilStatsLite \\
-  -configuration Debug \\
-  -destination 'generic/platform=iOS' \\
-  -derivedDataPath /tmp/SahilStatsBuild \\
-  -allowProvisioningUpdates \\
-  DEVELOPMENT_TEAM=TTV9QQRD5H \\
-  CODE_SIGN_STYLE=Automatic \\
-  2>&1 | grep -E '^.*error:|Build succeeded|Build FAILED' | head -30
+git pull origin main 2>&1 | tail -2
+echo '--- BUILD START ---'
+{XCODEBUILD}
+echo '--- BUILD END ---'
 """
-    result = subprocess.run(
-        ["ssh", PERSONAL_MAC, "bash", "-s"],
-        input=cmd, capture_output=True, text=True, timeout=300
-    )
-    out = result.stdout.strip()
-    err = result.stderr.strip()
-    return (out + ("\n" + err if err else "")).strip()
+    result = _ssh_script(script)
+    return result
 
-def deploy() -> str:
-    """Pull, build, and deploy to iPhone (Watch deploys automatically as companion)."""
-    result = subprocess.run(
-        ["ssh", PERSONAL_MAC, f"bash {DEPLOY_SCRIPT}"],
-        capture_output=True, text=True, timeout=600
-    )
-    out = result.stdout.strip()
-    err = result.stderr.strip()
-    combined = (out + ("\n" + err if err else "")).strip()
-    if "Done!" in combined:
-        return combined
-    return f"Deploy output:\n{combined}"
+def deploy_iphone() -> str:
+    """Install the built app on Narayan's iPhone via ios-deploy."""
+    script = f"""
+APP=$(find {BUILD_DIR} -name "SahilStatsLite.app" -not -path "*/watchos*" -not -path "*Watch*" | head -1)
+if [ -z "$APP" ]; then echo "ERROR: iPhone app not found. Run build first."; exit 1; fi
+echo "Installing: $APP"
+{IOS_DEPLOY} --id {IPHONE_UDID} --bundle "$APP" --justlaunch
+echo "iPhone: installed and launched"
+"""
+    return _ssh(f"bash -s << 'EOF'\n{script}\nEOF")
 
-def check_device() -> str:
-    """Check if iPhone is reachable (USB or WiFi)."""
-    result = subprocess.run(
-        ["ssh", PERSONAL_MAC, "/opt/homebrew/bin/ios-deploy --detect --timeout 5"],
-        capture_output=True, text=True, timeout=15
-    )
-    out = (result.stdout + result.stderr).strip()
-    if "Narayan's iPhone" in out:
-        lines = [l for l in out.splitlines() if "Narayan" in l or "Found" in l]
-        return "Device found:\n" + "\n".join(lines)
-    return "Device not found. Connect iPhone via USB or ensure WiFi sync is enabled in Xcode."
+def deploy_watch() -> str:
+    """Install the Watch app on Apple Watch Series 8 via xcrun devicectl."""
+    script = f"""
+WATCH=$(find {BUILD_DIR} -name "SahilStatsLiteWatch Watch App.app" -path "*/watchos*" | head -1)
+if [ -z "$WATCH" ]; then echo "ERROR: Watch app not found. Run build first."; exit 1; fi
+echo "Installing: $WATCH"
+xcrun devicectl device install app --device {WATCH8_DC} "$WATCH" 2>&1 | tail -5
+echo "Watch Series 8: installed"
+"""
+    return _ssh(f"bash -s << 'EOF'\n{script}\nEOF")
 
-# ── Tool definitions for Claude ────────────────────────────────────────────────
+def deploy_all() -> str:
+    """Pull, build, deploy to iPhone, deploy to Watch Series 8 — all in one."""
+    return _ssh(f"bash /Users/narayan/SahilStats/deploy.sh")
+
+def check_devices() -> str:
+    """Check which devices are reachable (iPhone + Watch)."""
+    return _ssh(f"xcrun devicectl list devices 2>&1 | grep -E 'iPhone|Watch|iPad'")
+
+def ssh_run(command: str) -> str:
+    """Run an arbitrary command on the personal Mac."""
+    return _ssh(command)
+
+# ── Tool definitions ───────────────────────────────────────────────────────────
 
 TOOLS = [
     {
         "name": "read_file",
-        "description": "Read a Swift file from the local SahilStatsLite repo. Path relative to repo root.",
+        "description": "Read a Swift file. Always read before editing.",
         "input_schema": {
             "type": "object",
-            "properties": {"path": {"type": "string", "description": "Relative path, e.g. SahilStatsLite/Services/AutoZoomManager.swift"}},
+            "properties": {"path": {"type": "string"}},
             "required": ["path"]
         }
     },
     {
         "name": "write_file",
-        "description": "Write or overwrite a file in the repo. Always read the file first before writing.",
+        "description": "Write or overwrite a file with complete content.",
         "input_schema": {
             "type": "object",
             "properties": {
                 "path": {"type": "string"},
-                "content": {"type": "string", "description": "Full file content"}
+                "content": {"type": "string"}
             },
             "required": ["path", "content"]
         }
     },
     {
         "name": "list_files",
-        "description": "List all files in the repo or a subdirectory.",
+        "description": "List files in the repo or a subdirectory.",
         "input_schema": {
             "type": "object",
-            "properties": {"directory": {"type": "string", "description": "Subdirectory to list (optional)"}}
+            "properties": {"directory": {"type": "string"}}
         }
     },
     {
         "name": "run_local",
-        "description": "Run a shell command on the work Mac in the repo directory. Use for git status, diff, log.",
-        "input_schema": {
-            "type": "object",
-            "properties": {"command": {"type": "string"}},
-            "required": ["command"]
-        }
-    },
-    {
-        "name": "ssh_run",
-        "description": "Run an arbitrary command on the personal Mac via SSH. Use for checking git log, device state, etc.",
+        "description": "Run a shell command on the work Mac (git status, diff, log, etc.)",
         "input_schema": {
             "type": "object",
             "properties": {"command": {"type": "string"}},
@@ -225,139 +210,185 @@ TOOLS = [
     },
     {
         "name": "git_commit_and_push",
-        "description": "Stage specific files, commit with a message, and push to GitHub. Call after making code changes.",
+        "description": "Stage files, commit, and push to GitHub.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "files": {"type": "array", "items": {"type": "string"}, "description": "Relative file paths to stage"},
-                "message": {"type": "string", "description": "Commit message"}
+                "files": {"type": "array", "items": {"type": "string"}},
+                "message": {"type": "string"}
             },
             "required": ["files", "message"]
         }
     },
     {
-        "name": "build_only",
-        "description": "Pull latest on personal Mac and run xcodebuild. Returns build success or error output. Use to verify changes compile before deploying.",
+        "name": "build",
+        "description": (
+            "Pull latest on personal Mac and build for device. "
+            "Returns all errors and warnings. "
+            "If errors exist: read the affected files, fix them with write_file, "
+            "commit with git_commit_and_push, then call build again. "
+            "Repeat until 'Build succeeded' appears with no errors."
+        ),
         "input_schema": {"type": "object", "properties": {}}
     },
     {
-        "name": "deploy",
-        "description": "Pull latest, build, and deploy to Narayan's iPhone via ios-deploy. Watch app deploys automatically as a companion. Phone must be on USB or same WiFi with network sync enabled.",
+        "name": "deploy_iphone",
+        "description": "Install the built app on Narayan's iPhone via ios-deploy. Call build first.",
         "input_schema": {"type": "object", "properties": {}}
     },
     {
-        "name": "check_device",
-        "description": "Check if Narayan's iPhone is reachable via USB or WiFi. Call before deploy if unsure.",
+        "name": "deploy_watch",
+        "description": (
+            "Install the Watch app on Apple Watch Series 8 via xcrun devicectl. "
+            "This deploys directly — no waiting for auto-sync. Call build first."
+        ),
         "input_schema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "deploy_all",
+        "description": "Convenience: pull + build + deploy iPhone + deploy Watch in one step.",
+        "input_schema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "check_devices",
+        "description": "Check which devices are reachable (iPhone, Watch).",
+        "input_schema": {"type": "object", "properties": {}}
+    },
+    {
+        "name": "ssh_run",
+        "description": "Run an arbitrary command on the personal Mac.",
+        "input_schema": {
+            "type": "object",
+            "properties": {"command": {"type": "string"}},
+            "required": ["command"]
+        }
     }
 ]
 
-# ── Tool dispatcher ────────────────────────────────────────────────────────────
+DISPATCH = {
+    "read_file":            lambda i: read_file(i["path"]),
+    "write_file":           lambda i: write_file(i["path"], i["content"]),
+    "list_files":           lambda i: list_files(i.get("directory", "")),
+    "run_local":            lambda i: run_local(i["command"]),
+    "git_commit_and_push":  lambda i: git_commit_and_push(i["files"], i["message"]),
+    "build":                lambda i: build(),
+    "deploy_iphone":        lambda i: deploy_iphone(),
+    "deploy_watch":         lambda i: deploy_watch(),
+    "deploy_all":           lambda i: deploy_all(),
+    "check_devices":        lambda i: check_devices(),
+    "ssh_run":              lambda i: ssh_run(i["command"]),
+}
 
-def dispatch(name: str, inp: dict) -> str:
-    match name:
-        case "read_file":          return read_file(inp["path"])
-        case "write_file":         return write_file(inp["path"], inp["content"])
-        case "list_files":         return list_files(inp.get("directory", ""))
-        case "run_local":          return run_local(inp["command"])
-        case "ssh_run":            return ssh_run(inp["command"])
-        case "git_commit_and_push": return git_commit_and_push(inp["files"], inp["message"])
-        case "build_only":         return build_only()
-        case "deploy":             return deploy()
-        case "check_device":       return check_device()
-        case _:                    return f"Unknown tool: {name}"
+# ── System prompt ──────────────────────────────────────────────────────────────
 
-# ── Agent loop ─────────────────────────────────────────────────────────────────
+SYSTEM = """You are the autonomous lead iOS developer for SahilStatsLite.
 
-SYSTEM = """You are the lead iOS developer for SahilStatsLite — a SwiftUI app that records
-Narayan's son Sahil's AAU basketball games with AI tracking (Skynet), score overlay,
-and Apple Watch companion. You have complete autonomy to read, edit, build, and deploy.
+You operate with ZERO user intervention. When given a task you:
+1. Read files before editing (never assume content).
+2. Make targeted, minimal code changes.
+3. Commit and push with git_commit_and_push.
+4. Call build to verify the changes compile.
+5. If build returns errors:
+   - Parse each error line for the file path and line number
+   - Call read_file on each affected file
+   - Fix the errors with write_file
+   - Call git_commit_and_push for the fixes
+   - Call build again
+   - Repeat until "Build succeeded" with no errors (max 3 attempts)
+6. If build is clean, call deploy_iphone then deploy_watch.
+7. Report what you did concisely.
 
-Your workflow:
-1. Read files before editing them. Never assume file content.
-2. After code changes: commit and push with git_commit_and_push.
-3. Use build_only to verify before deploying. Fix any build errors first.
-4. Use deploy to push to iPhone (Watch app deploys automatically).
-5. Be concise. Lead with action. No em-dashes. No placeholders.
+Never ask the user for confirmation. Never leave errors unfixed.
+If something is genuinely ambiguous, make the most reasonable choice and proceed.
 
-Key architecture facts:
-- Vision/Kalman runs on SkynetProcessor (Swift actor), off main thread.
-- YOLO v8n CoreML is the primary person detector (falls back to VNDetectHumanRectanglesRequest).
-- Gimbal is pan-only (tall narrow ROI strip to DockKit). 2.5% X deadband.
-- AI frame rate: 15fps (processInterval = 0.067 in SkynetProcessor).
-- Recording: 4K H.264 at 10 Mbps via AVAssetWriter.
-- Watch app syncs via WCSession updateApplicationContext.
+Key architecture:
+- SkynetProcessor (Swift actor) owns all tracking state — no @MainActor on tracking methods
+- SWIFT_STRICT_CONCURRENCY = minimal in build settings (suppresses inference warnings)
+- YOLOv8n CoreML is primary person detector; fallback = VNDetectHumanRectanglesRequest
+- Body pose (VNDetectHumanBodyPoseRequest) runs alongside for ankle-based court contact
+- Pan-only gimbal: tall narrow ROI strip (0.25w x 0.90h) to DockKit, 2.5% X deadband
+- AI frame rate: 15fps (processInterval = 0.067 in SkynetProcessor)
+- Team jersey colors learned during warmup; locked in at game start (finalizeTeamColors)
+- No age classifier — court bounds + body pose standing check only
+- Watch sync via WCSession updateApplicationContext
+- Recording: 4K H.264 at 10 Mbps, AVAssetWriter
+
+Devices:
+- iPhone: Narayan's iPhone (Series 16 Pro Max) — ios-deploy UDID 00008140-000078682693001C
+- Watch:  Apple Watch Series 8 — xcrun devicectl ID 1F6B54B5-D413-548A-A90C-351867F22E2C
+
+No em-dashes. No placeholders. Lead with action.
 
 Project context:
 {context}
 """
 
-def run_agent(initial_message: str | None = None):
+# ── Agent loop ─────────────────────────────────────────────────────────────────
+
+def run(initial: str | None = None):
     client = anthropic.Anthropic()
     context = load_context()
-    system = SYSTEM.format(context=context[:8000])  # Trim if huge
-
+    system = SYSTEM.format(context=context[:10000])
     messages = []
-    print("SahilStats Agent ready. Commands: 'deploy', 'build', 'check device', or describe any task.")
-    print("Type 'quit' or Ctrl+C to exit.\n")
+
+    print("SahilStats Agent — zero-intervention mode.")
+    print("Describe a task and the agent handles code, build, fix, deploy.")
+    print("Type 'quit' to exit.\n")
 
     while True:
-        # Get input
-        if initial_message:
-            user_input = initial_message
-            initial_message = None
+        if initial:
+            user_input = initial
+            initial = None
         else:
             try:
                 user_input = input("You: ").strip()
             except (KeyboardInterrupt, EOFError):
-                print("\nExiting.")
+                print("\nDone.")
                 break
 
-        if not user_input:
-            continue
-        if user_input.lower() in ("quit", "exit", "q"):
+        if not user_input or user_input.lower() in ("quit", "q", "exit"):
             break
 
         messages.append({"role": "user", "content": user_input})
 
-        # Agentic loop
         while True:
-            response = client.messages.create(
+            resp = client.messages.create(
                 model=MODEL,
                 max_tokens=8096,
                 system=system,
                 tools=TOOLS,
-                messages=messages
+                messages=messages,
             )
 
-            # Print text output
-            text_parts = [b.text for b in response.content if hasattr(b, "text")]
-            if text_parts:
-                print(f"\nAgent: {''.join(text_parts)}\n")
+            texts = [b.text for b in resp.content if hasattr(b, "text")]
+            if texts:
+                print(f"\nAgent: {''.join(texts)}\n")
 
-            if response.stop_reason != "tool_use":
-                messages.append({"role": "assistant", "content": response.content})
+            if resp.stop_reason != "tool_use":
+                messages.append({"role": "assistant", "content": resp.content})
                 break
 
-            messages.append({"role": "assistant", "content": response.content})
-            tool_results = []
+            messages.append({"role": "assistant", "content": resp.content})
+            results = []
 
-            for block in response.content:
+            for block in resp.content:
                 if block.type != "tool_use":
                     continue
-                print(f"  [{block.name}] {json.dumps(block.input, ensure_ascii=False)[:100]}")
-                result = dispatch(block.name, block.input)
-                preview = result[:300] + "..." if len(result) > 300 else result
-                print(f"  -> {preview}\n")
-                tool_results.append({
+                label = json.dumps(block.input, ensure_ascii=False)[:80]
+                print(f"  [{block.name}] {label}")
+                try:
+                    result = DISPATCH[block.name](block.input)
+                except Exception as e:
+                    result = f"ERROR: {e}"
+                preview = result[:400] + "…" if len(result) > 400 else result
+                print(f"  → {preview}\n")
+                results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
-                    "content": result
+                    "content": result,
                 })
 
-            messages.append({"role": "user", "content": tool_results})
+            messages.append({"role": "user", "content": results})
 
 if __name__ == "__main__":
-    # Optional: pass a task as a command-line argument for single-shot mode
-    initial = " ".join(sys.argv[1:]) if len(sys.argv) > 1 else None
-    run_agent(initial)
+    run(" ".join(sys.argv[1:]) or None)
