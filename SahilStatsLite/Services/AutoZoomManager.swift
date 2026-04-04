@@ -138,7 +138,7 @@ enum AutoZoomMode: String, CaseIterable, Sendable {
 /// Thread safety contract: all properties and methods are accessed exclusively
 /// from skynetCore.queue, except during explicit resets which happen only when
 /// no game is in flight (safe from @MainActor).
-private final class SkynetCore: @unchecked Sendable {
+private final class SkynetCore {
 
     let personClassifier = PersonClassifier()
     let deepTracker = DeepTracker()
@@ -169,8 +169,11 @@ private final class SkynetCore: @unchecked Sendable {
     }
 }
 
-/// Single shared instance — file scope, no actor isolation.
-private let skynetCore = SkynetCore()
+/// Single shared instance — file scope, nonisolated(unsafe) explicitly breaks any
+/// @MainActor inference Swift might apply to this global. SkynetCore is not Sendable
+/// so the "nonisolated(unsafe) unnecessary for Sendable type" warning won't fire.
+/// Thread safety: all access is serialized through skynetCore.queue.
+nonisolated(unsafe) private let skynetCore = SkynetCore()
 
 // MARK: - Auto Zoom Manager
 
