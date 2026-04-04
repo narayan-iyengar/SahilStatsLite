@@ -605,6 +605,8 @@ class DeepTracker {
     // Group tracking (Deep Track 4.0 feature)
     var primaryTrackId: Int?
 
+    nonisolated init() {}
+
     // MARK: - Main Update
 
     /// Process new detections and update tracks

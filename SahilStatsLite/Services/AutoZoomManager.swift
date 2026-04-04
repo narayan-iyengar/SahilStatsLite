@@ -27,9 +27,12 @@ import Combine
 
 class UltraSmoothZoomController {
 
-    private var smoothZoom: Double = 1.0
-    private var zoomVelocity: Double = 0
-    private var targetZoom: Double = 1.0
+    // nonisolated(unsafe) on mutable stored vars because this class is defined in the same
+    // file as @MainActor AutoZoomManager, causing Swift to infer @MainActor for the class.
+    // The nonisolated methods need to read/write these without isolation warnings.
+    private nonisolated(unsafe) var smoothZoom: Double = 1.0
+    private nonisolated(unsafe) var zoomVelocity: Double = 0
+    private nonisolated(unsafe) var targetZoom: Double = 1.0
 
     private let zoomSmoothing: Double = 0.005
     private let velocityDamping: Double = 0.9
@@ -39,7 +42,7 @@ class UltraSmoothZoomController {
     let minZoom: Double
     let maxZoom: Double
 
-    private var highConfidenceStreak: Int = 0
+    private nonisolated(unsafe) var highConfidenceStreak: Int = 0
     private let minStreakForUpdate: Int = 6
 
     nonisolated(unsafe) var isTimeoutMode: Bool = false
@@ -117,6 +120,13 @@ enum AutoZoomMode: String, CaseIterable, Sendable {
         case .auto: return 0.2
         }
     }
+}
+
+// MARK: - Sendable Pixel Buffer Wrapper (file scope — visible to actor and class)
+
+/// Wraps CVPixelBuffer (non-Sendable) for safe passage across actor boundaries.
+private struct UnsafeSendableBuffer: @unchecked Sendable {
+    let buffer: CVPixelBuffer
 }
 
 // MARK: - Skynet Processor (Actor)
@@ -323,10 +333,6 @@ final class AutoZoomManager: ObservableObject {
     }
 
     // MARK: - Frame Processing
-
-    private struct UnsafeSendableBuffer: @unchecked Sendable {
-        let buffer: CVPixelBuffer
-    }
 
     nonisolated func processFrame(_ pixelBuffer: CVPixelBuffer) {
         let sendable = UnsafeSendableBuffer(buffer: pixelBuffer)

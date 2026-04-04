@@ -86,6 +86,8 @@ class PersonClassifier {
     /// Current focus hint for proximity weighting (set by AutoZoomManager)
     nonisolated(unsafe) var currentFocusHint: CGPoint = CGPoint(x: 0.5, y: 0.5)
 
+    nonisolated init() {}
+
     // MARK: - State Reset
 
     /// Reset tracking state for game start (keeps learned court bounds from warmup)
