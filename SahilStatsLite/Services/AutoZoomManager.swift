@@ -195,20 +195,28 @@ private actor SkynetProcessor {
         let ballDetection = ballDetector.detectBall(in: pixelBuffer, dt: dt)
         let activeTracks = deepTracker.update(detections: classifiedPeople, dt: dt)
 
+        // Player cluster is always the primary tracking signal.
+        // YOLO + DeepTracker over 5-10 players is orders of magnitude more reliable than
+        // color-threshold ball detection at gym distances (ball = 8-15px in AI frame).
         let playerCenter = personClassifier.calculateActionCenter(from: activeTracks)
         var rawActionCenter = playerCenter
 
-        if let ball = ballDetection, ball.confidence > 0.75 {
-            let safeLeadX = max(-0.1, min(0.1, ball.velocity.x * 0.2))
-            let safeLeadY = max(-0.1, min(0.1, ball.velocity.y * 0.2))
-            let ballCenter = CGPoint(
-                x: max(0.1, min(0.9, ball.position.x + safeLeadX)),
-                y: max(0.1, min(0.9, ball.position.y + safeLeadY))
-            )
-            rawActionCenter = CGPoint(
-                x: ballCenter.x * 0.6 + playerCenter.x * 0.4,
-                y: ballCenter.y * 0.6 + playerCenter.y * 0.4
-            )
+        // Ball is used ONLY as a fast-break early-warning system.
+        // Conditions that must ALL be true before the ball influences the camera:
+        //   1. High confidence (0.85) — reject false positives from skin, equipment, floor
+        //   2. Ball moving fast (>0.25 norm units/s) — genuine pass or fast break
+        //   3. Ball significantly ahead of players (>15% frame width) — players haven't
+        //      caught up yet, ball is actually leading the action
+        // Effect: a gentle 20% nudge toward where the ball is HEADING (not where it is),
+        // so the camera drifts ahead of a fast break rather than snapping to a noise signal.
+        if let ball = ballDetection,
+           ball.confidence > 0.85,
+           hypot(ball.velocity.x, ball.velocity.y) > 0.25,
+           abs(ball.position.x - playerCenter.x) > 0.15 {
+            // Predict where ball will be in 0.2s — pan ahead, not at current position
+            let predictedX = max(0.1, min(0.9, ball.position.x + ball.velocity.x * 0.2))
+            rawActionCenter.x = playerCenter.x * 0.8 + predictedX * 0.2
+            // Y stays on player cluster — we're pan-only and players define the vertical framing
         }
 
         let distance = hypot(rawActionCenter.x - currentCenter.x, rawActionCenter.y - currentCenter.y)
