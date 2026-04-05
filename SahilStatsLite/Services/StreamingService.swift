@@ -19,12 +19,16 @@
 //    Bitrate:  6 Mbps for 1080p30
 //    Latency:  Low latency mode (set in YouTube Studio)
 //
-//  DEPENDS ON: HaishinKit (SPM), RTMPHaishinKit (SPM), AVFoundation, VideoToolbox
+//  HaishinKit v3 notes:
+//    RTMPStream is a Swift actor — all calls are async.
+//    Use setVideoSettings() / setAudioSettings() (not direct property assignment).
+//    append(_ CMSampleBuffer) auto-detects video vs audio from format description.
 //
 
 import Foundation
 import AVFoundation
 import VideoToolbox
+import Combine
 import HaishinKit
 import RTMPHaishinKit
 
@@ -69,8 +73,12 @@ final class StreamingService: ObservableObject {
     }
 
     private let rtmpURL = "rtmps://a.rtmp.youtube.com/live2"
+
+    // nonisolated(unsafe): accessed from RecordingManager's background processingQueue.
+    // Safe because writes only happen on @MainActor (startStream/stopStream),
+    // reads only happen on background queue when isStreamingActive is true.
+    nonisolated(unsafe) private var stream: RTMPStream?
     private var connection: RTMPConnection?
-    private var stream: RTMPStream?
     private var statusTask: Task<Void, Never>?
 
     private init() {}
@@ -88,12 +96,8 @@ final class StreamingService: ObservableObject {
     func stopStream() async {
         statusTask?.cancel()
         statusTask = nil
-        do {
-            try await stream?.close()
-            try await connection?.close()
-        } catch {
-            debugPrint("[Stream] Stop error: \(error.localizedDescription)")
-        }
+        if let s = stream { try? await s.close() }
+        try? await connection?.close()
         stream = nil
         connection = nil
         isStreaming = false
@@ -102,8 +106,8 @@ final class StreamingService: ObservableObject {
     }
 
     // MARK: - Frame Injection
-    // Called from RecordingManager's background processingQueue.
-    // CVPixelBuffer has scoreboard overlay already composited.
+    // Called from RecordingManager's processingQueue (background thread).
+    // CVPixelBuffer already has scoreboard overlay composited.
 
     nonisolated func appendVideoBuffer(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
         guard let stream else { return }
@@ -113,15 +117,15 @@ final class StreamingService: ObservableObject {
             presentationTimeStamp: timestamp,
             decodeTimeStamp: .invalid
         )
-        var formatDescription: CMVideoFormatDescription?
+        var fmt: CMVideoFormatDescription?
         CMVideoFormatDescriptionCreateForImageBuffer(
             allocator: kCFAllocatorDefault,
             imageBuffer: pixelBuffer,
-            formatDescriptionOut: &formatDescription
+            formatDescriptionOut: &fmt
         )
-        guard let fmt = formatDescription else { return }
+        guard let fmt else { return }
 
-        var sampleBuffer: CMSampleBuffer?
+        var sb: CMSampleBuffer?
         CMSampleBufferCreateForImageBuffer(
             allocator: kCFAllocatorDefault,
             imageBuffer: pixelBuffer,
@@ -130,15 +134,17 @@ final class StreamingService: ObservableObject {
             refcon: nil,
             formatDescription: fmt,
             sampleTiming: &timingInfo,
-            sampleBufferOut: &sampleBuffer
+            sampleBufferOut: &sb
         )
-        if let sb = sampleBuffer {
-            stream.append(sb)  // HaishinKit auto-detects video from format description
+        if let sb {
+            // RTMPStream is an actor — dispatch async, don't block the camera thread
+            Task { await stream.append(sb) }
         }
     }
 
     nonisolated func appendAudioBuffer(_ sampleBuffer: CMSampleBuffer) {
-        stream?.append(sampleBuffer)  // Auto-detected as audio
+        guard let stream else { return }
+        Task { await stream.append(sampleBuffer) }
     }
 
     // MARK: - Private
@@ -150,21 +156,21 @@ final class StreamingService: ObservableObject {
         let conn = RTMPConnection()
         let strm = RTMPStream(connection: conn)
 
-        // H.264 — YouTube RTMP ingest does not accept HEVC
-        strm.videoSettings = VideoCodecSettings(
+        // Configure H.264 — YouTube RTMP ingest requires H.264, not HEVC
+        try? strm.setVideoSettings(VideoCodecSettings(
             videoSize: CGSize(width: 1920, height: 1080),
             bitRate: 6_000_000,
             profileLevel: kVTProfileLevel_H264_High_AutoLevel as String,
-            maxKeyFrameIntervalDuration: 2   // YouTube requires keyframe every 2s
-        )
-        strm.audioSettings = AudioCodecSettings(bitRate: 128_000)
+            maxKeyFrameIntervalDuration: 2    // YouTube: keyframe every 2 seconds
+        ))
+        try? strm.setAudioSettings(AudioCodecSettings(bitRate: 128_000))
 
         self.connection = conn
         self.stream = strm
 
-        // Observe stream status via AsyncStream
+        // Watch stream status
         statusTask = Task { [weak self] in
-            for await status in strm.status {
+            for await status in await strm.status {
                 guard let self else { break }
                 await MainActor.run {
                     switch status.code {
@@ -172,8 +178,8 @@ final class StreamingService: ObservableObject {
                         self.health = .live
                         debugPrint("[Stream] 🔴 LIVE → YouTube")
                     case RTMPStream.Code.publishBadName.rawValue:
-                        self.health = .failed("Bad stream key")
-                        debugPrint("[Stream] ❌ Bad stream key")
+                        self.health = .failed("Invalid stream key")
+                        debugPrint("[Stream] ❌ Invalid stream key")
                     default:
                         break
                     }
@@ -187,6 +193,7 @@ final class StreamingService: ObservableObject {
         } catch {
             health = .failed(error.localizedDescription)
             isStreaming = false
+            self.stream = nil
             debugPrint("[Stream] ❌ \(error.localizedDescription)")
         }
     }
