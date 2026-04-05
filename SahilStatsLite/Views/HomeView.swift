@@ -26,7 +26,6 @@ struct HomeView: View {
     @State private var showAllGames = false
     @State private var showSettings = false
     @State private var showUpcomingGames = false
-    @State private var showAILab = false
 
     // Undo toast state
     @State private var hiddenGameID: String? = nil
@@ -63,17 +62,6 @@ struct HomeView: View {
                             .foregroundColor(.secondary.opacity(0.6))
                     }
 
-                    Button {
-                        showAILab = true
-                    } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "flask.fill")
-                                .font(.system(size: 10))
-                            Text("AI Lab")
-                        }
-                        .font(.footnote)
-                        .foregroundColor(.orange.opacity(0.7))
-                    }
                 }
                 .padding(.top, 20)
 
@@ -95,9 +83,6 @@ struct HomeView: View {
         }
         .sheet(isPresented: $showUpcomingGames) {
             UpcomingGamesSheet(calendarManager: calendarManager, appState: appState)
-        }
-        .fullScreenCover(isPresented: $showAILab) {
-            AILabView()
         }
         .overlay(alignment: .bottom) {
             if showUndoToast {
