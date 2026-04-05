@@ -1,90 +1,94 @@
-# SahilStatsLite — Handoff Notes (2026-04-04)
+# SahilStatsLite — Handoff Notes (2026-04-05)
 
-This document captures everything done across the two-day session (2026-04-03 and 2026-04-04), and the full TODO list for the next session.
-
----
-
-## What Was Fixed (2026-04-03 — previous session)
-
-See previous HANDOFF notes embedded in git history. Key wins:
-- Pan-only gimbal, 15fps AI, Vision off main thread, CIContext pooling, age classifier removed
-- Body pose detection, team color learning, YOLOv8n CoreML
-- Player cluster as primary camera, ball as fast-break early warning only
-- HEVC at 15 Mbps, PID gimbal velocity control
-- SkynetProcessor Swift actor, zero concurrency warnings
-- Build number auto-increments from git commit count
+Full two-day session (2026-04-04 + 2026-04-05). Current build: **v186 Release**.
 
 ---
 
-## What Was Fixed (2026-04-04 — this session)
+## Current State
 
-### Watch Sync — Three Root Causes Fixed
+All sync fixed, zero warnings, Release builds, fully wireless deploy, YouTube streaming framework in place.
 
-**1. Score drops when phone backgrounded**
-- Old: `sendMessage` requires phone foreground. During a game (phone recording, screen off), scores sent from Watch were silently dropped. Watch showed 23, phone showed 22, video overlay was wrong.
-- Fix: `WatchConnectivityClient` now uses `transferUserInfo` for all scoring and stat sends. `transferUserInfo` queues messages and delivers them guaranteed even when phone is backgrounded. Added `didReceiveUserInfo` on phone side (`WatchConnectivityService`).
+---
 
-**2. Clock drift between phone and Watch**
-- Old: Both phone and Watch ran independent `Timer.publish(every: 1.0)` countdown timers. These drift apart due to main thread load and BLE delivery delay. After 10 minutes, 3-5 second gap.
-- Fix: Phone records `clockStartedAt = Date().timeIntervalSince1970` and `secondsAtClockStart = remainingSeconds` when clock starts/resumes. Watch computes `remaining = secondsAtClockStart - elapsed(since clockStartedAt)` using `Date()` directly. Both devices use the same wall clock — zero drift for a full game. Watch local timer now just refreshes the display, not counting down.
+## What Was Built (2026-04-05)
 
-**3. Active game not showing on Watch**
-- Old: `updateApplicationContext` was called with MERGED context. A game's worth of `scoreUpdate`, `clockUpdate`, `periodUpdate`, `gameState`, `endGame` flags all accumulated in the context simultaneously. Watch read conflicting flags and ended up in unpredictable state.
-- Fix: `sendFullSnapshot()` replaces all individual send methods. Writes complete game state atomically, replacing entire context. Watch always reads a clean, consistent snapshot.
+### Wireless Deploy Pipeline (fully working, no USB)
+```
+Work Mac → git push → SSH to personal Mac → bash ~/SahilStats/deploy.sh
+    → xcodebuild Release, generic/platform=iOS
+    → xcrun devicectl → Narayans-iPhone.coredevice.local
+    → xcrun devicectl → Narayans-AppleWatch-8.coredevice.local (Series 8)
+    → xcrun devicectl → Narayans-AppleWatch.coredevice.local (Ultra 2)
+```
+- Keychain unlocked via `~/.sahil_deploy_pass`
+- Retry logic in `install_device()` — 3 attempts, 5s apart, never fatal
+- Watch apps use embedded `iPhone.app/Watch/WatchApp.app` (same binary)
+- Release builds: faster, smaller, no .debug.dylib signing issues
+- Per-frame gimbal debugPrint guarded with `#if DEBUG`
 
-**Files changed:**
-- `WatchConnectivityService.swift` — `sendFullSnapshot()`, removed merge, `didReceiveUserInfo`
-- `WatchConnectivityClient.swift` — `transferUserInfo` for all sends, wall clock computation, `applyClockState()`
-- `UltraMinimalRecordingView.swift` — `clockStartedAt` + `secondsAtClockStart` state vars, passed in all sync calls
+### Build Number Verification
+- iOS Settings → About: "1.0 (186)"
+- Watch pre-game header: "build 186" (small text under SahilStats)
 
-### Build Number
-- `CURRENT_PROJECT_VERSION` now passed as `$(git rev-list --count HEAD)` to xcodebuild
-- Build 170+ as of this session, increments every commit
-- Both iOS and Watch apps from same xcodebuild get same number → confirms sync
+### Watch Sync (Fixed)
+- `transferUserInfo` for all Watch→Phone scoring (guaranteed delivery)
+- Wall clock timestamps — zero drift for full game
+- `sendFullSnapshot()` — no merge, complete state snapshot
 
-### Code Quality
-- All Swift concurrency warnings eliminated (BallDetector, BallKalmanFilter, UltraSmoothZoomController stored vars marked `nonisolated(unsafe)`, private methods marked `nonisolated`)
-- `SWIFT_STRICT_CONCURRENCY = minimal` in project build settings
+### Stats Improvements
+- "Last 5" time period added to trend chart
+- Recent form card: last 5 PPG vs season avg + best game callout
+- Scrollable horizontal chart (no cramped x-axis labels)
+- Team name shown in game log row (orange text)
 
-### Infrastructure
-- `bypassPermissions` in `.claude/settings.json` for project
-- Broad wildcard rules in `~/.claude/settings.json`: `Bash(ssh:*)`, `Bash(git:*)`, `Bash(xcodebuild:*)`, `Bash(xcrun:*)`, `Bash(grep:*)`, `Bash(find:*)`, `Bash(brew:*)`
-- `sahil_agent.py` v2 — zero-intervention agent with build-fix loop and Watch Series 8 deployment
-- `deploy.sh` — pull+build+ios-deploy iPhone + xcrun devicectl Watch Series 8
+### Watch Ultra 2 Text Sizing
+- Score: 56pt, Clock: 28pt, Feedback: 26pt, TeamName: 13pt
+- Series 8 also bumped: Score 40pt (was 38)
+
+### YouTube Streaming Framework (HaishinKit v3)
+**Status: Framework installed and compiling. Stream key pending (YouTube 24hr approval).**
+
+Architecture:
+```
+OverlayRenderer composites frame once
+    ↓ same CVPixelBuffer
+AVAssetWriter (HEVC 15Mbps local)    StreamingService (H.264 6Mbps → YouTube)
+```
+
+Files:
+- `StreamingService.swift` — RTMPConnection + RTMPStream (actor), setVideoSettings/setAudioSettings via await, frame injection via Task { await stream.append(sb) }
+- `RecordingManager.swift` — `isStreamingActive` flag, forks composited frame after OverlayRenderer
+- `UltraMinimalRecordingView.swift` — stream starts/stops with game clock, YT indicator in REC area
+- `HomeView.swift` — Settings: "YouTube Live" section with SecureField for stream key
+
+How it works:
+- Set stream key once in Settings (YouTube Studio → Go Live → Stream → persistent key)
+- Stream auto-starts when game clock starts, auto-stops at game end
+- Same scoreboard overlay as local recording — parents see identical view
+- Video auto-saves to YouTube when stream ends
+- Rename video in YouTube Studio after each game
+
+Stream key sharing: Share ONE YouTube watch link at season start. Parents bookmark it. Never changes.
 
 ---
 
 ## TODO — Next Session
 
-### High Priority (confirmed broken at real games)
+### Do Now (when stream key arrives)
+1. **Test streaming end-to-end** — enter stream key in Settings, start a game, verify YouTube shows live feed with overlay
+2. **Verify stream health reconnects** — test RTMP drop/reconnect behavior
+3. **Battery test** — streaming + YOLO + gimbal = ~90 min. Get USB-C power bank.
 
-**1. Period clock reset verification**
-When period advances (1st Half → 2nd Half → OT), the clock should reset to half length and `clockStartedAt` should be reset to 0 (paused). Verify this flows correctly through the new wall clock system. Check: does the Watch reflect period change + clock reset simultaneously?
+### Still Pending
+4. **Gimbal axis verify** — Y=yaw assumed. If gimbal tilts instead of pans: swap to X in GimbalTrackingManager.swift line ~242
+5. **Kp tuning** — after first real game recording
+6. **Watch end-game long press** — raise 0.5s→1.0s (one line WatchScoringView.swift)
+7. **Ultra 2 deploy fix** — timed out intermittently, iOS auto-sync covers it
 
-**2. Gimbal PID axis verification (30-second test)**
-`setAngularVelocity(Vector3D(x: 0, y: panVelocity, z: 0))` — Y axis assumed to be yaw (pan). Needs field test. If gimbal tilts instead of pans, change to `Vector3D(x: panVelocity, y: 0, z: 0)`. One line change in `GimbalTrackingManager.swift` line ~242.
-
-**3. Kp tuning after first game**
-Current `Kp = 1.6`, `maxPanVelocity = 0.8` rad/s. Both are theoretical. After recording a game, evaluate: was the gimbal sluggish (raise Kp) or did it overshoot/oscillate (lower Kp)?
-
-### Medium Priority
-
-**4. The "Matrix" offline experimentation framework**
-Run last game's recorded video through the exact Skynet pipeline offline. Measure tracking quality (center stability, gimbal command frequency, false positive rate). Sweep parameters (Kp, confidence threshold, deadband) to find optimal config. Needs at least one real game recording first.
-
-**5. Watch end-game long press threshold**
-Current: 0.5s minimum. Risk: accidental game end mid-game. Raise to 1.0s.
-File: `WatchScoringView.swift`, `onLongPressGesture(minimumDuration: 0.5)` → `1.0`.
-
-**6. Period advancement protection**
-Period chip (e.g. "1st Half") taps advances period. Small target, right above score zones — accidental trigger risk. Consider requiring confirmation or a longer press.
-
-### Deferred / Won't Do
-
-- AI Lab rewrite — not used during games, over-engineering
-- Opponent jersey color persistence — warmup handles it
-- Multi-point scoring on Watch — user prefers +1, muscle memory
-- Watch Ultra 2 deployment — Series 8 is the scoring remote
+### YouTube Streaming Setup (user action needed)
+- studio.youtube.com → Create → Go Live → Stream
+- Set Latency: Low latency, Visibility: Unlisted, Stream type: Persistent
+- Copy stream key → paste into app Settings
 
 ---
 
@@ -93,43 +97,30 @@ Period chip (e.g. "1st Half") taps advances period. Small target, right above sc
 ```
 iPhone Camera (4K)
     ↓ 15fps AI frames (640x360)
-SkynetProcessor (Swift actor, background)
-    ├─ YOLOv8n CoreML → person bounding boxes (fallback: VNDetectHumanRectanglesRequest)
-    ├─ VNDetectHumanBodyPoseRequest → ankle positions, sitting filter
-    ├─ BallDetector → fast-break early warning only (not primary tracking)
-    ├─ DeepTracker (Kalman + Hungarian + OC-SORT) → track management
-    └─ PersonClassifier → action center (player cluster PRIMARY)
+SkynetProcessor (Swift actor)
+    ├─ YOLOv8n CoreML (CONFIRMED LOADING)
+    ├─ VNDetectHumanBodyPoseRequest
+    ├─ BallDetector (fast-break early warning only)
+    ├─ DeepTracker (Kalman + Hungarian)
+    └─ PersonClassifier (player cluster = primary camera)
            ↓
-    SkynetResult → @MainActor applySkynetResult()
-           ↓
-    GimbalTrackingManager.updateTrackingROI()
-           → setAngularVelocity PID (fallback: setRegionOfInterest pan-only strip)
-           → DockKit → Insta360 Flow Pro 2 physical pan
+    GimbalTrackingManager → PID setAngularVelocity (Y=yaw, Kp=1.6)
+    RecordingManager → OverlayRenderer → CVPixelBuffer
+           ↓                    ↓
+    AVAssetWriter          StreamingService
+    HEVC 15Mbps            H.264 6Mbps → YouTube RTMP
+    local file             rtmps://a.rtmp.youtube.com/live2
 ```
 
-**Watch sync (fixed):**
-```
-Phone → Watch: sendFullSnapshot() → updateApplicationContext (complete state, no merge)
-Watch → Phone: transferUserInfo (guaranteed delivery, phone can be backgrounded)
-Clock: wall clock timestamps (Date()), zero drift
-```
+## Devices
+- iPhone: Narayans-iPhone.coredevice.local
+- Watch Series 8 (scoring): Narayans-AppleWatch-8.coredevice.local
+- Watch Ultra 2 (daily): Narayans-AppleWatch.coredevice.local
+- Personal Mac SSH: narayan@Narayans-MacBook-Pro.local
+- Deploy: `ssh narayan@Narayans-MacBook-Pro.local "bash ~/SahilStats/deploy.sh"`
 
-**Devices:**
-- iPhone: Narayan's iPhone 16 Pro Max — ios-deploy UDID `00008140-000078682693001C`
-- Watch: Apple Watch Series 8 (TinyPod, remote scoring) — devicectl `1F6B54B5-D413-548A-A90C-351867F22E2C`
-- Watch Ultra 2 — daily wear only, do NOT deploy to it
-
-**Repos:**
-- GitHub: https://github.com/narayan-iyengar/SahilStatsLite
-- Work Mac clone: `~/personal/SahilStatsLite/`
-- Personal Mac Xcode: `/Users/narayan/SahilStats/SahilStatsLite/SahilStatsLite/`
-- SSH: `narayan@Narayans-MacBook-Pro.local` (`.local` resolves, `.iyengarhome` does not from PAN network)
-
-**Key files:**
-- `AutoZoomManager.swift` — SkynetProcessor actor, Kp/deadband tuning constants
-- `GimbalTrackingManager.swift` — PID constants (Kp=1.6, maxPanVelocity=0.8, axis=Y)
-- `WatchConnectivityService.swift` — phone-side sync, sendFullSnapshot
-- `WatchConnectivityClient.swift` — Watch-side sync, transferUserInfo, wall clock
-- `UltraMinimalRecordingView.swift` — clockStartedAt tracking, all sync call sites
-- `deploy.sh` — `~/SahilStats/deploy.sh` on personal Mac
-- `sahil_agent.py` — autonomous dev agent
+## Key Constants to Tune
+- Gimbal Kp: GimbalTrackingManager.swift (Kp = 1.6, maxPanVelocity = 0.8)
+- Gimbal axis: Vector3D(x: 0, y: panVelocity, z: 0) — swap x/y if tilts instead of pans
+- Stream bitrate: StreamingService.swift (6_000_000 = 6 Mbps)
+- AI frame rate: SkynetProcessor.processInterval = 0.067 (15fps, raise to 0.1 if thermal issues)
