@@ -61,9 +61,16 @@ struct WatchContentView: View {
                         Image(systemName: "basketball.fill")
                             .font(.system(size: 20))
                             .foregroundColor(.orange)
-                        Text("SahilStats")
-                            .font(.system(size: 14, weight: .semibold))
-                            .foregroundColor(.white)
+                        VStack(alignment: .leading, spacing: 1) {
+                            Text("SahilStats")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.white)
+                            if let build = Bundle.main.infoDictionary?["CFBundleVersion"] as? String {
+                                Text("build \(build)")
+                                    .font(.system(size: 8, weight: .regular))
+                                    .foregroundColor(.white.opacity(0.3))
+                            }
+                        }
                     }
                     .padding(.top, 8)
 
