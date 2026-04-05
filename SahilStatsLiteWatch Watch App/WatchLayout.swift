@@ -49,11 +49,12 @@ struct WatchLayout {
     // MARK: - Scoring View Dimensions
 
     /// Score number font size (the big "42 - 38" display)
+    /// Ultra 2 gets aggressively large — this is what you glance at mid-game.
     var scoreFontSize: CGFloat {
         switch size {
         case .compact: return 34
-        case .regular: return 38
-        case .ultra:   return 42
+        case .regular: return 40
+        case .ultra:   return 56
         }
     }
 
@@ -61,8 +62,8 @@ struct WatchLayout {
     var teamNameFontSize: CGFloat {
         switch size {
         case .compact: return 9
-        case .regular: return 9
-        case .ultra:   return 10
+        case .regular: return 10
+        case .ultra:   return 13
         }
     }
 
@@ -71,7 +72,7 @@ struct WatchLayout {
         switch size {
         case .compact: return 1
         case .regular: return 2
-        case .ultra:   return 4
+        case .ultra:   return 10
         }
     }
 
@@ -79,8 +80,8 @@ struct WatchLayout {
     var clockFontSize: CGFloat {
         switch size {
         case .compact: return 15
-        case .regular: return 17
-        case .ultra:   return 20
+        case .regular: return 18
+        case .ultra:   return 28
         }
     }
 
@@ -89,7 +90,7 @@ struct WatchLayout {
         switch size {
         case .compact: return 3
         case .regular: return 4
-        case .ultra:   return 6
+        case .ultra:   return 10
         }
     }
 
@@ -98,7 +99,7 @@ struct WatchLayout {
         switch size {
         case .compact: return 16
         case .regular: return 18
-        case .ultra:   return 20
+        case .ultra:   return 26
         }
     }
 
