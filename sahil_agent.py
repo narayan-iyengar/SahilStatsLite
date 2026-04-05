@@ -37,7 +37,7 @@ REMOTE_REPO  = "/Users/narayan/SahilStats/SahilStatsLite/SahilStatsLite"
 BUILD_DIR    = "/tmp/SahilStatsBuild"
 IOS_DEPLOY   = "/opt/homebrew/bin/ios-deploy"
 IPHONE_UDID  = "00008140-000078682693001C"   # ios-deploy UDID
-WATCH_DC     = "1F6B54B5-D413-548A-A90C-351867F22E2C"   # Watch Series 8 — remote scoring device
+WATCH_DC     = "Narayans-AppleWatch-8.coredevice.local"  # Watch Series 8 — Bonjour hostname works, UUID doesn't
 MODEL        = "claude-sonnet-4-6"
 
 XCODEBUILD = f"""
