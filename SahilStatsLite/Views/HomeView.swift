@@ -1164,10 +1164,7 @@ struct CareerStatsSheet: View {
                               CGFloat(currentTrendData.count) * 44),
                    height: 160)
             .chartYAxis {
-                AxisMarks(position: .leading, values: .stride(by: { () -> Double in
-                    let max = currentTrendData.map(\.value).max() ?? 10
-                    return max > 50 ? 20 : (max > 20 ? 10 : 5)
-                }())) { value in
+                AxisMarks(position: .leading) { value in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                         .foregroundStyle(.secondary.opacity(0.3))
                     AxisValueLabel {
