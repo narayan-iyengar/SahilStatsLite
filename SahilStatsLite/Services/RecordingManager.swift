@@ -43,6 +43,9 @@ class RecordingManager: NSObject, ObservableObject {
     /// Optional callback for AI processing of video frames
     /// Called on background queue - do NOT update UI directly
     nonisolated(unsafe) var onFrameForAI: ((_ pixelBuffer: CVPixelBuffer) -> Void)?
+
+    /// Streaming flag — checked per-frame to avoid Task overhead when not streaming
+    nonisolated(unsafe) var isStreamingActive: Bool = false
     private nonisolated(unsafe) var lastAIFrameTime: CFAbsoluteTime = 0
     private let aiFrameInterval: CFAbsoluteTime = 0.067  // 15 FPS for AI processing
 
@@ -781,10 +784,15 @@ extension RecordingManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCapt
             return
         }
 
-        // Apply overlay to the frame
+        // Apply overlay to the frame — scoreboard burned in once here
         _ = overlayRenderer.render(onto: pixelBuffer)
 
-        // Write the composited frame
+        // Fork composited frame to live stream if active (same frame, no extra render)
+        if isStreamingActive {
+            StreamingService.shared.appendVideoBuffer(pixelBuffer, timestamp: timestamp)
+        }
+
+        // Write the composited frame to local file
         guard let adaptor = pixelBufferAdaptor else {
             debugPrint("⚠️ No pixel buffer adaptor")
             return
@@ -806,6 +814,10 @@ extension RecordingManager: AVCaptureVideoDataOutputSampleBufferDelegate, AVCapt
     }
 
     nonisolated private func processAudioFrame(_ sampleBuffer: CMSampleBuffer) {
+        // Fork audio to live stream
+        if isStreamingActive {
+            StreamingService.shared.appendAudioBuffer(sampleBuffer)
+        }
         guard let audioInput = audioWriterInput, audioInput.isReadyForMoreMediaData else { return }
         audioInput.append(sampleBuffer)
     }

@@ -2252,6 +2252,23 @@ struct SettingsView: View {
                 }
 
                 // App Info Section
+                // YouTube Live Streaming
+                Section("YouTube Live") {
+                    HStack {
+                        Image(systemName: "dot.radiowaves.left.and.right")
+                            .foregroundColor(.red)
+                        SecureField("Stream Key", text: Binding(
+                            get: { StreamingService.shared.savedStreamKey },
+                            set: { StreamingService.shared.savedStreamKey = $0 }
+                        ))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                    }
+                    Text("YouTube Studio → Go Live → Stream → Stream key. Set once per season.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+
                 Section("About") {
                     HStack {
                         Text("Version")

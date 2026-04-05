@@ -27,6 +27,7 @@ struct UltraMinimalRecordingView: View {
     @ObservedObject private var persistenceManager = GamePersistenceManager.shared
     @ObservedObject private var watchService = WatchConnectivityService.shared
     @ObservedObject private var youtubeService = YouTubeService.shared
+    @ObservedObject private var streamingService = StreamingService.shared
 
     // Game state
     @State private var myScore: Int = 0
@@ -542,6 +543,17 @@ struct UltraMinimalRecordingView: View {
                     Text("LIVE")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(isClockRunning ? .green : .orange)
+                    // YouTube stream indicator
+                    if streamingService.health.isActive {
+                        HStack(spacing: 2) {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .font(.system(size: 8))
+                                .foregroundColor(.red)
+                            Text("YT")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.red)
+                        }
+                    }
                 }
             } else if isClockRunning {
                 Circle()
@@ -837,6 +849,12 @@ struct UltraMinimalRecordingView: View {
             debugPrint("🏀 Game started! Beginning video recording + resetting Skynet tracking")
             recordingManager.startRecording()
             autoZoomManager.resetTrackingState()
+
+            // Start live stream if a stream key is configured
+            if !StreamingService.shared.savedStreamKey.isEmpty {
+                recordingManager.isStreamingActive = true
+                Task { await StreamingService.shared.startStream() }
+            }
         }
 
         if isClockRunning {
@@ -920,6 +938,11 @@ struct UltraMinimalRecordingView: View {
         gimbalManager.stopTracking()
         if recordingManager.isRecording {
             recordingManager.stopRecording()
+        }
+        // Stop stream if active
+        if recordingManager.isStreamingActive {
+            recordingManager.isStreamingActive = false
+            Task { await StreamingService.shared.stopStream() }
         }
     }
 
