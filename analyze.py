@@ -92,7 +92,7 @@ def smoothness_score(velocities, whips):
 
 # ── Main Analysis ──────────────────────────────────────────────────────────────
 
-def analyze(video_path: str, output_path: str | None, fps_target: int, kp_sweep: bool):
+def analyze(video_path, output_path, fps_target, kp_sweep):
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         print(f"ERROR: Cannot open {video_path}")
