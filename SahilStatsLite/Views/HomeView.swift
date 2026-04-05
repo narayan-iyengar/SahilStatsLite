@@ -52,19 +52,6 @@ struct HomeView: View {
                 // Game Log Card
                 gameLogCard
 
-                // Bottom links - Settings and AI Lab
-                HStack(spacing: 20) {
-                    Button {
-                        showSettings = true
-                    } label: {
-                        Text("Settings")
-                            .font(.footnote)
-                            .foregroundColor(.secondary.opacity(0.6))
-                    }
-
-                }
-                .padding(.top, 20)
-
                 Spacer(minLength: 40)
             }
             .padding()
@@ -145,9 +132,15 @@ struct HomeView: View {
 
     private var headerSection: some View {
         HStack {
-            // Empty space for balance
-            Color.clear
-                .frame(width: 32, height: 32)
+            // Settings gear — left side balances the + on the right
+            Button {
+                showSettings = true
+            } label: {
+                Image(systemName: "gearshape")
+                    .font(.title2)
+                    .foregroundColor(.secondary)
+            }
+            .frame(width: 32, height: 32)
 
             Spacer()
 
