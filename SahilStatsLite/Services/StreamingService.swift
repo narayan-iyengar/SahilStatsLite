@@ -65,11 +65,17 @@ final class StreamingService: ObservableObject {
     @Published var isStreaming: Bool = false
     @Published var health: StreamHealth = .idle
 
-    static let streamKeyDefaultsKey = "SahilStats_YouTubeStreamKey"
+    static let streamKeyDefaultsKey     = "SahilStats_YouTubeStreamKey"
+    static let streamingEnabledDefaultsKey = "SahilStats_StreamingEnabled"
 
     var savedStreamKey: String {
         get { UserDefaults.standard.string(forKey: Self.streamKeyDefaultsKey) ?? "" }
         set { UserDefaults.standard.set(newValue, forKey: Self.streamKeyDefaultsKey) }
+    }
+
+    var streamingEnabled: Bool {
+        get { UserDefaults.standard.bool(forKey: Self.streamingEnabledDefaultsKey) }
+        set { UserDefaults.standard.set(newValue, forKey: Self.streamingEnabledDefaultsKey) }
     }
 
     private let rtmpURL = "rtmps://a.rtmp.youtube.com/live2"

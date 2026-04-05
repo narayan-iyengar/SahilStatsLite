@@ -2254,9 +2254,16 @@ struct SettingsView: View {
                 // App Info Section
                 // YouTube Live Streaming
                 Section("YouTube Live") {
+                    Toggle("Stream Games Live", isOn: Binding(
+                        get: { StreamingService.shared.streamingEnabled },
+                        set: { StreamingService.shared.streamingEnabled = $0 }
+                    ))
+                    .tint(.red)
+
                     HStack {
-                        Image(systemName: "dot.radiowaves.left.and.right")
-                            .foregroundColor(.red)
+                        Image(systemName: "key.fill")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
                         SecureField("Stream Key", text: Binding(
                             get: { StreamingService.shared.savedStreamKey },
                             set: { StreamingService.shared.savedStreamKey = $0 }
@@ -2264,7 +2271,7 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                     }
-                    Text("YouTube Studio → Go Live → Stream → Stream key. Set once per season.")
+                    Text("YouTube Studio → Go Live → Stream → Stream key. Set once per season. Toggle off to record without streaming.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

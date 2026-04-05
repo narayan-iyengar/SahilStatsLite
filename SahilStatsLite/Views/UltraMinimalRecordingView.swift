@@ -850,8 +850,8 @@ struct UltraMinimalRecordingView: View {
             recordingManager.startRecording()
             autoZoomManager.resetTrackingState()
 
-            // Start live stream if a stream key is configured
-            if !StreamingService.shared.savedStreamKey.isEmpty {
+            // Start live stream if enabled and key is configured
+            if StreamingService.shared.streamingEnabled && !StreamingService.shared.savedStreamKey.isEmpty {
                 recordingManager.isStreamingActive = true
                 Task { await StreamingService.shared.startStream() }
             }
