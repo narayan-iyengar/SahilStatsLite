@@ -157,13 +157,13 @@ final class StreamingService: ObservableObject {
         let strm = RTMPStream(connection: conn)
 
         // Configure H.264 — YouTube RTMP ingest requires H.264, not HEVC
-        try? strm.setVideoSettings(VideoCodecSettings(
+        try? await strm.setVideoSettings(VideoCodecSettings(
             videoSize: CGSize(width: 1920, height: 1080),
             bitRate: 6_000_000,
             profileLevel: kVTProfileLevel_H264_High_AutoLevel as String,
             maxKeyFrameIntervalDuration: 2    // YouTube: keyframe every 2 seconds
         ))
-        try? strm.setAudioSettings(AudioCodecSettings(bitRate: 128_000))
+        try? await strm.setAudioSettings(AudioCodecSettings(bitRate: 128_000))
 
         self.connection = conn
         self.stream = strm
