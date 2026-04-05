@@ -829,12 +829,14 @@ struct CareerStatsSheet: View {
     private let birthday = Calendar.current.date(from: DateComponents(year: 2016, month: 11, day: 1))!
 
     enum TimePeriod: String, CaseIterable {
-        case byAge = "By Age"
-        case byMonth = "By Month"
+        case lastFive = "Last 5"
         case byWeek = "By Week"
+        case byMonth = "By Month"
+        case byAge = "By Age"
 
         var icon: String {
             switch self {
+            case .lastFive: return "flame.fill"
             case .byAge: return "person.fill"
             case .byMonth: return "calendar"
             case .byWeek: return "calendar.day.timeline.left"
@@ -987,8 +989,22 @@ struct CareerStatsSheet: View {
         }
     }
 
+    // Last 5 games individually — each game is one data point labeled by date
+    private func statsByLastFive(for stat: TrendStat) -> [(label: String, value: Double)] {
+        let games = Array(persistenceManager.savedGames.prefix(5).reversed())
+        guard !games.isEmpty else { return [] }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "M/d"
+        return games.map { game in
+            let value = calculateStatValue(for: stat, games: [game])
+            return (label: fmt.string(from: game.date), value: value)
+        }
+    }
+
     private var currentTrendData: [(label: String, value: Double)] {
         switch selectedTimePeriod {
+        case .lastFive:
+            return statsByLastFive(for: selectedTrendStat)
         case .byAge:
             return statsByAge(for: selectedTrendStat)
         case .byWeek:
@@ -1002,10 +1018,13 @@ struct CareerStatsSheet: View {
         NavigationView {
             ScrollView {
                 VStack(spacing: 20) {
+                    // Recent form + best game — quick read before diving into charts
+                    recentFormCard
+
                     // Career Averages
                     careerAveragesCard
 
-                    // Trend by Age (show if we have any games)
+                    // Trend chart — existing, untouched
                     if !currentTrendData.isEmpty {
                         trendCard
                     }
@@ -1113,7 +1132,9 @@ struct CareerStatsSheet: View {
                 }
             }
 
-            Chart {
+            // Scrollable so x labels never cramp regardless of data density
+            ScrollView(.horizontal, showsIndicators: false) {
+             Chart {
                 ForEach(currentTrendData, id: \.label) { dataPoint in
                     LineMark(
                         x: .value("Period", dataPoint.label),
@@ -1137,14 +1158,23 @@ struct CareerStatsSheet: View {
                     .foregroundStyle(selectedTrendStat.color.opacity(0.1).gradient)
                 }
             }
-            .frame(height: 150)
+            // Chart width scales with data so x-labels never cramp.
+            // Minimum = full card width; grows for many data points.
+            .frame(width: max(UIScreen.main.bounds.width - 64,
+                              CGFloat(currentTrendData.count) * 44),
+                   height: 160)
             .chartYAxis {
-                AxisMarks(position: .leading) { value in
+                AxisMarks(position: .leading, values: .stride(by: { () -> Double in
+                    let max = currentTrendData.map(\.value).max() ?? 10
+                    return max > 50 ? 20 : (max > 20 ? 10 : 5)
+                }())) { value in
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5))
                         .foregroundStyle(.secondary.opacity(0.3))
                     AxisValueLabel {
-                        if let doubleValue = value.as(Double.self) {
-                            Text(String(format: "%.1f", doubleValue))
+                        if let v = value.as(Double.self) {
+                            Text(selectedTrendStat.isPercentage
+                                 ? String(format: "%.0f%%", v)
+                                 : String(format: "%.0f", v))
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
                         }
@@ -1152,22 +1182,80 @@ struct CareerStatsSheet: View {
                 }
             }
             .chartXAxis {
-                AxisMarks { value in
+                // Only show every other label when there are many data points
+                AxisMarks(values: .automatic(desiredCount: min(currentTrendData.count, 6))) { value in
                     AxisValueLabel {
-                        if let stringValue = value.as(String.self) {
-                            Text(stringValue)
+                        if let s = value.as(String.self) {
+                            Text(s)
                                 .font(.caption2)
                                 .foregroundColor(.secondary)
+                                .lineLimit(1)
+                                .fixedSize()
                         }
                     }
                 }
             }
             .animation(.easeInOut(duration: 0.3), value: selectedTrendStat)
             .animation(.easeInOut(duration: 0.3), value: selectedTimePeriod)
+            } // end ScrollView
         }
         .padding()
         .background(Color(.systemBackground))
         .cornerRadius(16)
+    }
+
+    // MARK: - Recent Form Card
+
+    @ViewBuilder
+    private var recentFormCard: some View {
+        let games = persistenceManager.savedGames
+        if games.count >= 3 {
+            let last5 = Array(games.prefix(5))
+            let last5PPG = last5.reduce(0.0) { $0 + Double($1.playerStats.points) } / Double(last5.count)
+            let seasonPPG = persistenceManager.careerPPG
+            let diff = last5PPG - seasonPPG
+            let isUp = diff >= 0
+            let best = games.max(by: { $0.playerStats.points < $1.playerStats.points })
+            let fmt = DateFormatter()
+            fmt.dateFormat = "MMM d"
+
+            VStack(spacing: 10) {
+                // Recent form
+                HStack(spacing: 6) {
+                    Image(systemName: isUp ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                        .foregroundColor(isUp ? .green : .red)
+                    Text("Last \(last5.count) games:")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Text(String(format: "%.1f PPG", last5PPG))
+                        .font(.subheadline.bold())
+                    Text(String(format: "%+.1f vs season", diff))
+                        .font(.caption)
+                        .foregroundColor(isUp ? .green : .red)
+                    Spacer()
+                }
+
+                // Best game
+                if let best, best.playerStats.points > 0 {
+                    HStack(spacing: 6) {
+                        Image(systemName: "star.fill")
+                            .foregroundColor(.orange)
+                        Text("Best:")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        Text("\(best.playerStats.points) pts vs \(best.opponent)")
+                            .font(.caption.bold())
+                        Spacer()
+                        Text(fmt.string(from: best.date))
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                }
+            }
+            .padding()
+            .background(Color(.systemBackground))
+            .cornerRadius(16)
+        }
     }
 
     // MARK: - Career Averages Card
