@@ -136,7 +136,7 @@ struct HomeView: View {
             Button {
                 showSettings = true
             } label: {
-                Image(systemName: "gearshape")
+                Image(systemName: "gearshape.fill")
                     .font(.title2)
                     .foregroundColor(.secondary)
             }
