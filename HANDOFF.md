@@ -72,6 +72,28 @@ Stream key sharing: Share ONE YouTube watch link at season start. Parents bookma
 
 ---
 
+## HONEST BLOAT AUDIT (do next session)
+
+These files are compiled into the app but never used during games. Should be deleted.
+
+| File | Lines | Reason |
+|---|---|---|
+| `AILabView.swift` | 262 | Stale — old pre-YOLO pipeline |
+| `VideoAnalysisPipeline.swift` | 414 | Stale old pipeline |
+| `TestVideoProcessor.swift` | 576 | Stale |
+| `SkynetTestView.swift` | 520 | Stale |
+| `CourtDetector.swift` | 448 | R&D, never worked well |
+| `ActionProbabilityField.swift` | 369 | Unused |
+| `GameStateDetector.swift` | 335 | Unused |
+| **~3,174 lines total** | | **Delete these** |
+
+Root dir scripts to delete: `dev_agent.py`, `gemini_agent.py`, `push_to_github.sh`
+`SkynetTest/` folder: 3,300 lines of CLI R&D, never called by app — archive or delete.
+
+`HomeView.swift` at 2,334 lines — watch it. Consider splitting stats sheet into its own file if it grows.
+
+---
+
 ## TODO — Next Session
 
 ### Do Now (when stream key arrives)
