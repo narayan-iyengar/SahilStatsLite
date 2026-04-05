@@ -1,5 +1,5 @@
 {
-  "originHash" : "7ed78cec4688813732ed048994a6c24c5c081e333197fce4007040cea0ee7d0c",
+  "originHash" : "29ecd2b3561a13427739b1d898c5510a94f507948dc6d4eb8374e17ad5202f44",
   "pins" : [
     {
       "identity" : "abseil-cpp-binary",
@@ -110,6 +110,15 @@
       }
     },
     {
+      "identity" : "haishinkit.swift",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/shogo4405/HaishinKit.swift",
+      "state" : {
+        "revision" : "dc880cb540b8feeb98f64e8b7dcfaaf320b6b2bd",
+        "version" : "2.2.5"
+      }
+    },
+    {
       "identity" : "interop-ios-for-google-sdks",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/google/interop-ios-for-google-sdks.git",
@@ -125,6 +134,15 @@
       "state" : {
         "revision" : "a0bc79961d7be727d258d33d5a6b2f1023270ba1",
         "version" : "1.22.5"
+      }
+    },
+    {
+      "identity" : "logboard",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/shogo4405/Logboard.git",
+      "state" : {
+        "revision" : "8f41c63afb903040b77049ee2efa8c257b8c0d50",
+        "version" : "2.6.0"
       }
     },
     {
