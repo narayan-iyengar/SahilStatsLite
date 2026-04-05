@@ -1203,49 +1203,46 @@ struct CareerStatsSheet: View {
 
     // MARK: - Recent Form Card
 
+    // Compute form data outside @ViewBuilder — mutations (dateFormat) aren't allowed in view builders.
+    private var recentFormData: (ppg: Double, diff: Double, count: Int,
+                                  bestPts: Int, bestOpponent: String, bestDate: String)? {
+        let games = persistenceManager.savedGames
+        guard games.count >= 3 else { return nil }
+        let last5 = Array(games.prefix(5))
+        let ppg = last5.reduce(0.0) { $0 + Double($1.playerStats.points) } / Double(last5.count)
+        let diff = ppg - persistenceManager.careerPPG
+        let fmt = DateFormatter()
+        fmt.dateFormat = "MMM d"
+        if let best = games.max(by: { $0.playerStats.points < $1.playerStats.points }), best.playerStats.points > 0 {
+            return (ppg, diff, last5.count, best.playerStats.points, best.opponent, fmt.string(from: best.date))
+        }
+        return (ppg, diff, last5.count, 0, "", "")
+    }
+
     @ViewBuilder
     private var recentFormCard: some View {
-        let games = persistenceManager.savedGames
-        if games.count >= 3 {
-            let last5 = Array(games.prefix(5))
-            let last5PPG = last5.reduce(0.0) { $0 + Double($1.playerStats.points) } / Double(last5.count)
-            let seasonPPG = persistenceManager.careerPPG
-            let diff = last5PPG - seasonPPG
-            let isUp = diff >= 0
-            let best = games.max(by: { $0.playerStats.points < $1.playerStats.points })
-            let fmt = DateFormatter()
-            fmt.dateFormat = "MMM d"
-
+        if let d = recentFormData {
             VStack(spacing: 10) {
-                // Recent form
                 HStack(spacing: 6) {
-                    Image(systemName: isUp ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
-                        .foregroundColor(isUp ? .green : .red)
-                    Text("Last \(last5.count) games:")
+                    Image(systemName: d.diff >= 0 ? "arrow.up.circle.fill" : "arrow.down.circle.fill")
+                        .foregroundColor(d.diff >= 0 ? .green : .red)
+                    Text("Last \(d.count) games:")
                         .font(.subheadline)
                         .foregroundColor(.secondary)
-                    Text(String(format: "%.1f PPG", last5PPG))
+                    Text(String(format: "%.1f PPG", d.ppg))
                         .font(.subheadline.bold())
-                    Text(String(format: "%+.1f vs season", diff))
+                    Text(String(format: "%+.1f vs season", d.diff))
                         .font(.caption)
-                        .foregroundColor(isUp ? .green : .red)
+                        .foregroundColor(d.diff >= 0 ? .green : .red)
                     Spacer()
                 }
-
-                // Best game
-                if let best, best.playerStats.points > 0 {
+                if d.bestPts > 0 {
                     HStack(spacing: 6) {
-                        Image(systemName: "star.fill")
-                            .foregroundColor(.orange)
-                        Text("Best:")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                        Text("\(best.playerStats.points) pts vs \(best.opponent)")
-                            .font(.caption.bold())
+                        Image(systemName: "star.fill").foregroundColor(.orange)
+                        Text("Best:").font(.caption).foregroundColor(.secondary)
+                        Text("\(d.bestPts) pts vs \(d.bestOpponent)").font(.caption.bold())
                         Spacer()
-                        Text(fmt.string(from: best.date))
-                            .font(.caption2)
-                            .foregroundColor(.secondary)
+                        Text(d.bestDate).font(.caption2).foregroundColor(.secondary)
                     }
                 }
             }
