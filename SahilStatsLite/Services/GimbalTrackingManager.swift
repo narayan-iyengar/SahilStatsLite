@@ -245,7 +245,9 @@ final class GimbalTrackingManager: ObservableObject {
                 let velocity = Vector3D(x: 0, y: panVelocity, z: 0)
                 do {
                     try await accessory.setAngularVelocity(velocity)
+                    #if DEBUG
                     debugPrint("[Gimbal] PID pan → err:\(String(format: "%.3f", error)) vel:\(String(format: "%.2f", panVelocity)) rad/s")
+                    #endif
                 } catch {
                     // setAngularVelocity unsupported or failed — fall back to ROI hint (old method).
                     // This ensures the game is never broken by an untested API.
