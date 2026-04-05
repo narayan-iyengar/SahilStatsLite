@@ -767,10 +767,17 @@ struct GameRow: View {
                 .foregroundColor(game.isWin ? .green : game.isLoss ? .red : .secondary)
                 .frame(width: 30)
 
-            VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text("vs \(game.opponent)")
                     .font(.headline)
                     .foregroundColor(.primary)
+
+                if !game.teamName.isEmpty {
+                    Text(game.teamName)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                        .fontWeight(.medium)
+                }
 
                 Text(game.date, style: .date)
                     .font(.caption)
