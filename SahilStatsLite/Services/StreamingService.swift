@@ -2,15 +2,13 @@
 //  StreamingService.swift
 //  SahilStatsLite
 //
-//  PURPOSE: Live YouTube streaming via RTMP. Receives composited CVPixelBuffer
-//           frames from RecordingManager (same frames with scoreboard overlay
-//           already burned in) and pushes them to YouTube via HaishinKit.
-//           Runs alongside AVAssetWriter — local HEVC recording continues
-//           unchanged while stream encodes H.264 in a separate Neural Engine pass.
+//  PURPOSE: Live YouTube streaming via RTMP using HaishinKit.
+//           Receives composited CVPixelBuffer frames from RecordingManager
+//           (scoreboard overlay already burned in) and pushes to YouTube.
+//           Runs alongside AVAssetWriter — local HEVC recording unchanged.
 //
 //  SETUP:
-//    1. Add HaishinKit via Xcode → File → Add Package Dependencies
-//       URL: https://github.com/shogo4405/HaishinKit.swift
+//    1. HaishinKit added via SPM (done)
 //    2. Enter stream key in Settings (YouTube Studio → Go Live → Stream → Stream key)
 //    3. Stream key persists in UserDefaults — set once per season
 //
@@ -21,18 +19,14 @@
 //    Bitrate:  6 Mbps for 1080p30
 //    Latency:  Low latency mode (set in YouTube Studio)
 //
-//  DEPENDS ON: HaishinKit (SPM), AVFoundation
+//  DEPENDS ON: HaishinKit (SPM), RTMPHaishinKit (SPM), AVFoundation, VideoToolbox
 //
 
 import Foundation
 import AVFoundation
-import Combine
-
-// HaishinKit import — guarded so the app compiles without the package.
-// Remove the #if once HaishinKit is added via SPM.
-#if canImport(HaishinKit)
+import VideoToolbox
 import HaishinKit
-#endif
+import RTMPHaishinKit
 
 // MARK: - Stream Health
 
@@ -67,7 +61,6 @@ final class StreamingService: ObservableObject {
     @Published var isStreaming: Bool = false
     @Published var health: StreamHealth = .idle
 
-    // UserDefaults key — stream key persists across sessions
     static let streamKeyDefaultsKey = "SahilStats_YouTubeStreamKey"
 
     var savedStreamKey: String {
@@ -76,13 +69,9 @@ final class StreamingService: ObservableObject {
     }
 
     private let rtmpURL = "rtmps://a.rtmp.youtube.com/live2"
-
-    #if canImport(HaishinKit)
     private var connection: RTMPConnection?
     private var stream: RTMPStream?
-    #endif
-
-    private var videoSize: CGSize = CGSize(width: 1920, height: 1080)
+    private var statusTask: Task<Void, Never>?
 
     private init() {}
 
@@ -93,29 +82,32 @@ final class StreamingService: ObservableObject {
             health = .failed("No stream key — add one in Settings")
             return
         }
-        #if canImport(HaishinKit)
-        await _startStream(key: savedStreamKey)
-        #else
-        health = .failed("HaishinKit not installed — add via SPM")
-        #endif
+        await _start(key: savedStreamKey)
     }
 
     func stopStream() async {
-        #if canImport(HaishinKit)
-        await _stopStream()
-        #endif
+        statusTask?.cancel()
+        statusTask = nil
+        do {
+            try await stream?.close()
+            try await connection?.close()
+        } catch {
+            debugPrint("[Stream] Stop error: \(error.localizedDescription)")
+        }
+        stream = nil
+        connection = nil
         isStreaming = false
         health = .idle
+        debugPrint("[Stream] Stopped")
     }
 
-    // MARK: - Frame Injection (called from RecordingManager.processVideoFrame)
-    // Receives composited CVPixelBuffer — overlay already burned in.
-    // This runs on RecordingManager's background processingQueue.
+    // MARK: - Frame Injection
+    // Called from RecordingManager's background processingQueue.
+    // CVPixelBuffer has scoreboard overlay already composited.
 
     nonisolated func appendVideoBuffer(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
-        #if canImport(HaishinKit)
         guard let stream else { return }
-        // Wrap in CMSampleBuffer for HaishinKit injection
+
         var timingInfo = CMSampleTimingInfo(
             duration: CMTime(value: 1, timescale: 30),
             presentationTimeStamp: timestamp,
@@ -128,6 +120,7 @@ final class StreamingService: ObservableObject {
             formatDescriptionOut: &formatDescription
         )
         guard let fmt = formatDescription else { return }
+
         var sampleBuffer: CMSampleBuffer?
         CMSampleBufferCreateForImageBuffer(
             allocator: kCFAllocatorDefault,
@@ -140,84 +133,61 @@ final class StreamingService: ObservableObject {
             sampleBufferOut: &sampleBuffer
         )
         if let sb = sampleBuffer {
-            stream.append(sb, track: 0) // track 0 = video
+            stream.append(sb)  // HaishinKit auto-detects video from format description
         }
-        #endif
     }
 
     nonisolated func appendAudioBuffer(_ sampleBuffer: CMSampleBuffer) {
-        #if canImport(HaishinKit)
-        stream?.append(sampleBuffer, track: 1) // track 1 = audio
-        #endif
+        stream?.append(sampleBuffer)  // Auto-detected as audio
     }
 
-    // MARK: - Private HaishinKit Implementation
+    // MARK: - Private
 
-    #if canImport(HaishinKit)
-    private func _startStream(key: String) async {
+    private func _start(key: String) async {
         health = .connecting
         isStreaming = true
 
         let conn = RTMPConnection()
         let strm = RTMPStream(connection: conn)
 
-        // H.264 required — YouTube RTMP ingest does not accept HEVC
+        // H.264 — YouTube RTMP ingest does not accept HEVC
         strm.videoSettings = VideoCodecSettings(
-            videoSize: videoSize,
-            bitRate: 6_000_000,                                    // 6 Mbps for 1080p30
+            videoSize: CGSize(width: 1920, height: 1080),
+            bitRate: 6_000_000,
             profileLevel: kVTProfileLevel_H264_High_AutoLevel as String,
-            maxKeyFrameIntervalDuration: 2                         // keyframe every 2s (YouTube requirement)
+            maxKeyFrameIntervalDuration: 2   // YouTube requires keyframe every 2s
         )
-        strm.audioSettings = AudioCodecSettings(
-            bitRate: 128_000                                       // 128 kbps AAC
-        )
-
-        // Observe connection state for health updates
-        conn.addEventListener(.rtmpStatus, selector: #selector(handleRTMPStatus(_:)), observer: self)
+        strm.audioSettings = AudioCodecSettings(bitRate: 128_000)
 
         self.connection = conn
         self.stream = strm
 
+        // Observe stream status via AsyncStream
+        statusTask = Task { [weak self] in
+            for await status in strm.status {
+                guard let self else { break }
+                await MainActor.run {
+                    switch status.code {
+                    case RTMPStream.Code.publishStart.rawValue:
+                        self.health = .live
+                        debugPrint("[Stream] 🔴 LIVE → YouTube")
+                    case RTMPStream.Code.publishBadName.rawValue:
+                        self.health = .failed("Bad stream key")
+                        debugPrint("[Stream] ❌ Bad stream key")
+                    default:
+                        break
+                    }
+                }
+            }
+        }
+
         do {
-            try await conn.connect(rtmpURL)
-            try await strm.publish(key)
-            health = .live
-            debugPrint("[Stream] 🔴 LIVE → YouTube")
+            _ = try await conn.connect(rtmpURL)
+            _ = try await strm.publish(key)
         } catch {
             health = .failed(error.localizedDescription)
             isStreaming = false
-            debugPrint("[Stream] ❌ Failed: \(error.localizedDescription)")
+            debugPrint("[Stream] ❌ \(error.localizedDescription)")
         }
     }
-
-    private func _stopStream() async {
-        do {
-            try await stream?.close()
-            try await connection?.close()
-        } catch {
-            debugPrint("[Stream] Stop error: \(error.localizedDescription)")
-        }
-        connection = nil
-        stream = nil
-    }
-
-    @objc private func handleRTMPStatus(_ notification: Notification) {
-        guard let info = notification.userInfo,
-              let code = info["code"] as? String else { return }
-
-        Task { @MainActor in
-            switch code {
-            case "NetStream.Publish.Start":
-                self.health = .live
-            case "NetConnection.Connect.Closed", "NetStream.Publish.BadName":
-                if self.isStreaming {
-                    self.health = .reconnecting
-                    debugPrint("[Stream] Connection dropped — HaishinKit will retry")
-                }
-            default:
-                break
-            }
-        }
-    }
-    #endif
 }
