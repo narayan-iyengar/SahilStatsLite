@@ -556,15 +556,24 @@ struct UltraMinimalRecordingView: View {
                     }
                 }
             } else if isClockRunning {
-                Circle()
-                    .fill(Color.red)
-                    .frame(width: 12, height: 12)
-                    .scaleEffect(isPulsing ? 1.3 : 1.0)
-                    .animation(
-                        .easeInOut(duration: 0.6).repeatForever(autoreverses: true),
-                        value: isPulsing
-                    )
-                    .onAppear { isPulsing = true }
+                HStack(spacing: 6) {
+                    Circle()
+                        .fill(Color.red)
+                        .frame(width: 12, height: 12)
+                        .scaleEffect(isPulsing ? 1.3 : 1.0)
+                        .animation(
+                            .easeInOut(duration: 0.6).repeatForever(autoreverses: true),
+                            value: isPulsing
+                        )
+                        .onAppear { isPulsing = true }
+
+                    // Stream health — always visible so you know what's happening
+                    if recordingManager.isStreamingActive {
+                        Text(streamingService.health.label)
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(streamingService.health.isActive ? .red : .orange)
+                    }
+                }
             } else {
                 Image(systemName: "pause.fill")
                     .font(.system(size: 12, weight: .bold))
