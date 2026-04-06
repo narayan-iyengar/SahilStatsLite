@@ -3,26 +3,22 @@
 //  SahilStatsLite
 //
 //  PURPOSE: Live YouTube streaming via RTMP using HaishinKit.
-//           Receives composited CVPixelBuffer frames from RecordingManager
-//           (scoreboard overlay already burned in) and pushes to YouTube.
-//           Runs alongside AVAssetWriter — local HEVC recording unchanged.
+//           Pre-encodes video frames to H.264 via VideoToolbox (VTCompressionSession),
+//           then forwards compressed samples to HaishinKit which sends them over RTMP.
+//           Audio goes directly through HaishinKit's AAC encoder.
+//
+//  Why VTCompressionSession instead of HaishinKit's encoder:
+//    HaishinKit's custom frame injection API (actor-based append) doesn't reliably
+//    route uncompressed BGRA frames through its internal VideoCodec in all versions.
+//    Pre-encoding with VT gives us direct control and guaranteed H.264 output.
 //
 //  SETUP:
 //    1. HaishinKit added via SPM (done)
-//    2. Enter stream key in Settings (YouTube Studio → Go Live → Stream → Stream key)
-//    3. Stream key persists in UserDefaults — set once per season
+//    2. Settings → YouTube Live → stream key + toggle ON
 //
 //  YOUTUBE REQUIREMENTS:
-//    Endpoint: rtmps://a.rtmp.youtube.com/live2
-//    Codec:    H.264 (HEVC not accepted on RTMP ingest)
-//    Keyframe: every 2 seconds
-//    Bitrate:  6 Mbps for 1080p30
-//    Latency:  Low latency mode (set in YouTube Studio)
-//
-//  HaishinKit v3 notes:
-//    RTMPStream is a Swift actor — all calls are async.
-//    Use setVideoSettings() / setAudioSettings() (not direct property assignment).
-//    append(_ CMSampleBuffer) auto-detects video vs audio from format description.
+//    Endpoint: rtmp://a.rtmp.youtube.com/live2
+//    Codec:    H.264 High profile, keyframe every 2s, 6 Mbps
 //
 
 import Foundation
@@ -65,7 +61,7 @@ final class StreamingService: ObservableObject {
     @Published var isStreaming: Bool = false
     @Published var health: StreamHealth = .idle
 
-    static let streamKeyDefaultsKey     = "SahilStats_YouTubeStreamKey"
+    static let streamKeyDefaultsKey        = "SahilStats_YouTubeStreamKey"
     static let streamingEnabledDefaultsKey = "SahilStats_StreamingEnabled"
 
     var savedStreamKey: String {
@@ -78,16 +74,15 @@ final class StreamingService: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: Self.streamingEnabledDefaultsKey) }
     }
 
-    // YouTube accepts both rtmp:// (port 1935) and rtmps:// (TLS).
-    // Using rtmp:// as HaishinKit can have TLS negotiation issues with rtmps://.
     private let rtmpURL = "rtmp://a.rtmp.youtube.com/live2"
 
-    // nonisolated(unsafe): accessed from RecordingManager's background processingQueue.
-    // Safe because writes only happen on @MainActor (startStream/stopStream),
-    // reads only happen on background queue when isStreamingActive is true.
     nonisolated(unsafe) private var stream: RTMPStream?
     private var connection: RTMPConnection?
     private var statusTask: Task<Void, Never>?
+
+    // VideoToolbox H.264 encoder — we pre-encode BGRA frames before sending to HaishinKit
+    nonisolated(unsafe) private var vtSession: VTCompressionSession?
+    nonisolated(unsafe) private var frameCount: Int64 = 0
 
     private init() {}
 
@@ -108,54 +103,97 @@ final class StreamingService: ObservableObject {
         try? await connection?.close()
         stream = nil
         connection = nil
+        destroyCompressor()
         isStreaming = false
         health = .idle
-        debugPrint("[Stream] Stopped")
     }
 
-    // MARK: - Frame Injection
-    // Called from RecordingManager's processingQueue (background thread).
-    // CVPixelBuffer already has scoreboard overlay composited.
+    // MARK: - Frame Injection (called from RecordingManager's processingQueue)
 
+    /// Video: pre-encode with VTCompressionSession → forward H.264 to HaishinKit
     nonisolated func appendVideoBuffer(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
-        guard let stream else { return }
+        guard stream != nil else { return }
 
-        var timingInfo = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: 30),
-            presentationTimeStamp: timestamp,
-            decodeTimeStamp: .invalid
-        )
-        var fmt: CMVideoFormatDescription?
-        CMVideoFormatDescriptionCreateForImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
-            formatDescriptionOut: &fmt
-        )
-        guard let fmt else { return }
-
-        var sb: CMSampleBuffer?
-        CMSampleBufferCreateForImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
-            dataReady: true,
-            makeDataReadyCallback: nil,
-            refcon: nil,
-            formatDescription: fmt,
-            sampleTiming: &timingInfo,
-            sampleBufferOut: &sb
-        )
-        if let sb {
-            // RTMPStream is an actor — dispatch async, don't block the camera thread
-            Task { await stream.append(sb) }
+        // Lazily create the VT encoder on first frame so we know the real dimensions
+        if vtSession == nil {
+            let w = CVPixelBufferGetWidth(pixelBuffer)
+            let h = CVPixelBufferGetHeight(pixelBuffer)
+            setupCompressor(width: w, height: h)
         }
+        guard let session = vtSession else { return }
+
+        frameCount += 1
+        let isKeyFrame = frameCount % 60 == 1   // Force keyframe every ~2s at 30fps
+
+        var frameProps: CFDictionary? = nil
+        if isKeyFrame {
+            frameProps = [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary
+        }
+
+        VTCompressionSessionEncodeFrame(
+            session,
+            imageBuffer: pixelBuffer,
+            presentationTimeStamp: timestamp,
+            duration: CMTime(value: 1, timescale: 30),
+            frameProperties: frameProps,
+            infoFlagsOut: nil,
+            outputHandler: { [weak self] status, _, sampleBuffer in
+                guard let self,
+                      let sb = sampleBuffer,
+                      status == noErr else { return }
+                Task { await self.stream?.append(sb) }
+            }
+        )
     }
 
+    /// Audio: pass directly to HaishinKit's AAC encoder
     nonisolated func appendAudioBuffer(_ sampleBuffer: CMSampleBuffer) {
         guard let stream else { return }
         Task { await stream.append(sampleBuffer) }
     }
 
-    // MARK: - Private
+    // MARK: - VTCompressionSession
+
+    private func setupCompressor(width: Int, height: Int) {
+        // Target 1080p — scale down if source is 4K
+        let outW = min(width, 1920)
+        let outH = min(height, 1080)
+
+        var session: VTCompressionSession?
+        VTCompressionSessionCreate(
+            allocator: kCFAllocatorDefault,
+            width: Int32(outW),
+            height: Int32(outH),
+            codecType: kCMVideoCodecType_H264,
+            encoderSpecification: nil,
+            imageBufferAttributes: nil,
+            compressedDataAllocator: nil,
+            outputCallback: nil,
+            refcon: nil,
+            compressionSessionOut: &session
+        )
+        guard let session else { return }
+
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime,                    value: kCFBooleanTrue)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate,              value: NSNumber(value: 6_000_000))
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, value: NSNumber(value: 2.0))
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel,                value: kVTProfileLevel_H264_High_AutoLevel)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering,        value: kCFBooleanFalse)
+
+        VTCompressionSessionPrepareToEncodeFrames(session)
+        vtSession = session
+        debugPrint("[Stream] VT H.264 encoder ready (\(outW)×\(outH))")
+    }
+
+    private func destroyCompressor() {
+        if let session = vtSession {
+            VTCompressionSessionInvalidate(session)
+            vtSession = nil
+        }
+        frameCount = 0
+    }
+
+    // MARK: - HaishinKit RTMP
 
     private func _start(key: String) async {
         health = .connecting
@@ -167,7 +205,6 @@ final class StreamingService: ObservableObject {
         self.connection = conn
         self.stream = strm
 
-        // Watch stream status
         statusTask = Task { [weak self] in
             for await status in await strm.status {
                 guard let self else { break }
@@ -178,7 +215,6 @@ final class StreamingService: ObservableObject {
                         debugPrint("[Stream] 🔴 LIVE → YouTube")
                     case RTMPStream.Code.publishBadName.rawValue:
                         self.health = .failed("Invalid stream key")
-                        debugPrint("[Stream] ❌ Invalid stream key")
                     default:
                         break
                     }
@@ -190,21 +226,14 @@ final class StreamingService: ObservableObject {
             _ = try await conn.connect(rtmpURL)
             _ = try await strm.publish(key)
 
-            // Set codec settings AFTER publish so the outgoing stream is running.
-            // videoSize matches the 4K recording frames — HaishinKit scales to this.
-            // Using actual recording dimensions so format description matches.
-            try? await strm.setVideoSettings(VideoCodecSettings(
-                videoSize: CGSize(width: 1920, height: 1080),
-                bitRate: 6_000_000,
-                profileLevel: kVTProfileLevel_H264_High_AutoLevel as String,
-                maxKeyFrameIntervalDuration: 2
-            ))
+            // Audio settings only — video is pre-encoded by VTCompressionSession
             try? await strm.setAudioSettings(AudioCodecSettings(bitRate: 128_000))
 
         } catch {
             health = .failed(error.localizedDescription)
             isStreaming = false
             self.stream = nil
+            destroyCompressor()
             debugPrint("[Stream] ❌ \(error.localizedDescription)")
         }
     }
