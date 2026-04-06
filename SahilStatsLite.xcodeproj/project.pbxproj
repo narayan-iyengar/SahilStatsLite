@@ -269,6 +269,28 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+/* Begin PBXShellScriptBuildPhase section */
+		C842A9645A8341ADAD03583E /* Set Build Number from Git */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Set Build Number from Git";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "BUILD=
+/usr/libexec/PlistBuddy -c \Set :CFBundleVersion \ \/\ 2>/dev/null || true
+";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		8B4AE4252F141E81005F206B /* Sources */ = {
