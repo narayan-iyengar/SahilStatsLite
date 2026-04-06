@@ -72,7 +72,7 @@ final class GimbalTrackingManager: ObservableObject {
     // Proportional gain: how aggressively the gimbal responds to subject offset.
     // error = actionCenter.x - 0.5 (range ±0.5). At max error, gimbal pans at maxPanVelocity.
     // Tune Kp up if tracking feels sluggish, down if it overshoots.
-    private let Kp: Double = 1.6
+    private let Kp: Double = 0.8   // tuned from real game footage via analyze.py
 
     // Maximum pan velocity in radians/second sent to DockKit.
     // 0.8 rad/s ≈ 46°/s — fast enough for fast breaks, smooth enough for broadcast feel.
