@@ -154,7 +154,7 @@ final class StreamingService: ObservableObject {
 
     // MARK: - VTCompressionSession
 
-    private func setupCompressor(width: Int, height: Int) {
+    nonisolated private func setupCompressor(width: Int, height: Int) {
         // Target 1080p — scale down if source is 4K
         let outW = min(width, 1920)
         let outH = min(height, 1080)
@@ -185,7 +185,7 @@ final class StreamingService: ObservableObject {
         debugPrint("[Stream] VT H.264 encoder ready (\(outW)×\(outH))")
     }
 
-    private func destroyCompressor() {
+    nonisolated private func destroyCompressor() {
         if let session = vtSession {
             VTCompressionSessionInvalidate(session)
             vtSession = nil
