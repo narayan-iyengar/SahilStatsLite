@@ -78,7 +78,9 @@ final class StreamingService: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: Self.streamingEnabledDefaultsKey) }
     }
 
-    private let rtmpURL = "rtmps://a.rtmp.youtube.com/live2"
+    // YouTube accepts both rtmp:// (port 1935) and rtmps:// (TLS).
+    // Using rtmp:// as HaishinKit can have TLS negotiation issues with rtmps://.
+    private let rtmpURL = "rtmp://a.rtmp.youtube.com/live2"
 
     // nonisolated(unsafe): accessed from RecordingManager's background processingQueue.
     // Safe because writes only happen on @MainActor (startStream/stopStream),
