@@ -3,14 +3,19 @@
 //  SahilStatsLite
 //
 //  PURPOSE: Live YouTube streaming via RTMP using HaishinKit.
-//           Passes raw CVPixelBuffers (with score overlay) to HaishinKit's internal
-//           VideoCodec (H.264 via VideoToolbox), which also handles the RTMP metadata,
-//           sequence header, and FLV framing. Audio CMSampleBuffers go through
-//           HaishinKit's AAC encoder.
+//
+//  Architecture:
+//   - RTMP transport: HaishinKit (RTMPConnection/RTMPStream) — patched in DerivedData:
+//       1. Minimal FMLE-style CONNECT command (4 fields, no Enhanced RTMP)
+//       2. No SetChunkSize(8192) — YouTube rejects large chunk negotiation
+//       3. makeMetadata() includes video fields when videoSettings.bitRate > 0
+//   - Video encoding: VTCompressionSession (H.264 High, 6Mbps, 1080p)
+//     Pre-encoded sample buffers go through HaishinKit's compressed path (isCompressed==true)
+//     which sends the AVC sequence header + NALUs correctly without going through VideoCodec.
+//   - Audio encoding: HaishinKit's internal AAC encoder (PCM → AAC 128kbps)
 //
 //  SETUP:
-//    1. HaishinKit added via SPM (done)
-//    2. Settings → YouTube Live → stream key + toggle ON
+//    Settings → YouTube Live → stream key + toggle ON
 //
 //  YOUTUBE REQUIREMENTS:
 //    Endpoint: rtmp://a.rtmp.youtube.com/live2
@@ -19,7 +24,7 @@
 
 import Foundation
 import AVFoundation
-import CoreImage
+import VideoToolbox
 import Combine
 import HaishinKit
 import RTMPHaishinKit
@@ -70,28 +75,16 @@ final class StreamingService: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: Self.streamingEnabledDefaultsKey) }
     }
 
-    // Plain RTMP port 1935. RTMPConnection.swift (DerivedData) patched to:
-    // 1. Send minimal FMLE-compatible connect command (4 fields, no Enhanced RTMP)
-    // 2. Skip SetChunkSize(8192) — YouTube rejects it; keep default 128-byte chunks
+    // Plain RTMP port 1935 — no TLS cert issues (iOS 26 NWConnection blocks RTMPS here)
     private let rtmpURL = "rtmp://a.rtmp.youtube.com/live2"
 
     nonisolated(unsafe) private var stream: RTMPStream?
     private var connection: RTMPConnection?
     private var statusTask: Task<Void, Never>?
 
-    // CIContext for GPU-accelerated 4K → 1080p downscale before HaishinKit encoding
-    nonisolated(unsafe) private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
-    nonisolated(unsafe) private var scaledPixelBufferPool: CVPixelBufferPool? = {
-        var pool: CVPixelBufferPool?
-        let attrs: NSDictionary = [
-            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
-            kCVPixelBufferWidthKey: 1920,
-            kCVPixelBufferHeightKey: 1080,
-            kCVPixelBufferIOSurfacePropertiesKey: NSDictionary()
-        ]
-        CVPixelBufferPoolCreate(nil, nil, attrs, &pool)
-        return pool
-    }()
+    // VTCompressionSession encodes 4K overlay frames → H.264 at 1080p
+    nonisolated(unsafe) private var vtSession: VTCompressionSession?
+    nonisolated(unsafe) private var frameCount: Int64 = 0
 
     private init() {}
 
@@ -112,67 +105,93 @@ final class StreamingService: ObservableObject {
         try? await connection?.close()
         stream = nil
         connection = nil
+        destroyCompressor()
         isStreaming = false
         health = .idle
     }
 
-    // MARK: - Frame Injection (called from RecordingManager's processingQueue)
+    // MARK: - Frame Injection
 
-    /// Video: scale 4K → 1080p via CIContext (GPU), wrap in CMSampleBuffer,
-    /// pass to HaishinKit's internal H.264 encoder.
+    /// Video: encode to H.264 via VTCompressionSession → append compressed buffer to HaishinKit.
+    /// HaishinKit's compressed path (isCompressed==true) handles AVC sequence header + FLV framing.
     nonisolated func appendVideoBuffer(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
-        guard let stream else { return }
+        guard stream != nil else { return }
 
-        // Scale from 4K to 1080p — VTCompressionSession requires exact dimension match
-        guard let scaled = scale(pixelBuffer) else { return }
+        if vtSession == nil {
+            let w = CVPixelBufferGetWidth(pixelBuffer)
+            let h = CVPixelBufferGetHeight(pixelBuffer)
+            setupCompressor(width: w, height: h)
+        }
+        guard let session = vtSession else { return }
 
-        var formatDesc: CMFormatDescription?
-        CMVideoFormatDescriptionCreateForImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: scaled,
-            formatDescriptionOut: &formatDesc)
-        guard let fd = formatDesc else { return }
+        frameCount += 1
+        let isKeyFrame = frameCount % 60 == 1
 
-        var timing = CMSampleTimingInfo(
-            duration: CMTime(value: 1, timescale: 30),
+        var frameProps: CFDictionary? = nil
+        if isKeyFrame {
+            frameProps = [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary
+        }
+
+        VTCompressionSessionEncodeFrame(
+            session,
+            imageBuffer: pixelBuffer,
             presentationTimeStamp: timestamp,
-            decodeTimeStamp: .invalid)
-        var sampleBuffer: CMSampleBuffer?
-        CMSampleBufferCreateForImageBuffer(
-            allocator: kCFAllocatorDefault,
-            imageBuffer: scaled,
-            dataReady: true,
-            makeDataReadyCallback: nil,
-            refcon: nil,
-            formatDescription: fd,
-            sampleTiming: &timing,
-            sampleBufferOut: &sampleBuffer)
-        guard let sb = sampleBuffer else { return }
-        Task { await stream.append(sb) }
+            duration: CMTime(value: 1, timescale: 30),
+            frameProperties: frameProps,
+            infoFlagsOut: nil,
+            outputHandler: { [weak self] status, _, sampleBuffer in
+                guard let self,
+                      let sb = sampleBuffer,
+                      status == noErr else { return }
+                Task { await self.stream?.append(sb) }
+            }
+        )
     }
 
-    nonisolated private func scale(_ pixelBuffer: CVPixelBuffer) -> CVPixelBuffer? {
-        guard let pool = scaledPixelBufferPool else { return nil }
-        let inputW = CVPixelBufferGetWidth(pixelBuffer)
-        let inputH = CVPixelBufferGetHeight(pixelBuffer)
-        guard inputW > 0, inputH > 0 else { return nil }
-
-        var output: CVPixelBuffer?
-        guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &output) == kCVReturnSuccess,
-              let output else { return nil }
-
-        let scaleX = 1920.0 / Double(inputW)
-        let scaleY = 1080.0 / Double(inputH)
-        let ci = CIImage(cvPixelBuffer: pixelBuffer)
-            .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
-        ciContext.render(ci, to: output)
-        return output
-    }
-
-    /// Audio: pass directly to HaishinKit's AAC encoder
+    /// Audio: PCM → AAC via HaishinKit's internal encoder
     nonisolated func appendAudioBuffer(_ sampleBuffer: CMSampleBuffer) {
         guard let stream else { return }
         Task { await stream.append(sampleBuffer) }
+    }
+
+    // MARK: - VTCompressionSession (encodes 4K input → 1080p H.264)
+
+    nonisolated private func setupCompressor(width: Int, height: Int) {
+        let outW = min(width, 1920)
+        let outH = min(height, 1080)
+
+        var session: VTCompressionSession?
+        VTCompressionSessionCreate(
+            allocator: kCFAllocatorDefault,
+            width: Int32(outW),
+            height: Int32(outH),
+            codecType: kCMVideoCodecType_H264,
+            encoderSpecification: nil,
+            imageBufferAttributes: nil,
+            compressedDataAllocator: nil,
+            outputCallback: nil,
+            refcon: nil,
+            compressionSessionOut: &session
+        )
+        guard let session else { return }
+
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_RealTime,                    value: kCFBooleanTrue)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AverageBitRate,              value: NSNumber(value: 6_000_000))
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_MaxKeyFrameIntervalDuration, value: NSNumber(value: 2.0))
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_ProfileLevel,                value: kVTProfileLevel_H264_High_AutoLevel)
+        VTSessionSetProperty(session, key: kVTCompressionPropertyKey_AllowFrameReordering,        value: kCFBooleanFalse)
+
+        VTCompressionSessionPrepareToEncodeFrames(session)
+        vtSession = session
+        debugPrint("[Stream] VT H.264 encoder ready (\(outW)×\(outH))")
+    }
+
+    nonisolated private func destroyCompressor() {
+        if let session = vtSession {
+            VTCompressionSessionInvalidate(session)
+            vtSession = nil
+        }
+        frameCount = 0
     }
 
     // MARK: - HaishinKit RTMP
@@ -185,9 +204,6 @@ final class StreamingService: ObservableObject {
         let strm = RTMPStream(connection: conn)
 
         self.connection = conn
-        // self.stream is set AFTER connect + publish + codec config so that
-        // appendVideoBuffer returns early (guard stream != nil) during setup.
-        // YouTube closes the connection if media arrives before _result is sent.
 
         statusTask = Task { [weak self] in
             for await status in await strm.status {
@@ -209,25 +225,25 @@ final class StreamingService: ObservableObject {
 
         do {
             debugPrint("[Stream] Connecting to \(rtmpURL)...")
-            let connectResp = try await conn.connect(rtmpURL)
-            debugPrint("[Stream] Connected — \(connectResp.status?.code ?? "?")")
+            _ = try await conn.connect(rtmpURL)
+            debugPrint("[Stream] Connected")
 
             debugPrint("[Stream] Publishing with key \(key.prefix(8))...")
             _ = try await strm.publish(key)
-            debugPrint("[Stream] Publish accepted — configuring codecs")
+            debugPrint("[Stream] Publish accepted")
 
-            // Video: 1080p H.264 High profile, 6 Mbps, 30fps
-            // HaishinKit will scale the 4K input to 1920×1080 and encode
+            // setVideoSettings() with non-zero bitRate ensures makeMetadata() (patched in
+            // DerivedData) sends width/height/videocodecid to YouTube in @setDataFrame onMetaData.
+            // The actual encoding is done by VTCompressionSession — we use the compressed path
+            // (isCompressed==true) in RTMPStream.append() which bypasses HaishinKit's VideoCodec.
             try? await strm.setVideoSettings(VideoCodecSettings(
                 videoSize: CGSize(width: 1920, height: 1080),
                 bitRate: 6_000_000))
-
-            // Audio: AAC 128kbps
             try? await strm.setAudioSettings(AudioCodecSettings(bitRate: 128_000))
 
-            // Expose stream — frames now accepted and encoded by HaishinKit
+            // Expose stream after full setup — VT encoder starts on first frame
             self.stream = strm
-            debugPrint("[Stream] 🔴 stream live — HaishinKit encoding at 1080p/6Mbps")
+            debugPrint("[Stream] 🔴 stream live — VT encoding + HaishinKit transport")
 
         } catch let e as RTMPConnection.Error {
             let detail: String
@@ -244,12 +260,14 @@ final class StreamingService: ObservableObject {
             health = .failed(detail)
             isStreaming = false
             self.stream = nil
+            destroyCompressor()
             debugPrint("[Stream] ❌ \(detail)")
         } catch {
             let detail = "unexpected: \(error)"
             health = .failed(detail)
             isStreaming = false
             self.stream = nil
+            destroyCompressor()
             debugPrint("[Stream] ❌ \(detail)")
         }
     }
