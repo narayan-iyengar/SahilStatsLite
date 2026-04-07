@@ -228,18 +228,17 @@ final class StreamingService: ObservableObject {
             _ = try await conn.connect(rtmpURL)
             debugPrint("[Stream] Connected")
 
-            debugPrint("[Stream] Publishing with key \(key.prefix(8))...")
-            _ = try await strm.publish(key)
-            debugPrint("[Stream] Publish accepted")
-
-            // setVideoSettings() with non-zero bitRate ensures makeMetadata() (patched in
-            // DerivedData) sends width/height/videocodecid to YouTube in @setDataFrame onMetaData.
-            // The actual encoding is done by VTCompressionSession — we use the compressed path
-            // (isCompressed==true) in RTMPStream.append() which bypasses HaishinKit's VideoCodec.
+            // Configure settings BEFORE publish so @setDataFrame onMetaData fires with
+            // correct video fields. makeMetadata() (patched in DerivedData) gates video
+            // metadata on outgoing.videoSettings.bitRate > 0.
             try? await strm.setVideoSettings(VideoCodecSettings(
                 videoSize: CGSize(width: 1920, height: 1080),
                 bitRate: 6_000_000))
             try? await strm.setAudioSettings(AudioCodecSettings(bitRate: 128_000))
+
+            debugPrint("[Stream] Publishing with key \(key.prefix(8))...")
+            _ = try await strm.publish(key)
+            debugPrint("[Stream] Publish accepted — metadata sent with video fields")
 
             // Expose stream after full setup — VT encoder starts on first frame
             self.stream = strm
