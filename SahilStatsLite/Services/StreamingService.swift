@@ -204,7 +204,9 @@ final class StreamingService: ObservableObject {
         let strm = RTMPStream(connection: conn)
 
         self.connection = conn
-        self.stream = strm
+        // NOTE: self.stream is set AFTER connect() succeeds so that appendVideoBuffer()
+        // returns early (guard stream != nil) during the RTMP handshake/connect phase.
+        // YouTube closes the connection if it receives media data before _result is sent.
 
         statusTask = Task { [weak self] in
             for await status in await strm.status {
@@ -231,6 +233,9 @@ final class StreamingService: ObservableObject {
             debugPrint("[Stream] TCP connecting to \(rtmpURL)...")
             let connectResp = try await conn.connect(rtmpURL)
             debugPrint("[Stream] connect() returned — status=\(String(describing: connectResp.status?.code)) desc=\(String(describing: connectResp.status?.description))")
+            // Only expose the stream now — frames sent before this would have been dropped
+            // by appendVideoBuffer's guard, preventing media from reaching YouTube pre-_result
+            self.stream = strm
             debugPrint("[Stream] Publishing with key \(key.prefix(8))...")
             let publishResp = try await strm.publish(key)
             debugPrint("[Stream] publish() returned — \(String(describing: publishResp))")
