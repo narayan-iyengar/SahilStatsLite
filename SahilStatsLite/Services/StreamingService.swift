@@ -75,9 +75,6 @@ final class StreamingService: ObservableObject {
     }
 
     // Plain RTMP port 1935 — no TLS, no cert issues.
-    // iOS 26 NWConnection blocks RTMPS to a.rtmp.youtube.com (cert SAN mismatch).
-    // ffmpeg confirms port 1935 works. Build 218 got Connect.Closed because Enhanced RTMP
-    // was still enabled then; now disabled via fourCcList:nil in _start().
     private let rtmpURL = "rtmp://a.rtmp.youtube.com/live2"
 
     nonisolated(unsafe) private var stream: RTMPStream?
@@ -203,8 +200,7 @@ final class StreamingService: ObservableObject {
         health = .connecting
         isStreaming = true
 
-        // Disable Enhanced RTMP (fourCcList, HEVC/Opus maps) — YouTube rejects them with Connect.Closed
-        let conn = RTMPConnection(fourCcList: nil, videoFourCcInfoMap: nil, audioFourCcInfoMap: nil, capsEx: 0)
+        let conn = RTMPConnection()
         let strm = RTMPStream(connection: conn)
 
         self.connection = conn
