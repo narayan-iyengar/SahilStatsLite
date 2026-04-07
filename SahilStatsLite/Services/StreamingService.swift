@@ -76,8 +76,9 @@ final class StreamingService: ObservableObject {
 
     // YouTube RTMPS on port 443 (not 1935). Port must be explicit or HaishinKit
     // defaults to 1935 for both rtmp:// and rtmps://, causing TLS connection failure.
-    // No explicit port — HaishinKit's URL parser chokes on :443, uses defaultSecurePort=443 automatically
-    private let rtmpURL = "rtmps://a.rtmp.youtube.com/live2"
+    // YouTube cert CN=rtmps.youtube.com — must connect to this hostname for TLS to match.
+    // a.rtmp.youtube.com cert SAN doesn't include a.rtmp.youtube.com → errSSLBadCert on iOS 26.
+    private let rtmpURL = "rtmps://rtmps.youtube.com/live2"
 
     nonisolated(unsafe) private var stream: RTMPStream?
     private var connection: RTMPConnection?
