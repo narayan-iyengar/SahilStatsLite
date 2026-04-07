@@ -228,13 +228,10 @@ final class StreamingService: ObservableObject {
         }
 
         do {
-            // Try embedding stream key in URL — some YouTube server configs expect
-            // rtmps://host/live2/STREAMKEY format rather than separate publish()
-            let connectURL = "\(rtmpURL)/\(key)"
             debugPrint("[Stream] Connecting to \(rtmpURL)...")
-            _ = try await conn.connect(connectURL)
-            debugPrint("[Stream] Connected — publishing...")
-            _ = try await strm.publish("")
+            _ = try await conn.connect(rtmpURL)
+            debugPrint("[Stream] Connected — publishing with key \(key.prefix(8))...")
+            _ = try await strm.publish(key)
             debugPrint("[Stream] Published")
 
             // Audio settings only — video is pre-encoded by VTCompressionSession
