@@ -74,9 +74,9 @@ final class StreamingService: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: Self.streamingEnabledDefaultsKey) }
     }
 
-    // RTMPS on port 443. a.rtmps.youtube.com cert SAN = *.rtmps.youtube.com → valid on iOS 26.
-    // RTMPConnection.swift in DerivedData is patched to rewrite tcUrl host → a.rtmp.youtube.com.
-    private let rtmpURL = "rtmps://a.rtmps.youtube.com/live2"
+    // RTMPS on port 443. RTMPSocket uses URLSessionStreamTask + CertBypassDelegate to accept
+    // YouTube's cert (SAN=*.rtmps.youtube.com doesn't match a.rtmp.youtube.com — same as ffmpeg).
+    private let rtmpURL = "rtmps://a.rtmp.youtube.com/live2"
 
     nonisolated(unsafe) private var stream: RTMPStream?
     private var connection: RTMPConnection?
