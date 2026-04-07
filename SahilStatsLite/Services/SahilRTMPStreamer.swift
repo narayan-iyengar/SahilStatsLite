@@ -157,7 +157,7 @@ private func aacFrame(_ data: Data, ts: UInt32, sid: UInt32) -> Data {
 
 // MARK: - Main Streamer
 
-final class SahilRTMPStreamer {
+final class SahilRTMPStreamer: @unchecked Sendable {
 
     private let host = "a.rtmp.youtube.com"
     private let port: UInt16 = 1935
@@ -195,7 +195,7 @@ final class SahilRTMPStreamer {
         c.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             if case .ready = state {
-                Thread.detachNewThread { self.onConnected(c, key: streamKey) }
+                DispatchQueue.global(qos: .userInitiated).async { self.onConnected(c, key: streamKey) }
             } else if case .failed(let e) = state {
                 self.fail("TCP: \(e)")
             }
@@ -250,6 +250,7 @@ final class SahilRTMPStreamer {
             c0c1.append(contentsOf: Data((0..<1528).map { _ in UInt8.random(in: 0...255) }))
             sendSync(c, data: c0c1)
             let s012 = recvSync(c, length: 3073)
+            guard s012.count >= 1537 else { fail("Handshake incomplete (\(s012.count) bytes)"); return }
             sendSync(c, data: Data(s012[1..<1537]))  // C2 = S1
 
             // RTMP connect
