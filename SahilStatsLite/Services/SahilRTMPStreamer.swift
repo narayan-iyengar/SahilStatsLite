@@ -244,14 +244,18 @@ final class SahilRTMPStreamer: @unchecked Sendable {
 
     private func onConnected(_ c: NWConnection, key: String) {
         do {
-            // RTMP handshake
+            // RTMP handshake — interleaved per spec:
+            // C0+C1 → S0+S1 → C2 → S2
+            // YouTube MAY withhold S2 until it receives C2, so we must send C2 first.
             var c0c1 = Data([0x03])
             c0c1.append(contentsOf: Data(repeating: 0, count: 8))
             c0c1.append(contentsOf: Data((0..<1528).map { _ in UInt8.random(in: 0...255) }))
             sendSync(c, data: c0c1)
-            let s012 = recvSync(c, length: 3073)
-            guard s012.count >= 1537 else { fail("Handshake incomplete (\(s012.count) bytes)"); return }
-            sendSync(c, data: Data(s012[1..<1537]))  // C2 = S1
+
+            let s01 = recvSync(c, length: 1537)          // S0 (1) + S1 (1536)
+            guard s01.count >= 1537 else { fail("S0+S1 incomplete (\(s01.count))"); return }
+            sendSync(c, data: Data(s01[1..<1537]))        // C2 = copy of S1
+            _ = recvSync(c, length: 1536)                 // drain S2 (don't need it)
 
             // RTMP connect
             sendSync(c, data: connectCmd(tcUrl: "rtmp://\(host)/live2"))
