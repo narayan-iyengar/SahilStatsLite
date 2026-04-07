@@ -74,9 +74,11 @@ final class StreamingService: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: Self.streamingEnabledDefaultsKey) }
     }
 
-    // RTMPS on port 443. RTMPSocket uses URLSessionStreamTask + CertBypassDelegate to accept
-    // YouTube's cert (SAN=*.rtmps.youtube.com doesn't match a.rtmp.youtube.com — same as ffmpeg).
-    private let rtmpURL = "rtmps://a.rtmp.youtube.com/live2"
+    // Plain RTMP port 1935 — no TLS, no cert issues.
+    // iOS 26 NWConnection blocks RTMPS to a.rtmp.youtube.com (cert SAN mismatch).
+    // ffmpeg confirms port 1935 works. Build 218 got Connect.Closed because Enhanced RTMP
+    // was still enabled then; now disabled via fourCcList:nil in _start().
+    private let rtmpURL = "rtmp://a.rtmp.youtube.com/live2"
 
     nonisolated(unsafe) private var stream: RTMPStream?
     private var connection: RTMPConnection?
