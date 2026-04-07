@@ -234,9 +234,11 @@ final class SahilRTMPStreamer: @unchecked Sendable {
 
     func stop() {
         running = false
-        conn?.cancel(); conn = nil
+        let c = conn; conn = nil
+        c?.cancel()          // triggers netRecv to throw CancellationError, breaking drain loop
         destroyVT()
         audioConverter = nil; audioStart = .invalid; sentAudioSeqHdr = false
+        debugPrint("[SahilRTMP] stopped")
     }
 
     // MARK: - Protocol (async)
@@ -281,10 +283,11 @@ final class SahilRTMPStreamer: @unchecked Sendable {
             debugPrint("[SahilRTMP] ✅ LIVE")
             await MainActor.run { self.onLive?() }
 
-            // Drain incoming (window ack, ping, etc.)
+            // Drain incoming (window ack, ping requests, etc.) until stop() is called
             while running {
-                _ = try? await netRecv(c, exactly: 128)
+                guard let _ = try? await netRecv(c, exactly: 1) else { break }
             }
+            debugPrint("[SahilRTMP] drain loop exited (running=\(running))")
         } catch {
             fail("\(error)")
         }
@@ -321,17 +324,28 @@ final class SahilRTMPStreamer: @unchecked Sendable {
     // MARK: - Video Sending
 
     private func sendVideo(_ sb: CMSampleBuffer, isKey: Bool) {
-        guard let c = conn else { return }
+        guard let c = conn else { debugPrint("[SahilRTMP] ⚠️ sendVideo: conn is nil"); return }
         let ts = msSince(sb.presentationTimeStamp, start: videoStart)
-        if !sentVideoSeqHdr, let fd = sb.formatDescription {
+        if !sentVideoSeqHdr {
             sentVideoSeqHdr = true
-            if let data = avcSeqHeader(fd: fd, ts: ts, sid: streamId) {
-                c.send(content: data, completion: .idempotent)
-                debugPrint("[SahilRTMP] AVC sequence header sent")
+            guard let fd = sb.formatDescription else {
+                debugPrint("[SahilRTMP] ⚠️ no formatDescription on keyframe"); return
+            }
+            let mt = CMFormatDescriptionGetMediaType(fd)
+            let ms = CMFormatDescriptionGetMediaSubType(fd)
+            debugPrint("[SahilRTMP] formatDesc mediaType=\(mt) subType=\(ms)")
+            if let seqData = avcSeqHeader(fd: fd, ts: ts, sid: streamId) {
+                c.send(content: seqData, completion: .idempotent)
+                debugPrint("[SahilRTMP] ✅ AVC sequence header sent (\(seqData.count) bytes)")
+            } else {
+                debugPrint("[SahilRTMP] ❌ avcSeqHeader returned nil — SPS/PPS unavailable")
             }
         }
-        if let data = avcFrame(sb: sb, ts: ts, sid: streamId, isKey: isKey) {
-            c.send(content: data, completion: .idempotent)
+        if let frameData = avcFrame(sb: sb, ts: ts, sid: streamId, isKey: isKey) {
+            c.send(content: frameData, completion: .idempotent)
+            if isKey { debugPrint("[SahilRTMP] 🎬 keyframe sent ts=\(ts) \(frameData.count)B") }
+        } else {
+            debugPrint("[SahilRTMP] ⚠️ avcFrame returned nil")
         }
     }
 
