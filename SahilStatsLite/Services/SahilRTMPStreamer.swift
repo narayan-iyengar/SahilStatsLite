@@ -190,10 +190,12 @@ final class SahilRTMPStreamer {
             port: NWEndpoint.Port(integerLiteral: port),
             using: .tcp)
         conn = c
+        // NWConnection callbacks use ioQueue; blocking protocol loop uses a separate
+        // thread so recvSync/sendSync semaphore waits never block the callback queue.
         c.stateUpdateHandler = { [weak self] state in
             guard let self else { return }
             if case .ready = state {
-                self.ioQueue.async { self.onConnected(c, key: streamKey) }
+                Thread.detachNewThread { self.onConnected(c, key: streamKey) }
             } else if case .failed(let e) = state {
                 self.fail("TCP: \(e)")
             }
