@@ -225,18 +225,28 @@ final class StreamingService: ObservableObject {
         }
 
         do {
+            debugPrint("[Stream] Connecting to \(rtmpURL)...")
             _ = try await conn.connect(rtmpURL)
+            debugPrint("[Stream] Connected — publishing with key \(key.prefix(8))...")
             _ = try await strm.publish(key)
+            debugPrint("[Stream] Published")
 
             // Audio settings only — video is pre-encoded by VTCompressionSession
             try? await strm.setAudioSettings(AudioCodecSettings(bitRate: 128_000))
 
         } catch {
-            health = .failed(error.localizedDescription)
+            // Surface maximum detail in the health label so we can diagnose without Xcode
+            var detail = error.localizedDescription
+            let mirror = Mirror(reflecting: error)
+            detail += " | \(mirror.subjectType)"
+            if let nwError = error as? NWError {
+                detail += " | code:\(nwError.errorCode) domain:\(nwError.errorDomain ?? "?")"
+            }
+            health = .failed(detail)
             isStreaming = false
             self.stream = nil
             destroyCompressor()
-            debugPrint("[Stream] ❌ \(error.localizedDescription)")
+            debugPrint("[Stream] ❌ \(detail)")
         }
     }
 }
