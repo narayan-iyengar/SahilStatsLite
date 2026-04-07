@@ -237,10 +237,10 @@ final class StreamingService: ObservableObject {
         } catch {
             // Surface maximum detail in the health label so we can diagnose without Xcode
             var detail = error.localizedDescription
-            let mirror = Mirror(reflecting: error)
-            detail += " | \(mirror.subjectType)"
-            if let nwError = error as? NWError {
-                detail += " | NWcode:\(nwError.errorCode)"
+            let ns = error as NSError
+            detail = "[\(ns.domain):\(ns.code)] \(ns.localizedDescription)"
+            if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError {
+                detail += " | underlying: [\(underlying.domain):\(underlying.code)]"
             }
             health = .failed(detail)
             isStreaming = false
