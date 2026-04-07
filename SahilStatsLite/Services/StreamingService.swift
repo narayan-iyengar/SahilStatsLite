@@ -79,7 +79,7 @@ final class StreamingService: ObservableObject {
     // a.rtmps.youtube.com — cert SAN includes *.rtmps.youtube.com which matches perfectly.
     // a.rtmp.youtube.com cert SAN doesn't include itself → errSSLBadCert on iOS 26.
     // One letter difference in hostname; same RTMP ingest infrastructure.
-    private let rtmpURL = "rtmps://a.rtmps.youtube.com/live2"
+    private let rtmpURL = "rtmps://a.rtmp.youtube.com/live2"
 
     nonisolated(unsafe) private var stream: RTMPStream?
     private var connection: RTMPConnection?
