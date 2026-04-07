@@ -23,8 +23,20 @@ private enum AMF0 {
         var v = n.bitPattern.bigEndian; return Data([0x00]) + Data(bytes: &v, count: 8)
     }
     static func null() -> Data { Data([0x05]) }
+    /// AMF0 strict object (0x03) — for generic key-value objects
     static func object(_ pairs: [(String, Data)]) -> Data {
         var d = Data([0x03])
+        for (k, v) in pairs {
+            let kb = k.utf8; d += [UInt8((kb.count >> 8) & 0xFF), UInt8(kb.count & 0xFF)]; d += kb; d += v
+        }
+        return d + Data([0x00, 0x00, 0x09])
+    }
+    /// AMF0 ECMA array (0x08) — required by YouTube/Flash for @setDataFrame onMetaData
+    static func ecmaArray(_ pairs: [(String, Data)]) -> Data {
+        let count = UInt32(pairs.count)
+        var d = Data([0x08,
+                      UInt8((count>>24)&0xFF), UInt8((count>>16)&0xFF),
+                      UInt8((count>>8)&0xFF),  UInt8(count&0xFF)])
         for (k, v) in pairs {
             let kb = k.utf8; d += [UInt8((kb.count >> 8) & 0xFF), UInt8(kb.count & 0xFF)]; d += kb; d += v
         }
@@ -76,7 +88,7 @@ private func publishCmd(key: String, sid: UInt32) -> Data {
 private func metadataCmd(sid: UInt32) -> Data {
     makeChunk(csid: 4, msgType: 0x12, streamId: sid, ts: 0,
               payload: AMF0.string("@setDataFrame") + AMF0.string("onMetaData") +
-              AMF0.object([("duration", AMF0.number(0)), ("width", AMF0.number(1920)),
+              AMF0.ecmaArray([("duration", AMF0.number(0)), ("width", AMF0.number(1920)),
                            ("height", AMF0.number(1080)), ("videocodecid", AMF0.number(7)),
                            ("videodatarate", AMF0.number(6000)), ("framerate", AMF0.number(30)),
                            ("audiocodecid", AMF0.number(10)), ("audiodatarate", AMF0.number(128)),
