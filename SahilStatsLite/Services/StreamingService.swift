@@ -232,17 +232,16 @@ final class StreamingService: ObservableObject {
         do {
             debugPrint("[Stream] TCP connecting to \(rtmpURL)...")
             let connectResp = try await conn.connect(rtmpURL)
-            debugPrint("[Stream] connect() returned — status=\(String(describing: connectResp.status?.code)) desc=\(String(describing: connectResp.status?.description))")
-            // Only expose the stream now — frames sent before this would have been dropped
-            // by appendVideoBuffer's guard, preventing media from reaching YouTube pre-_result
-            self.stream = strm
+            debugPrint("[Stream] connect() returned — status=\(String(describing: connectResp.status?.code))")
             debugPrint("[Stream] Publishing with key \(key.prefix(8))...")
             let publishResp = try await strm.publish(key)
             debugPrint("[Stream] publish() returned — \(String(describing: publishResp))")
-
-            // Audio settings only — video is pre-encoded by VTCompressionSession
+            // Configure audio encoder before exposing stream
             try? await strm.setAudioSettings(AudioCodecSettings(bitRate: 128_000))
-            debugPrint("[Stream] audio settings applied, waiting for LIVE status...")
+            // Expose stream AFTER connect + publish + audio config so the first frame
+            // HaishinKit sees is a keyframe on a fully ready stream (not pre-publish noise)
+            self.stream = strm
+            debugPrint("[Stream] 🔴 stream exposed — frames now flowing")
 
         } catch let e as RTMPConnection.Error {
             let detail: String
