@@ -209,6 +209,8 @@ final class StreamingService: ObservableObject {
         statusTask = Task { [weak self] in
             for await status in await strm.status {
                 guard let self else { break }
+                // Log ALL status messages — not just the ones we handle
+                debugPrint("[Stream] STATUS code=\(status.code) level=\(status.level) desc=\(status.description)")
                 await MainActor.run {
                     switch status.code {
                     case RTMPStream.Code.publishStart.rawValue:
@@ -216,22 +218,26 @@ final class StreamingService: ObservableObject {
                         debugPrint("[Stream] 🔴 LIVE → YouTube")
                     case RTMPStream.Code.publishBadName.rawValue:
                         self.health = .failed("Invalid stream key")
+                        debugPrint("[Stream] ❌ bad stream key")
                     default:
                         break
                     }
                 }
             }
+            debugPrint("[Stream] status stream ended")
         }
 
         do {
-            debugPrint("[Stream] Connecting to \(rtmpURL)...")
-            _ = try await conn.connect(rtmpURL)
-            debugPrint("[Stream] Connected — publishing with key \(key.prefix(8))...")
-            _ = try await strm.publish(key)
-            debugPrint("[Stream] Published")
+            debugPrint("[Stream] TCP connecting to \(rtmpURL)...")
+            let connectResp = try await conn.connect(rtmpURL)
+            debugPrint("[Stream] connect() returned — status=\(String(describing: connectResp.status?.code)) desc=\(String(describing: connectResp.status?.description))")
+            debugPrint("[Stream] Publishing with key \(key.prefix(8))...")
+            let publishResp = try await strm.publish(key)
+            debugPrint("[Stream] publish() returned — \(String(describing: publishResp))")
 
             // Audio settings only — video is pre-encoded by VTCompressionSession
             try? await strm.setAudioSettings(AudioCodecSettings(bitRate: 128_000))
+            debugPrint("[Stream] audio settings applied, waiting for LIVE status...")
 
         } catch let e as RTMPConnection.Error {
             let detail: String
@@ -239,11 +245,12 @@ final class StreamingService: ObservableObject {
             case .invalidState:              detail = "RTMPConn.invalidState"
             case .unsupportedCommand(let c): detail = "RTMPConn.unsupportedCommand(\(c))"
             case .connectionTimedOut:        detail = "RTMPConn.connectionTimedOut"
-            case .socketErrorOccurred(let s): detail = "RTMPConn.socketError: \(s?.localizedDescription ?? "nil")"
+            case .socketErrorOccurred(let s):
+                detail = "RTMPConn.socketError: \(s?.localizedDescription ?? "nil") | errCode=\(s.map { "\($0)" } ?? "nil")"
             case .requestTimedOut:           detail = "RTMPConn.requestTimedOut"
             case .requestFailed(let r):
                 let s = r.status
-                detail = "RTMPConn.requestFailed code=\(s?.code ?? "?") desc=\(s?.description ?? "?")"
+                detail = "RTMPConn.requestFailed code=\(s?.code ?? "?") level=\(s?.level ?? "?") desc=\(s?.description ?? "?") args=\(r.arguments)"
             }
             health = .failed(detail)
             isStreaming = false
@@ -251,7 +258,7 @@ final class StreamingService: ObservableObject {
             destroyCompressor()
             debugPrint("[Stream] ❌ \(detail)")
         } catch {
-            let detail = "unexpected: \(error)"
+            let detail = "unexpected: \(error) | type=\(type(of: error))"
             health = .failed(detail)
             isStreaming = false
             self.stream = nil
