@@ -240,7 +240,7 @@ final class StreamingService: ObservableObject {
             let mirror = Mirror(reflecting: error)
             detail += " | \(mirror.subjectType)"
             if let nwError = error as? NWError {
-                detail += " | code:\(nwError.errorCode) domain:\(nwError.errorDomain ?? "?")"
+                detail += " | NWcode:\(nwError.errorCode)"
             }
             health = .failed(detail)
             isStreaming = false
