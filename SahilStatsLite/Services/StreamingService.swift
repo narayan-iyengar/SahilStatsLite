@@ -74,9 +74,9 @@ final class StreamingService: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: Self.streamingEnabledDefaultsKey) }
     }
 
-    // Plain RTMP on port 1935 — no TLS, no cert issues.
-    // HaishinKit uses NWConnection (not URLSession), so ATS doesn't apply to this socket.
-    private let rtmpURL = "rtmp://a.rtmp.youtube.com/live2"
+    // RTMPS on port 443. a.rtmps.youtube.com cert SAN = *.rtmps.youtube.com → valid on iOS 26.
+    // RTMPConnection.swift in DerivedData is patched to rewrite tcUrl host → a.rtmp.youtube.com.
+    private let rtmpURL = "rtmps://a.rtmps.youtube.com/live2"
 
     nonisolated(unsafe) private var stream: RTMPStream?
     private var connection: RTMPConnection?
@@ -201,7 +201,8 @@ final class StreamingService: ObservableObject {
         health = .connecting
         isStreaming = true
 
-        let conn = RTMPConnection()
+        // Disable Enhanced RTMP (fourCcList, HEVC/Opus maps) — YouTube rejects them with Connect.Closed
+        let conn = RTMPConnection(fourCcList: nil, videoFourCcInfoMap: nil, audioFourCcInfoMap: nil, capsEx: 0)
         let strm = RTMPStream(connection: conn)
 
         self.connection = conn
@@ -242,7 +243,9 @@ final class StreamingService: ObservableObject {
             case .connectionTimedOut:        detail = "RTMPConn.connectionTimedOut"
             case .socketErrorOccurred(let s): detail = "RTMPConn.socketError: \(s?.localizedDescription ?? "nil")"
             case .requestTimedOut:           detail = "RTMPConn.requestTimedOut"
-            case .requestFailed(let r):      detail = "RTMPConn.requestFailed: \(r)"
+            case .requestFailed(let r):
+                let s = r.status
+                detail = "RTMPConn.requestFailed code=\(s?.code ?? "?") desc=\(s?.description ?? "?")"
             }
             health = .failed(detail)
             isStreaming = false
