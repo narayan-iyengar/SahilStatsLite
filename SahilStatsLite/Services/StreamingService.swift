@@ -19,6 +19,7 @@
 
 import Foundation
 import AVFoundation
+import CoreImage
 import Combine
 import HaishinKit
 import RTMPHaishinKit
@@ -78,6 +79,20 @@ final class StreamingService: ObservableObject {
     private var connection: RTMPConnection?
     private var statusTask: Task<Void, Never>?
 
+    // CIContext for GPU-accelerated 4K → 1080p downscale before HaishinKit encoding
+    nonisolated(unsafe) private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
+    nonisolated(unsafe) private var scaledPixelBufferPool: CVPixelBufferPool? = {
+        var pool: CVPixelBufferPool?
+        let attrs: NSDictionary = [
+            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey: 1920,
+            kCVPixelBufferHeightKey: 1080,
+            kCVPixelBufferIOSurfacePropertiesKey: NSDictionary()
+        ]
+        CVPixelBufferPoolCreate(nil, nil, attrs, &pool)
+        return pool
+    }()
+
     private init() {}
 
     // MARK: - Lifecycle
@@ -103,16 +118,18 @@ final class StreamingService: ObservableObject {
 
     // MARK: - Frame Injection (called from RecordingManager's processingQueue)
 
-    /// Video: wrap CVPixelBuffer (with overlay) in CMSampleBuffer and pass to
-    /// HaishinKit's internal H.264 encoder. This populates the onMetaData frame
-    /// (width, height, videocodecid) that YouTube needs before it will display video.
+    /// Video: scale 4K → 1080p via CIContext (GPU), wrap in CMSampleBuffer,
+    /// pass to HaishinKit's internal H.264 encoder.
     nonisolated func appendVideoBuffer(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
         guard let stream else { return }
+
+        // Scale from 4K to 1080p — VTCompressionSession requires exact dimension match
+        guard let scaled = scale(pixelBuffer) else { return }
 
         var formatDesc: CMFormatDescription?
         CMVideoFormatDescriptionCreateForImageBuffer(
             allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
+            imageBuffer: scaled,
             formatDescriptionOut: &formatDesc)
         guard let fd = formatDesc else { return }
 
@@ -123,7 +140,7 @@ final class StreamingService: ObservableObject {
         var sampleBuffer: CMSampleBuffer?
         CMSampleBufferCreateForImageBuffer(
             allocator: kCFAllocatorDefault,
-            imageBuffer: pixelBuffer,
+            imageBuffer: scaled,
             dataReady: true,
             makeDataReadyCallback: nil,
             refcon: nil,
@@ -132,6 +149,24 @@ final class StreamingService: ObservableObject {
             sampleBufferOut: &sampleBuffer)
         guard let sb = sampleBuffer else { return }
         Task { await stream.append(sb) }
+    }
+
+    nonisolated private func scale(_ pixelBuffer: CVPixelBuffer) -> CVPixelBuffer? {
+        guard let pool = scaledPixelBufferPool else { return nil }
+        let inputW = CVPixelBufferGetWidth(pixelBuffer)
+        let inputH = CVPixelBufferGetHeight(pixelBuffer)
+        guard inputW > 0, inputH > 0 else { return nil }
+
+        var output: CVPixelBuffer?
+        guard CVPixelBufferPoolCreatePixelBuffer(nil, pool, &output) == kCVReturnSuccess,
+              let output else { return nil }
+
+        let scaleX = 1920.0 / Double(inputW)
+        let scaleY = 1080.0 / Double(inputH)
+        let ci = CIImage(cvPixelBuffer: pixelBuffer)
+            .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+        ciContext.render(ci, to: output)
+        return output
     }
 
     /// Audio: pass directly to HaishinKit's AAC encoder
