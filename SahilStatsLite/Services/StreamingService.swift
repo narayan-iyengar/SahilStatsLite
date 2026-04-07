@@ -235,14 +235,23 @@ final class StreamingService: ObservableObject {
             // Audio settings only — video is pre-encoded by VTCompressionSession
             try? await strm.setAudioSettings(AudioCodecSettings(bitRate: 128_000))
 
-        } catch {
-            // Surface maximum detail in the health label so we can diagnose without Xcode
-            var detail = error.localizedDescription
-            let ns = error as NSError
-            detail = "[\(ns.domain):\(ns.code)] \(ns.localizedDescription)"
-            if let underlying = ns.userInfo[NSUnderlyingErrorKey] as? NSError {
-                detail += " | underlying: [\(underlying.domain):\(underlying.code)]"
+        } catch let e as RTMPConnection.Error {
+            let detail: String
+            switch e {
+            case .invalidState:              detail = "RTMPConn.invalidState"
+            case .unsupportedCommand(let c): detail = "RTMPConn.unsupportedCommand(\(c))"
+            case .connectionTimedOut:        detail = "RTMPConn.connectionTimedOut"
+            case .socketErrorOccurred(let s): detail = "RTMPConn.socketError: \(s?.localizedDescription ?? "nil")"
+            case .requestTimedOut:           detail = "RTMPConn.requestTimedOut"
+            case .requestFailed(let r):      detail = "RTMPConn.requestFailed: \(r)"
             }
+            health = .failed(detail)
+            isStreaming = false
+            self.stream = nil
+            destroyCompressor()
+            debugPrint("[Stream] ❌ \(detail)")
+        } catch {
+            let detail = "unexpected: \(error)"
             health = .failed(detail)
             isStreaming = false
             self.stream = nil
