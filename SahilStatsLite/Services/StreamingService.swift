@@ -88,14 +88,18 @@ final class StreamingService: ObservableObject {
         health = .connecting
         isStreaming = true
 
-        // Auto-create broadcast with correct settings if authorized
+        // Auto-create broadcast if authorized — gracefully skips if account has restrictions
         if YouTubeService.shared.isAuthorized {
             let title = opponent.isEmpty ? "Sahil's Basketball Game" : "Sahil vs \(opponent)"
-            if let (id, watchURL) = try? await YouTubeService.shared.createBroadcast(title: title) {
+            do {
+                let (id, watchURL) = try await YouTubeService.shared.createBroadcast(title: title)
                 currentBroadcastId = id
                 liveStreamURL = watchURL
                 try? await YouTubeService.shared.startBroadcast(broadcastId: id, streamKey: savedStreamKey)
                 debugLog("📡 Broadcast ready: \(watchURL)")
+            } catch {
+                // Live streaming API disabled (policy/verification) — RTMP still works via manual Studio setup
+                debugLog("⚠️ Auto-broadcast skipped (\(error.localizedDescription)) — use YouTube Studio manually")
             }
         }
 
