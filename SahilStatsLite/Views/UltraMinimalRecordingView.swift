@@ -74,6 +74,7 @@ struct UltraMinimalRecordingView: View {
     @State private var hasCameraStarted: Bool = false
     @State private var hasGameStarted: Bool = false
     @State private var isPulsing: Bool = false
+    @State private var showLinkCopied: Bool = false
     @State private var currentZoom: CGFloat = 1.0
 
     // Computed
@@ -543,27 +544,27 @@ struct UltraMinimalRecordingView: View {
                     Text("LIVE")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(isClockRunning ? .green : .orange)
-                    // YouTube stream indicator + copy link button
+                    // Tap "YT LIVE" to copy the watch link — the indicator IS the share button
                     if streamingService.health.isActive {
-                        HStack(spacing: 2) {
-                            Image(systemName: "dot.radiowaves.left.and.right")
-                                .font(.system(size: 8))
-                                .foregroundColor(.red)
-                            Text("YT")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(.red)
-                        }
-                        // Copy live link button — tap to share with parents
-                        if !streamingService.liveStreamURL.isEmpty {
-                            Button {
+                        Button {
+                            if !streamingService.liveStreamURL.isEmpty {
                                 UIPasteboard.general.string = streamingService.liveStreamURL
                                 UINotificationFeedbackGenerator().notificationOccurred(.success)
-                            } label: {
-                                Image(systemName: "link.badge.plus")
-                                    .font(.system(size: 9))
-                                    .foregroundColor(.cyan)
+                                showLinkCopied = true
+                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+                                    showLinkCopied = false
+                                }
                             }
+                        } label: {
+                            HStack(spacing: 2) {
+                                Image(systemName: "dot.radiowaves.left.and.right")
+                                    .font(.system(size: 8))
+                                Text(showLinkCopied ? "Copied!" : "YT")
+                                    .font(.system(size: 8, weight: .bold))
+                            }
+                            .foregroundColor(showLinkCopied ? .cyan : .red)
                         }
+                        .buttonStyle(.plain)
                     }
                 }
             } else if isClockRunning {
