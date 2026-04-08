@@ -324,21 +324,26 @@ final class SahilRTMPStreamer: @unchecked Sendable {
 
     func appendVideo(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
         guard running else { return }
-        // Scale to 1080p — VT session is configured for 1920×1080, input is 4K
+        // Use a clean BGRA test frame to verify RTMP format is correct.
+        // If YouTube shows a green frame, RTMP is fine and camera pipeline needs fixing.
         let inputBuf: CVPixelBuffer
-        let inW = CVPixelBufferGetWidth(pixelBuffer)
-        let inH = CVPixelBufferGetHeight(pixelBuffer)
-        if inW > 1920 || inH > 1080, let pool = scaledPool {
-            var scaled: CVPixelBuffer?
-            if CVPixelBufferPoolCreatePixelBuffer(nil, pool, &scaled) == kCVReturnSuccess,
-               let out = scaled {
-                let scaleX = 1920.0 / Double(inW)
-                let scaleY = 1080.0 / Double(inH)
-                let ci = CIImage(cvPixelBuffer: pixelBuffer)
-                    .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
-                ciCtx.render(ci, to: out)
-                inputBuf = out
-            } else { inputBuf = pixelBuffer }
+        var testBuf: CVPixelBuffer?
+        let attrs: NSDictionary = [kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+                                    kCVPixelBufferWidthKey: 1920,
+                                    kCVPixelBufferHeightKey: 1080]
+        if CVPixelBufferCreate(kCFAllocatorDefault, 1920, 1080,
+                               kCVPixelFormatType_32BGRA, attrs, &testBuf) == kCVReturnSuccess,
+           let buf = testBuf {
+            CVPixelBufferLockBaseAddress(buf, [])
+            let base = CVPixelBufferGetBaseAddress(buf)!
+            let ptr = base.assumingMemoryBound(to: UInt8.self)
+            let count = CVPixelBufferGetDataSize(buf)
+            // Green frame — easy to spot in YouTube preview
+            for i in stride(from: 0, to: count, by: 4) {
+                ptr[i] = 0; ptr[i+1] = 200; ptr[i+2] = 0; ptr[i+3] = 255
+            }
+            CVPixelBufferUnlockBaseAddress(buf, [])
+            inputBuf = buf
         } else { inputBuf = pixelBuffer }
 
         if vtSession == nil { setupVT(1920, 1080) }
