@@ -348,16 +348,20 @@ final class SahilRTMPStreamer: @unchecked Sendable {
             debugPrint("[SahilRTMP] formatDesc mediaType=\(mt) subType=\(ms)")
             if let seqData = avcSeqHeader(fd: fd, ts: ts, sid: streamId) {
                 c.send(content: seqData, completion: .idempotent)
-                debugPrint("[SahilRTMP] ✅ AVC sequence header sent (\(seqData.count) bytes)")
+                // Dump first 30 bytes of sequence header to verify avcC format
+                let hex = seqData.prefix(30).map { String(format: "%02x", $0) }.joined(separator: " ")
+                debugPrint("[SahilRTMP] ✅ AVC seq header \(seqData.count)B: \(hex)")
             } else {
-                debugPrint("[SahilRTMP] ❌ avcSeqHeader returned nil — SPS/PPS unavailable")
+                debugPrint("[SahilRTMP] ❌ avcSeqHeader nil — SPS/PPS unavailable")
             }
         }
         if let frameData = avcFrame(sb: sb, ts: ts, sid: streamId, isKey: isKey) {
             c.send(content: frameData, completion: .idempotent)
-            if isKey { debugPrint("[SahilRTMP] 🎬 keyframe sent ts=\(ts) \(frameData.count)B") }
+            if isKey {
+                debugPrint("[SahilRTMP] 🎬 keyframe ts=\(ts) \(frameData.count)B first12:\(frameData.prefix(12).map{String(format:"%02x",$0)}.joined(separator:" "))")
+            }
         } else {
-            debugPrint("[SahilRTMP] ⚠️ avcFrame returned nil")
+            debugPrint("[SahilRTMP] ⚠️ avcFrame nil isKey=\(isKey) ts=\(ts)")
         }
     }
 
