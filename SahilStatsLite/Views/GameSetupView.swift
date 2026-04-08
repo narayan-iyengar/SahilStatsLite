@@ -25,6 +25,7 @@ struct GameSetupView: View {
     @State private var location: String = ""
     @State private var halfLength: Int = 18  // AAU: 18 or 20 minute halves
     @State private var recordVideo: Bool = true  // Toggle for video recording
+    @State private var streamLive: Bool = StreamingService.shared.streamingEnabled  // Per-game streaming
 
     @FocusState private var isOpponentFocused: Bool
 
@@ -133,6 +134,26 @@ struct GameSetupView: View {
 
                             Toggle("", isOn: $recordVideo)
                                 .tint(.orange)
+                        }
+                        .padding()
+                        .background(Color(.systemBackground))
+                        .cornerRadius(12)
+                    }
+
+                    // Stream Live — only shown when recording video and stream key is set
+                    if recordVideo && !appState.isLogOnly && !StreamingService.shared.savedStreamKey.isEmpty {
+                        HStack {
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text("Stream Live")
+                                    .font(.subheadline)
+                                    .foregroundColor(.secondary)
+                                Text(streamLive ? "YouTube • parents can watch" : "Record only, no stream")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                            }
+                            Spacer()
+                            Toggle("", isOn: $streamLive)
+                                .tint(.red)
                         }
                         .padding()
                         .background(Color(.systemBackground))
@@ -265,6 +286,8 @@ struct GameSetupView: View {
             appState.currentScreen = .statsEntry
         } else {
             appState.isStatsOnly = !recordVideo
+            // Apply per-game streaming decision
+            StreamingService.shared.streamingEnabled = streamLive && recordVideo
             appState.currentScreen = .recording
         }
     }

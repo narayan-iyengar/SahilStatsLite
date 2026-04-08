@@ -2232,12 +2232,6 @@ struct SettingsView: View {
                 // App Info Section
                 // YouTube Live Streaming
                 Section("YouTube Live") {
-                    Toggle("Stream Games Live", isOn: Binding(
-                        get: { StreamingService.shared.streamingEnabled },
-                        set: { StreamingService.shared.streamingEnabled = $0 }
-                    ))
-                    .tint(.red)
-
                     HStack {
                         Image(systemName: "key.fill")
                             .foregroundColor(.secondary)
