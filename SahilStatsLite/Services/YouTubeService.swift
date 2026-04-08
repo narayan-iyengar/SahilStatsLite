@@ -64,7 +64,9 @@ class YouTubeService: NSObject, ObservableObject {
             throw YouTubeError.noViewController
         }
 
-        let scopes = ["https://www.googleapis.com/auth/youtube.upload"]
+        // youtube scope needed for live broadcast management (create/start/end broadcasts)
+        let scopes = ["https://www.googleapis.com/auth/youtube",
+                      "https://www.googleapis.com/auth/youtube.upload"]
 
         // Use existing Google Sign-In user if available
         if let currentUser = GIDSignIn.sharedInstance.currentUser {
@@ -152,6 +154,98 @@ class YouTubeService: NSObject, ObservableObject {
             currentUploadingGameID = nil
             uploadProgress = 0
         }
+    }
+
+    // MARK: - Live Broadcast Management
+
+    /// Creates an unlisted Sports broadcast, returns (broadcastId, watchURL).
+    /// Call before streaming starts to get the watch URL and prepare YouTube.
+    func createBroadcast(title: String) async throws -> (id: String, watchURL: String) {
+        let token = try await getFreshAccessToken()
+        let now = ISO8601DateFormatter().string(from: Date())
+
+        let body: [String: Any] = [
+            "snippet": [
+                "title": title,
+                "scheduledStartTime": now,
+                "description": "Sahil's basketball game streamed live."
+            ],
+            "status": [
+                "privacyStatus": "unlisted",
+                "selfDeclaredMadeForKids": false
+            ],
+            "contentDetails": [
+                "monitorStream": ["enableMonitorStream": false],
+                "enableAutoStart": true,
+                "enableAutoStop": true,
+                "latencyPreference": "ultraLow"
+            ]
+        ]
+
+        var req = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails")!)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try JSONSerialization.data(withJSONObject: body)
+
+        let (data, _) = try await URLSession.shared.data(for: req)
+        guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let id = json["id"] as? String else {
+            throw YouTubeError.uploadFailed("Broadcast creation failed")
+        }
+
+        // Set category to Sports (17) via video update
+        try? await setCategoryAndBindStream(broadcastId: id, token: token)
+
+        let watchURL = "https://youtube.com/live/\(id)"
+        debugPrint("📡 Broadcast created: \(id) → \(watchURL)")
+        return (id, watchURL)
+    }
+
+    private func setCategoryAndBindStream(broadcastId: String, token: String) async throws {
+        // Update the broadcast video's category to Sports (17)
+        let body: [String: Any] = ["id": broadcastId,
+                                    "snippet": ["categoryId": "17",
+                                                "title": "x"]] // title required but ignored
+        var req = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/videos?part=snippet")!)
+        req.httpMethod = "PUT"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: body)
+        _ = try? await URLSession.shared.data(for: req)
+    }
+
+    /// Bind the broadcast to the default stream key and transition to live.
+    func startBroadcast(broadcastId: String, streamKey: String) async throws {
+        let token = try await getFreshAccessToken()
+
+        // Find the liveStream ID matching the stream key
+        var listReq = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveStreams?part=id,cdn&mine=true&maxResults=10")!)
+        listReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (listData, _) = try await URLSession.shared.data(for: listReq)
+        guard let listJson = try? JSONSerialization.jsonObject(with: listData) as? [String: Any],
+              let items = listJson["items"] as? [[String: Any]],
+              let streamId = items.first.flatMap({ ($0["id"] as? String) }) else {
+            debugPrint("📡 No liveStream found — broadcast may auto-bind")
+            return
+        }
+
+        // Bind stream to broadcast
+        var bindReq = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveBroadcasts/bind?id=\(broadcastId)&streamId=\(streamId)&part=id")!)
+        bindReq.httpMethod = "POST"
+        bindReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        _ = try? await URLSession.shared.data(for: bindReq)
+        debugPrint("📡 Broadcast \(broadcastId) bound to stream \(streamId)")
+    }
+
+    /// End the broadcast cleanly.
+    func endBroadcast(broadcastId: String) async {
+        guard let token = try? await getFreshAccessToken() else { return }
+        var req = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveBroadcasts/transition?broadcastStatus=complete&id=\(broadcastId)&part=id")!)
+        req.httpMethod = "POST"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        _ = try? await URLSession.shared.data(for: req)
+        debugPrint("📡 Broadcast \(broadcastId) ended")
     }
 
     private func initializeUpload(title: String, description: String, accessToken: String, fileSize: Int) async throws -> URL {

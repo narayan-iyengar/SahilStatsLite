@@ -863,7 +863,7 @@ struct UltraMinimalRecordingView: View {
             // Start live stream if enabled and key is configured
             if StreamingService.shared.streamingEnabled && !StreamingService.shared.savedStreamKey.isEmpty {
                 recordingManager.isStreamingActive = true
-                Task { await StreamingService.shared.startStream() }
+                Task { await StreamingService.shared.startStream(opponent: appState.currentGame?.opponent ?? "") }
             }
         }
 

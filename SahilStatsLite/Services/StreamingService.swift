@@ -64,6 +64,8 @@ final class StreamingService: ObservableObject {
     }
 
     private let rtmp = SahilRTMPStreamer()
+    private(set) var currentBroadcastId: String?
+
     private init() {
         rtmp.onLive = { [weak self] in
             self?.health = .live
@@ -78,19 +80,35 @@ final class StreamingService: ObservableObject {
 
     // MARK: - Lifecycle
 
-    func startStream() async {
+    func startStream(opponent: String = "") async {
         guard !savedStreamKey.isEmpty else {
             health = .failed("No stream key — add one in Settings")
             return
         }
         health = .connecting
         isStreaming = true
+
+        // Auto-create broadcast with correct settings if authorized
+        if YouTubeService.shared.isAuthorized {
+            let title = opponent.isEmpty ? "Sahil's Basketball Game" : "Sahil vs \(opponent)"
+            if let (id, watchURL) = try? await YouTubeService.shared.createBroadcast(title: title) {
+                currentBroadcastId = id
+                liveStreamURL = watchURL
+                try? await YouTubeService.shared.startBroadcast(broadcastId: id, streamKey: savedStreamKey)
+                debugLog("📡 Broadcast ready: \(watchURL)")
+            }
+        }
+
         debugLog("Starting stream with key \(savedStreamKey.prefix(8))...")
         rtmp.start(streamKey: savedStreamKey)
     }
 
     func stopStream() async {
         rtmp.stop()
+        if let broadcastId = currentBroadcastId {
+            await YouTubeService.shared.endBroadcast(broadcastId: broadcastId)
+            currentBroadcastId = nil
+        }
         isStreaming = false
         health = .idle
     }
