@@ -2260,9 +2260,23 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
+                        if !StreamingService.shared.liveStreamURL.isEmpty {
+                            Button {
+                                let url = StreamingService.shared.liveStreamURL
+                                let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                                if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                                   let root = scene.windows.first?.rootViewController {
+                                    root.present(av, animated: true)
+                                }
+                            } label: {
+                                Image(systemName: "square.and.arrow.up")
+                                    .font(.caption)
+                                    .foregroundColor(.accentColor)
+                            }
+                        }
                     }
 
-                    Text("Stream key & watch URL from YouTube Studio → Go Live. Set Latency=Ultra-low, Privacy=Unlisted, Category=Sports. The 🔗 button in recording copies the watch URL to share with parents.")
+                    Text("Set once. Before each game: tap ↑ to share the watch link with parents in the group chat, then mount the phone on the gimbal. Set Latency=Ultra-low, Privacy=Unlisted, Category=Sports in YouTube Studio.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

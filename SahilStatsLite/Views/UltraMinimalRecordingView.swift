@@ -544,27 +544,16 @@ struct UltraMinimalRecordingView: View {
                     Text("LIVE")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(isClockRunning ? .green : .orange)
-                    // Tap "YT LIVE" to copy the watch link — the indicator IS the share button
+                    // Simple YT LIVE indicator — no tap needed, phone is on gimbal
                     if streamingService.health.isActive {
-                        Button {
-                            if !streamingService.liveStreamURL.isEmpty {
-                                UIPasteboard.general.string = streamingService.liveStreamURL
-                                UINotificationFeedbackGenerator().notificationOccurred(.success)
-                                showLinkCopied = true
-                                DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
-                                    showLinkCopied = false
-                                }
-                            }
-                        } label: {
-                            HStack(spacing: 2) {
-                                Image(systemName: "dot.radiowaves.left.and.right")
-                                    .font(.system(size: 8))
-                                Text(showLinkCopied ? "Copied!" : "YT")
-                                    .font(.system(size: 8, weight: .bold))
-                            }
-                            .foregroundColor(showLinkCopied ? .cyan : .red)
+                        HStack(spacing: 2) {
+                            Image(systemName: "dot.radiowaves.left.and.right")
+                                .font(.system(size: 8))
+                                .foregroundColor(.red)
+                            Text("YT")
+                                .font(.system(size: 8, weight: .bold))
+                                .foregroundColor(.red)
                         }
-                        .buttonStyle(.plain)
                     }
                 }
             } else if isClockRunning {
