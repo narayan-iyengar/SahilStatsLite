@@ -543,7 +543,7 @@ struct UltraMinimalRecordingView: View {
                     Text("LIVE")
                         .font(.system(size: 10, weight: .bold))
                         .foregroundColor(isClockRunning ? .green : .orange)
-                    // YouTube stream indicator
+                    // YouTube stream indicator + copy link button
                     if streamingService.health.isActive {
                         HStack(spacing: 2) {
                             Image(systemName: "dot.radiowaves.left.and.right")
@@ -552,6 +552,17 @@ struct UltraMinimalRecordingView: View {
                             Text("YT")
                                 .font(.system(size: 8, weight: .bold))
                                 .foregroundColor(.red)
+                        }
+                        // Copy live link button — tap to share with parents
+                        if !streamingService.liveStreamURL.isEmpty {
+                            Button {
+                                UIPasteboard.general.string = streamingService.liveStreamURL
+                                UINotificationFeedbackGenerator().notificationOccurred(.success)
+                            } label: {
+                                Image(systemName: "link.badge.plus")
+                                    .font(.system(size: 9))
+                                    .foregroundColor(.cyan)
+                            }
                         }
                     }
                 }

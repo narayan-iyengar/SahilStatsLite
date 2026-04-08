@@ -45,6 +45,7 @@ final class StreamingService: ObservableObject {
 
     static let streamKeyDefaultsKey        = "SahilStats_YouTubeStreamKey"
     static let streamingEnabledDefaultsKey = "SahilStats_StreamingEnabled"
+    static let liveURLDefaultsKey          = "SahilStats_YouTubeLiveURL"
 
     var savedStreamKey: String {
         get { UserDefaults.standard.string(forKey: Self.streamKeyDefaultsKey) ?? "" }
@@ -54,6 +55,12 @@ final class StreamingService: ObservableObject {
     var streamingEnabled: Bool {
         get { UserDefaults.standard.bool(forKey: Self.streamingEnabledDefaultsKey) }
         set { UserDefaults.standard.set(newValue, forKey: Self.streamingEnabledDefaultsKey) }
+    }
+
+    /// The YouTube watch URL shared with parents (e.g. youtube.com/@niyengar/live)
+    var liveStreamURL: String {
+        get { UserDefaults.standard.string(forKey: Self.liveURLDefaultsKey) ?? "" }
+        set { UserDefaults.standard.set(newValue, forKey: Self.liveURLDefaultsKey) }
     }
 
     private let rtmp = SahilRTMPStreamer()
