@@ -310,6 +310,11 @@ final class SahilRTMPStreamer: @unchecked Sendable {
             debugPrint("[SahilRTMP] ✅ LIVE")
             await MainActor.run { self.onLive?() }
 
+            // Send silent AAC audio at 44100Hz — guarantees YouTube gets A/V sync point.
+            // Without audio, YouTube stays at "Preparing stream" indefinitely.
+            // Real mic audio from appendAudio() supplements this when available.
+            Task { [weak self] in await self?.silentAudioLoop(conn: c) }
+
             // Drain incoming (window ack, ping requests, etc.) until stop() is called
             while running {
                 guard let _ = try? await netRecv(c, exactly: 1) else { break }
@@ -377,6 +382,45 @@ final class SahilRTMPStreamer: @unchecked Sendable {
     func appendAudio(_ sampleBuffer: CMSampleBuffer) {
         guard running, sentAudioSeqHdr else { return }
         encodeAudio(sampleBuffer)
+    }
+
+    // MARK: - Silent Audio (guarantees A/V sync for YouTube preview)
+
+    private func silentAudioLoop(conn: NWConnection) async {
+        let pcmFmt = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                   sampleRate: 44100, channels: 2, interleaved: false)!
+        guard let aacFmt = AVAudioFormat(settings: [AVFormatIDKey: kAudioFormatMPEG4AAC,
+                                                     AVSampleRateKey: 44100,
+                                                     AVNumberOfChannelsKey: 2,
+                                                     AVEncoderBitRateKey: 128_000]),
+              let conv = AVAudioConverter(from: pcmFmt, to: aacFmt) else {
+            debugPrint("[SahilRTMP] ❌ silent audio converter failed")
+            return
+        }
+        let maxPkt = max(768, Int(aacFmt.streamDescription.pointee.mBytesPerPacket))
+        var audioTs: UInt32 = 0
+        let nsPerFrame: UInt64 = 23_219_954  // 1024/44100 seconds in nanoseconds
+
+        debugPrint("[SahilRTMP] 🔇 silent audio loop started")
+        while running {
+            guard let silentBuf = AVAudioPCMBuffer(pcmFormat: pcmFmt, frameCapacity: 1024) else { break }
+            silentBuf.frameLength = 1024
+            // Leave samples at 0 (silence — pcmFormatFloat32 zero-init'd)
+            let outBuf = AVAudioCompressedBuffer(format: aacFmt, packetCapacity: 1,
+                                                  maximumPacketSize: maxPkt)
+            var convErr: NSError?
+            conv.convert(to: outBuf, error: &convErr) { _, status in
+                status.pointee = .haveData; return silentBuf
+            }
+            if convErr == nil, outBuf.byteLength > 0 {
+                let msg = aacFrame(Data(bytes: outBuf.data, count: Int(outBuf.byteLength)),
+                                   ts: audioTs, sid: streamId)
+                conn.send(content: msg, completion: .idempotent)
+            }
+            audioTs &+= 23  // ~23ms per AAC frame
+            try? await Task.sleep(nanoseconds: nsPerFrame)
+        }
+        debugPrint("[SahilRTMP] 🔇 silent audio loop exited")
     }
 
     // MARK: - Video Sending
