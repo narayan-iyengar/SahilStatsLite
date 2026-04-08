@@ -156,6 +156,24 @@ struct HomeView: View {
 
             Spacer()
 
+            // Share live link — one tap before mounting phone on gimbal
+            if StreamingService.shared.streamingEnabled,
+               !StreamingService.shared.liveStreamURL.isEmpty {
+                Button {
+                    let url = StreamingService.shared.liveStreamURL
+                    let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
+                    if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                       let root = scene.windows.first?.rootViewController {
+                        root.present(av, animated: true)
+                    }
+                } label: {
+                    Image(systemName: "play.rectangle.fill")
+                        .font(.title2)
+                        .foregroundColor(.red)
+                }
+                .frame(width: 32, height: 32)
+            }
+
             // New Game button
             Button {
                 appState.isLogOnly = false
@@ -2260,23 +2278,10 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                         .keyboardType(.URL)
-                        if !StreamingService.shared.liveStreamURL.isEmpty {
-                            Button {
-                                let url = StreamingService.shared.liveStreamURL
-                                let av = UIActivityViewController(activityItems: [url], applicationActivities: nil)
-                                if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                                   let root = scene.windows.first?.rootViewController {
-                                    root.present(av, animated: true)
-                                }
-                            } label: {
-                                Image(systemName: "square.and.arrow.up")
-                                    .font(.caption)
-                                    .foregroundColor(.accentColor)
-                            }
-                        }
+                        .foregroundColor(.secondary)
                     }
 
-                    Text("Set once. Before each game: tap ↑ to share the watch link with parents in the group chat, then mount the phone on the gimbal. Set Latency=Ultra-low, Privacy=Unlisted, Category=Sports in YouTube Studio.")
+                    Text("Set both once. The ▶︎ button on the home screen shares the watch link with parents before you mount the phone. YouTube Studio: Latency=Ultra-low, Privacy=Unlisted, Category=Sports.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }
