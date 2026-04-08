@@ -90,10 +90,8 @@ private func metadataCmd(sid: UInt32) -> Data {
     makeChunk(csid: 4, msgType: 0x12, streamId: sid, ts: 0,
               payload: AMF0.string("@setDataFrame") + AMF0.string("onMetaData") +
               AMF0.ecmaArray([("duration", AMF0.number(0)), ("width", AMF0.number(1920)),
-                           ("height", AMF0.number(1080)), ("videocodecid", AMF0.number(7)),
-                           ("videodatarate", AMF0.number(6000)), ("framerate", AMF0.number(30)),
-                           ("audiocodecid", AMF0.number(10)), ("audiodatarate", AMF0.number(128)),
-                           ("audiosamplerate", AMF0.number(44100))]))
+                              ("height", AMF0.number(1080)), ("videocodecid", AMF0.number(7)),
+                              ("videodatarate", AMF0.number(6000)), ("framerate", AMF0.number(30))]))
 }
 
 // MARK: - FLV Video
@@ -304,8 +302,9 @@ final class SahilRTMPStreamer: @unchecked Sendable {
             debugPrint("[SahilRTMP] Publish.Start received")
 
             try await netSend(c, data: metadataCmd(sid: streamId))
-            try await netSend(c, data: aacSeqHeader(sid: streamId))
-            sentAudioSeqHdr = true
+            // Audio disabled for diagnostic — isolating video format issue
+            // try await netSend(c, data: aacSeqHeader(sid: streamId))
+            // sentAudioSeqHdr = true
             running = true
             debugPrint("[SahilRTMP] ✅ LIVE")
             await MainActor.run { self.onLive?() }
