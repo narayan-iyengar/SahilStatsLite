@@ -324,14 +324,40 @@ final class SahilRTMPStreamer: @unchecked Sendable {
 
     func appendVideo(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
         guard running else { return }
-        // Use the actual camera pixel buffer — stop green frame test
-        let inputBuf = pixelBuffer
-
-        if vtSession == nil {
-            let w = CVPixelBufferGetWidth(inputBuf)
-            let h = CVPixelBufferGetHeight(inputBuf)
-            setupVT(min(w, 1920), min(h, 1080))
+        // Scale camera frame to 1920×1080 BGRA — VT requires input to match output dimensions.
+        // Green BGRA 1920×1080 showed "Preparing stream" (YouTube decoded it).
+        // Raw 4K NV12 camera frame produces corrupt H.264 (YouTube shows black).
+        let inputBuf: CVPixelBuffer
+        let inW = CVPixelBufferGetWidth(pixelBuffer)
+        let inH = CVPixelBufferGetHeight(pixelBuffer)
+        if inW > 1920 || inH > 1080 {
+            // Create clean BGRA 1920×1080 buffer and render scaled camera frame into it
+            var scaled: CVPixelBuffer?
+            let attrs: NSDictionary = [
+                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+                kCVPixelBufferWidthKey: 1920,
+                kCVPixelBufferHeightKey: 1080,
+                kCVPixelBufferIOSurfacePropertiesKey: NSDictionary()
+            ]
+            if CVPixelBufferCreate(kCFAllocatorDefault, 1920, 1080,
+                                   kCVPixelFormatType_32BGRA, attrs, &scaled) == kCVReturnSuccess,
+               let out = scaled {
+                let scaleX = 1920.0 / Double(inW)
+                let scaleY = 1080.0 / Double(inH)
+                // Use sRGB colorspace to avoid HDR/wide-color issues with YouTube decoder
+                let ci = CIImage(cvPixelBuffer: pixelBuffer)
+                    .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+                ciCtx.render(ci, to: out, bounds: CGRect(x: 0, y: 0, width: 1920, height: 1080),
+                             colorSpace: CGColorSpaceCreateDeviceRGB())
+                inputBuf = out
+            } else {
+                inputBuf = pixelBuffer  // fallback (shouldn't happen)
+            }
+        } else {
+            inputBuf = pixelBuffer
         }
+
+        if vtSession == nil { setupVT(1920, 1080) }
         guard let session = vtSession else { return }
         if videoStart == .invalid { videoStart = timestamp }
         frameCount += 1
