@@ -249,6 +249,7 @@ final class SahilRTMPStreamer: @unchecked Sendable {
     nonisolated(unsafe) private var audioConverter: AVAudioConverter?
     nonisolated(unsafe) private var audioStart: CMTime = .invalid
     nonisolated(unsafe) private var sentAudioSeqHdr = false
+    nonisolated(unsafe) private var realAudioActive = false  // true once mic audio flows
 
     var onLive: (() -> Void)?
     var onFailed: ((String) -> Void)?
@@ -401,8 +402,10 @@ final class SahilRTMPStreamer: @unchecked Sendable {
         var audioTs: UInt32 = 0
         let nsPerFrame: UInt64 = 23_219_954  // 1024/44100 seconds in nanoseconds
 
-        debugPrint("[SahilRTMP] 🔇 silent audio loop started")
+        debugPrint("[SahilRTMP] 🔇 silent audio loop started — stops when mic audio flows")
         while running {
+            // Step aside once real mic audio is established
+            if realAudioActive { try? await Task.sleep(nanoseconds: 1_000_000_000); continue }
             guard let silentBuf = AVAudioPCMBuffer(pcmFormat: pcmFmt, frameCapacity: 1024) else { break }
             silentBuf.frameLength = 1024
             // Leave samples at 0 (silence — pcmFormatFloat32 zero-init'd)
@@ -446,12 +449,18 @@ final class SahilRTMPStreamer: @unchecked Sendable {
         guard let c = conn,
               let inputFmt = sb.formatDescription.flatMap({ AVAudioFormat(cmAudioFormatDescription: $0) }) else { return }
         if audioConverter == nil {
+            // Match input channel count — iPhone mic is mono, forcing stereo causes converter failure
+            let inChannels = inputFmt.channelCount
             guard let aacFmt = AVAudioFormat(settings: [AVFormatIDKey: kAudioFormatMPEG4AAC,
-                                                         AVSampleRateKey: 44100,
-                                                         AVNumberOfChannelsKey: 2,
+                                                         AVSampleRateKey: inputFmt.sampleRate,
+                                                         AVNumberOfChannelsKey: inChannels,
                                                          AVEncoderBitRateKey: 128_000]),
-                  let conv = AVAudioConverter(from: inputFmt, to: aacFmt) else { return }
+                  let conv = AVAudioConverter(from: inputFmt, to: aacFmt) else {
+                debugPrint("[SahilRTMP] ⚠️ AAC converter init failed — staying on silent audio")
+                return
+            }
             audioConverter = conv
+            debugPrint("[SahilRTMP] 🎤 AAC converter ready: \(inChannels)ch @\(Int(inputFmt.sampleRate))Hz")
         }
         guard let conv = audioConverter else { return }
         if audioStart == .invalid { audioStart = sb.presentationTimeStamp }
@@ -471,6 +480,7 @@ final class SahilRTMPStreamer: @unchecked Sendable {
         let ts = msSince(sb.presentationTimeStamp, start: audioStart)
         c.send(content: aacFrame(Data(bytes: outBuf.data, count: Int(outBuf.byteLength)), ts: ts, sid: streamId),
                completion: .idempotent)
+        realAudioActive = true  // mic audio confirmed working — silent loop backs off
     }
 
     // MARK: - VTCompressionSession
