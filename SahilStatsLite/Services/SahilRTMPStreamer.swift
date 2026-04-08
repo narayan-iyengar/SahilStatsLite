@@ -11,6 +11,7 @@ import Network
 import AVFoundation
 import VideoToolbox
 import CoreMedia
+import CoreImage
 
 // MARK: - AMF0 Encoding
 
@@ -231,6 +232,20 @@ final class SahilRTMPStreamer: @unchecked Sendable {
     nonisolated(unsafe) private var videoStart: CMTime = .invalid
     nonisolated(unsafe) private var sentVideoSeqHdr = false
 
+    // Scale 4K input → 1080p before VT encode
+    // VTCompressionSession does NOT auto-scale — mismatched input produces corrupt H.264
+    nonisolated(unsafe) private let ciCtx = CIContext(options: [.useSoftwareRenderer: false])
+    nonisolated(unsafe) private var scaledPool: CVPixelBufferPool? = {
+        var pool: CVPixelBufferPool?
+        CVPixelBufferPoolCreate(nil, nil, [
+            kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
+            kCVPixelBufferWidthKey: 1920,
+            kCVPixelBufferHeightKey: 1080,
+            kCVPixelBufferIOSurfacePropertiesKey: NSDictionary()
+        ] as NSDictionary, &pool)
+        return pool
+    }()
+
     nonisolated(unsafe) private var audioConverter: AVAudioConverter?
     nonisolated(unsafe) private var audioStart: CMTime = .invalid
     nonisolated(unsafe) private var sentAudioSeqHdr = false
@@ -309,9 +324,24 @@ final class SahilRTMPStreamer: @unchecked Sendable {
 
     func appendVideo(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
         guard running else { return }
-        if vtSession == nil {
-            setupVT(CVPixelBufferGetWidth(pixelBuffer), CVPixelBufferGetHeight(pixelBuffer))
-        }
+        // Scale to 1080p — VT session is configured for 1920×1080, input is 4K
+        let inputBuf: CVPixelBuffer
+        let inW = CVPixelBufferGetWidth(pixelBuffer)
+        let inH = CVPixelBufferGetHeight(pixelBuffer)
+        if inW > 1920 || inH > 1080, let pool = scaledPool {
+            var scaled: CVPixelBuffer?
+            if CVPixelBufferPoolCreatePixelBuffer(nil, pool, &scaled) == kCVReturnSuccess,
+               let out = scaled {
+                let scaleX = 1920.0 / Double(inW)
+                let scaleY = 1080.0 / Double(inH)
+                let ci = CIImage(cvPixelBuffer: pixelBuffer)
+                    .transformed(by: CGAffineTransform(scaleX: scaleX, y: scaleY))
+                ciCtx.render(ci, to: out)
+                inputBuf = out
+            } else { inputBuf = pixelBuffer }
+        } else { inputBuf = pixelBuffer }
+
+        if vtSession == nil { setupVT(1920, 1080) }
         guard let session = vtSession else { return }
         if videoStart == .invalid { videoStart = timestamp }
         frameCount += 1
@@ -319,7 +349,7 @@ final class SahilRTMPStreamer: @unchecked Sendable {
         let props: CFDictionary? = isKey ? [kVTEncodeFrameOptionKey_ForceKeyFrame: true] as CFDictionary : nil
         let capturedIsKey = isKey
         VTCompressionSessionEncodeFrame(
-            session, imageBuffer: pixelBuffer,
+            session, imageBuffer: inputBuf,
             presentationTimeStamp: timestamp, duration: CMTime(value: 1, timescale: 30),
             frameProperties: props, infoFlagsOut: nil,
             outputHandler: { [weak self] status, _, sb in
