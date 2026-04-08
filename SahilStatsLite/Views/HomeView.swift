@@ -2243,7 +2243,20 @@ struct SettingsView: View {
                         .autocorrectionDisabled()
                         .textInputAutocapitalization(.never)
                     }
-                    Text("YouTube Studio → Go Live → Stream key. Set Latency=Ultra-low, Privacy=Unlisted, Category=Sports. Share the watch link with parents once at the start of the season — it never changes.")
+                    HStack {
+                        Image(systemName: "link")
+                            .foregroundColor(.secondary)
+                            .font(.caption)
+                        TextField("Watch link (youtube.com/@you/live)", text: Binding(
+                            get: { StreamingService.shared.liveStreamURL },
+                            set: { StreamingService.shared.liveStreamURL = $0 }
+                        ))
+                        .autocorrectionDisabled()
+                        .textInputAutocapitalization(.never)
+                        .keyboardType(.URL)
+                        .font(.caption)
+                    }
+                    Text("YouTube Studio → Go Live → copy the watch URL. Set Latency=Ultra-low, Privacy=Unlisted. The link appears in Game Setup when you turn streaming on.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

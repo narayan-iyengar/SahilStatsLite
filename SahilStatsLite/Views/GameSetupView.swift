@@ -142,20 +142,53 @@ struct GameSetupView: View {
 
                     // Stream Live — only shown when recording video and stream key is set
                     if recordVideo && !appState.isLogOnly && !StreamingService.shared.savedStreamKey.isEmpty {
-                        HStack {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("Stream Live")
-                                    .font(.subheadline)
-                                    .foregroundColor(.secondary)
-                                Text(streamLive ? "YouTube • parents can watch" : "Record only, no stream")
-                                    .font(.caption)
-                                    .foregroundStyle(.tertiary)
+                        VStack(spacing: 0) {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Text("Stream Live")
+                                        .font(.subheadline)
+                                        .foregroundColor(.secondary)
+                                    Text(streamLive ? "YouTube • parents can watch" : "Record only, no stream")
+                                        .font(.caption)
+                                        .foregroundStyle(.tertiary)
+                                }
+                                Spacer()
+                                Toggle("", isOn: $streamLive)
+                                    .tint(.red)
                             }
-                            Spacer()
-                            Toggle("", isOn: $streamLive)
-                                .tint(.red)
+                            .padding()
+
+                            // Watch link + share — appears when streaming is on
+                            if streamLive && !StreamingService.shared.liveStreamURL.isEmpty {
+                                Divider().padding(.horizontal)
+                                Button {
+                                    let url = StreamingService.shared.liveStreamURL
+                                    let av = UIActivityViewController(
+                                        activityItems: ["Watch Sahil's game live: \(url)"],
+                                        applicationActivities: nil)
+                                    if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                                       let root = scene.windows.first?.rootViewController {
+                                        root.present(av, animated: true)
+                                    }
+                                } label: {
+                                    HStack {
+                                        Image(systemName: "square.and.arrow.up")
+                                            .font(.caption)
+                                        Text("Share watch link with parents")
+                                            .font(.caption)
+                                        Spacer()
+                                        Text(StreamingService.shared.liveStreamURL)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                    }
+                                    .foregroundColor(.red)
+                                    .padding(.horizontal)
+                                    .padding(.vertical, 10)
+                                }
+                            }
                         }
-                        .padding()
                         .background(Color(.systemBackground))
                         .cornerRadius(12)
                     }
