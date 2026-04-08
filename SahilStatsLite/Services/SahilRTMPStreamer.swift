@@ -91,7 +91,9 @@ private func metadataCmd(sid: UInt32) -> Data {
               payload: AMF0.string("@setDataFrame") + AMF0.string("onMetaData") +
               AMF0.ecmaArray([("duration", AMF0.number(0)), ("width", AMF0.number(1920)),
                               ("height", AMF0.number(1080)), ("videocodecid", AMF0.number(7)),
-                              ("videodatarate", AMF0.number(6000)), ("framerate", AMF0.number(30))]))
+                              ("videodatarate", AMF0.number(6000)), ("framerate", AMF0.number(30)),
+                              ("audiocodecid", AMF0.number(10)), ("audiodatarate", AMF0.number(128)),
+                              ("audiosamplerate", AMF0.number(44100))]))
 }
 
 // MARK: - FLV Video
@@ -302,9 +304,8 @@ final class SahilRTMPStreamer: @unchecked Sendable {
             debugPrint("[SahilRTMP] Publish.Start received")
 
             try await netSend(c, data: metadataCmd(sid: streamId))
-            // Audio disabled for diagnostic — isolating video format issue
-            // try await netSend(c, data: aacSeqHeader(sid: streamId))
-            // sentAudioSeqHdr = true
+            try await netSend(c, data: aacSeqHeader(sid: streamId))
+            sentAudioSeqHdr = true
             running = true
             debugPrint("[SahilRTMP] ✅ LIVE")
             await MainActor.run { self.onLive?() }
@@ -323,29 +324,14 @@ final class SahilRTMPStreamer: @unchecked Sendable {
 
     func appendVideo(_ pixelBuffer: CVPixelBuffer, timestamp: CMTime) {
         guard running else { return }
-        // Use a clean BGRA test frame to verify RTMP format is correct.
-        // If YouTube shows a green frame, RTMP is fine and camera pipeline needs fixing.
-        let inputBuf: CVPixelBuffer
-        var testBuf: CVPixelBuffer?
-        let attrs: NSDictionary = [kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
-                                    kCVPixelBufferWidthKey: 1920,
-                                    kCVPixelBufferHeightKey: 1080]
-        if CVPixelBufferCreate(kCFAllocatorDefault, 1920, 1080,
-                               kCVPixelFormatType_32BGRA, attrs, &testBuf) == kCVReturnSuccess,
-           let buf = testBuf {
-            CVPixelBufferLockBaseAddress(buf, [])
-            let base = CVPixelBufferGetBaseAddress(buf)!
-            let ptr = base.assumingMemoryBound(to: UInt8.self)
-            let count = CVPixelBufferGetDataSize(buf)
-            // Green frame — easy to spot in YouTube preview
-            for i in stride(from: 0, to: count, by: 4) {
-                ptr[i] = 0; ptr[i+1] = 200; ptr[i+2] = 0; ptr[i+3] = 255
-            }
-            CVPixelBufferUnlockBaseAddress(buf, [])
-            inputBuf = buf
-        } else { inputBuf = pixelBuffer }
+        // Use the actual camera pixel buffer — stop green frame test
+        let inputBuf = pixelBuffer
 
-        if vtSession == nil { setupVT(1920, 1080) }
+        if vtSession == nil {
+            let w = CVPixelBufferGetWidth(inputBuf)
+            let h = CVPixelBufferGetHeight(inputBuf)
+            setupVT(min(w, 1920), min(h, 1080))
+        }
         guard let session = vtSession else { return }
         if videoStart == .invalid { videoStart = timestamp }
         frameCount += 1
