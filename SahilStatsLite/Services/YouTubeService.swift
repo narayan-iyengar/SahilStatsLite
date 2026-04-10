@@ -182,7 +182,9 @@ class YouTubeService: NSObject, ObservableObject {
             ]
         ]
 
-        var req = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails")!)
+        // onBehalfOfContentOwnerChannel targets Sahil Hoops specifically
+        let urlStr = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails&onBehalfOfContentOwnerChannel=UCUMg4lDQC7cxgpHc5xrOH4w"
+        var req = URLRequest(url: URL(string: urlStr)!)
         req.httpMethod = "POST"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -219,8 +221,8 @@ class YouTubeService: NSObject, ObservableObject {
     func startBroadcast(broadcastId: String, streamKey: String) async throws {
         let token = try await getFreshAccessToken()
 
-        // Find the liveStream ID matching the stream key
-        var listReq = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveStreams?part=id,cdn&mine=true&maxResults=10")!)
+        // Find the liveStream ID on Sahil Hoops channel
+        var listReq = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveStreams?part=id,cdn&mine=true&maxResults=10&onBehalfOfContentOwnerChannel=UCUMg4lDQC7cxgpHc5xrOH4w")!)
         listReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (listData, _) = try await URLSession.shared.data(for: listReq)
         guard let listJson = try? JSONSerialization.jsonObject(with: listData) as? [String: Any],
@@ -241,7 +243,7 @@ class YouTubeService: NSObject, ObservableObject {
     /// End the broadcast cleanly.
     func endBroadcast(broadcastId: String) async {
         guard let token = try? await getFreshAccessToken() else { return }
-        var req = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveBroadcasts/transition?broadcastStatus=complete&id=\(broadcastId)&part=id")!)
+        var req = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveBroadcasts/transition?broadcastStatus=complete&id=\(broadcastId)&part=id&onBehalfOfContentOwnerChannel=UCUMg4lDQC7cxgpHc5xrOH4w")!)
         req.httpMethod = "POST"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         _ = try? await URLSession.shared.data(for: req)
