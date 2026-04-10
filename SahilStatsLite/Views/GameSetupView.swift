@@ -24,8 +24,9 @@ struct GameSetupView: View {
     @State private var opponent: String = ""
     @State private var location: String = ""
     @State private var halfLength: Int = 18  // AAU: 18 or 20 minute halves
-    @State private var recordVideo: Bool = true  // Toggle for video recording
-    @State private var streamLive: Bool = StreamingService.shared.streamingEnabled  // Per-game streaming
+    @State private var recordVideo: Bool = true
+    @State private var streamLive: Bool = StreamingService.shared.streamingEnabled
+    @State private var isCreatingBroadcast: Bool = false
 
     @FocusState private var isOpponentFocused: Bool
 
@@ -155,37 +156,60 @@ struct GameSetupView: View {
                                 Spacer()
                                 Toggle("", isOn: $streamLive)
                                     .tint(.red)
+                                    .onChange(of: streamLive) { _, on in
+                                        guard on, YouTubeService.shared.isAuthorized else { return }
+                                        // Create broadcast NOW — URL ready to share before mounting on gimbal
+                                        isCreatingBroadcast = true
+                                        StreamingService.shared.liveStreamURL = ""
+                                        StreamingService.shared.currentBroadcastId = nil
+                                        let title = opponent.isEmpty ? "Sahil's Basketball Game" : "Sahil vs \(opponent)"
+                                        Task {
+                                            if let (id, url) = try? await YouTubeService.shared.createBroadcast(title: title) {
+                                                await MainActor.run {
+                                                    StreamingService.shared.currentBroadcastId = id
+                                                    StreamingService.shared.liveStreamURL = url
+                                                    isCreatingBroadcast = false
+                                                }
+                                            } else {
+                                                await MainActor.run { isCreatingBroadcast = false }
+                                            }
+                                        }
+                                    }
                             }
                             .padding()
 
-                            // Watch link + share — appears when streaming is on
-                            if streamLive && !StreamingService.shared.liveStreamURL.isEmpty {
+                            // Share button — prominent, appears once broadcast URL is ready
+                            if streamLive {
                                 Divider().padding(.horizontal)
-                                Button {
-                                    let url = StreamingService.shared.liveStreamURL
-                                    let av = UIActivityViewController(
-                                        activityItems: ["Watch Sahil's game live: \(url)"],
-                                        applicationActivities: nil)
-                                    if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                                       let root = scene.windows.first?.rootViewController {
-                                        root.present(av, animated: true)
-                                    }
-                                } label: {
-                                    HStack {
-                                        Image(systemName: "square.and.arrow.up")
-                                            .font(.caption)
-                                        Text("Share watch link with parents")
-                                            .font(.caption)
-                                        Spacer()
-                                        Text(StreamingService.shared.liveStreamURL)
-                                            .font(.caption2)
+                                if isCreatingBroadcast {
+                                    HStack(spacing: 8) {
+                                        ProgressView().scaleEffect(0.8)
+                                        Text("Getting your link…")
+                                            .font(.subheadline)
                                             .foregroundColor(.secondary)
-                                            .lineLimit(1)
-                                            .truncationMode(.middle)
                                     }
-                                    .foregroundColor(.red)
+                                    .padding()
+                                } else if !StreamingService.shared.liveStreamURL.isEmpty {
+                                    Button {
+                                        let url = StreamingService.shared.liveStreamURL
+                                        let av = UIActivityViewController(
+                                            activityItems: ["Watch Sahil's game live: \(url)"],
+                                            applicationActivities: nil)
+                                        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                                           let root = scene.windows.first?.rootViewController {
+                                            root.present(av, animated: true)
+                                        }
+                                    } label: {
+                                        Label("Share with Parents", systemImage: "square.and.arrow.up")
+                                            .font(.subheadline.weight(.semibold))
+                                            .foregroundColor(.white)
+                                            .frame(maxWidth: .infinity)
+                                            .padding(.vertical, 12)
+                                            .background(Color.red)
+                                            .cornerRadius(10)
+                                    }
                                     .padding(.horizontal)
-                                    .padding(.vertical, 10)
+                                    .padding(.vertical, 8)
                                 }
                             }
                         }

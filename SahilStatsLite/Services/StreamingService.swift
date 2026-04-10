@@ -64,7 +64,7 @@ final class StreamingService: ObservableObject {
     }
 
     private let rtmp = SahilRTMPStreamer()
-    private(set) var currentBroadcastId: String?
+    var currentBroadcastId: String?
 
     private init() {
         rtmp.onLive = { [weak self] in
@@ -88,17 +88,18 @@ final class StreamingService: ObservableObject {
         health = .connecting
         isStreaming = true
 
-        // Auto-create broadcast if authorized — gracefully skips if account has restrictions
-        if YouTubeService.shared.isAuthorized {
+        // Broadcast may already be created in GameSetupView — skip if so
+        if let existingId = currentBroadcastId {
+            debugLog("📡 Using existing broadcast: \(existingId)")
+        } else if YouTubeService.shared.isAuthorized {
+            // Fallback: create broadcast here if GameSetup didn't (e.g. no API access earlier)
             let title = opponent.isEmpty ? "Sahil's Basketball Game" : "Sahil vs \(opponent)"
             do {
                 let (id, watchURL) = try await YouTubeService.shared.createBroadcast(title: title)
                 currentBroadcastId = id
                 liveStreamURL = watchURL
-                try? await YouTubeService.shared.startBroadcast(broadcastId: id, streamKey: savedStreamKey)
-                debugLog("📡 Broadcast ready: \(watchURL)")
+                debugLog("📡 Broadcast created at start: \(watchURL)")
             } catch {
-                // Live streaming API disabled (policy/verification) — RTMP still works via manual Studio setup
                 debugLog("⚠️ Auto-broadcast skipped (\(error.localizedDescription)) — use YouTube Studio manually")
             }
         }
