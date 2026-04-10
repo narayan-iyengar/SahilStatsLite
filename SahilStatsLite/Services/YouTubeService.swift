@@ -264,7 +264,8 @@ class YouTubeService: NSObject, ObservableObject {
 
         let metadataJSON = try JSONSerialization.data(withJSONObject: metadata)
 
-        var request = URLRequest(url: URL(string: "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status")!)
+        // Upload to Sahil Hoops channel so recordings + live streams are in one place
+        var request = URLRequest(url: URL(string: "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status&onBehalfOfContentOwnerChannel=UCUMg4lDQC7cxgpHc5xrOH4w")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
