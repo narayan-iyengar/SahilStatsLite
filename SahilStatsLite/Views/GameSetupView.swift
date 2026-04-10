@@ -250,12 +250,16 @@ struct GameSetupView: View {
         .onAppear {
             // Load teams from UserDefaults
             loadTeams()
-            
+
             // Load default half length
             let savedHalfLength = UserDefaults.standard.integer(forKey: "defaultHalfLength")
             if savedHalfLength > 0 {
                 halfLength = savedHalfLength
             }
+
+            // Clear stale broadcast from previous game — each game gets a fresh URL
+            StreamingService.shared.liveStreamURL = ""
+            StreamingService.shared.currentBroadcastId = nil
 
             // Pre-fill from calendar if available
             if let pending = appState.pendingCalendarGame {
