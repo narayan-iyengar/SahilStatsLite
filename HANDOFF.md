@@ -72,25 +72,31 @@ Stream key sharing: Share ONE YouTube watch link at season start. Parents bookma
 
 ---
 
-## HONEST BLOAT AUDIT (do next session)
+## BLOAT AUDIT (COMPLETED)
 
-These files are compiled into the app but never used during games. Should be deleted.
+All stale files deleted in prior session (AILabView, VideoAnalysisPipeline, TestVideoProcessor,
+SkynetTestView, CourtDetector, ActionProbabilityField, GameStateDetector, ExperimentalFilters,
+HomographyUtils, CourtCalibrationView, MissingComponents). Zero bloat remains.
 
-| File | Lines | Reason |
-|---|---|---|
-| `AILabView.swift` | 262 | Stale — old pre-YOLO pipeline |
-| `VideoAnalysisPipeline.swift` | 414 | Stale old pipeline |
-| `TestVideoProcessor.swift` | 576 | Stale |
-| `SkynetTestView.swift` | 520 | Stale |
-| `CourtDetector.swift` | 448 | R&D, never worked well |
-| `ActionProbabilityField.swift` | 369 | Unused |
-| `GameStateDetector.swift` | 335 | Unused |
-| **~3,174 lines total** | | **Delete these** |
+## FILE SPLITTING (COMPLETED 2026-04-10)
 
-Root dir scripts to delete: `dev_agent.py`, `gemini_agent.py`, `push_to_github.sh`
-`SkynetTest/` folder: 3,300 lines of CLI R&D, never called by app — archive or delete.
+HomeView.swift split from 2,320 lines into 6 files:
+- HomeView.swift (396 lines) — main home screen only
+- UpcomingGamesViews.swift — NextGameHeroCard, LaterTodaySection, UpcomingGamesSheet
+- GameRow.swift — game log row component
+- CareerStatsSheet.swift — trend charts, shooting stats, career averages
+- GameDetailSheet.swift — YouTube upload, video import, player stats
+- AllGamesView.swift — game log with filter/search/pagination
+- SettingsView.swift — all settings sections
 
-`HomeView.swift` at 2,334 lines — watch it. Consider splitting stats sheet into its own file if it grows.
+UltraMinimalRecordingView.swift split:
+- CameraPreviewView.swift — BlinkingColon, CameraPreviewView, CameraPreviewUIView
+
+## CONCURRENCY HARDENING (COMPLETED 2026-04-10)
+
+BallDetector: removed all 19 nonisolated(unsafe) annotations. Actor isolation via SkynetProcessor.
+OverlayRenderer: atomic OverlayState snapshot pattern (8 individual vars -> 1 struct). 
+nonisolated(unsafe) count reduced from 68 to 49 across codebase.
 
 ---
 
