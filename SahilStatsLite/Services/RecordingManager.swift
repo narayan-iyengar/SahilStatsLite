@@ -555,14 +555,17 @@ class RecordingManager: NSObject, ObservableObject {
     // MARK: - Overlay State Updates
 
     func updateOverlay(homeTeam: String, awayTeam: String, homeScore: Int, awayScore: Int, period: String, clockTime: String, isClockRunning: Bool = true, eventName: String = "") {
-        overlayRenderer.homeTeam = homeTeam
-        overlayRenderer.awayTeam = awayTeam
-        overlayRenderer.homeScore = homeScore
-        overlayRenderer.awayScore = awayScore
-        overlayRenderer.period = period
-        overlayRenderer.clockTime = clockTime
-        overlayRenderer.isClockRunning = isClockRunning
-        overlayRenderer.eventName = eventName
+        // Single atomic assignment: processing queue reads a consistent snapshot
+        overlayRenderer.state = OverlayState(
+            homeTeam: homeTeam,
+            awayTeam: awayTeam,
+            homeScore: homeScore,
+            awayScore: awayScore,
+            period: period,
+            clockTime: clockTime,
+            isClockRunning: isClockRunning,
+            eventName: eventName
+        )
     }
 
     // MARK: - Camera Control

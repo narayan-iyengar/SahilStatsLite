@@ -43,31 +43,30 @@ class BallDetector {
 
     // MARK: - Kalman Filter for Ball
 
-    // nonisolated(unsafe) on all stored vars — BallDetector is @MainActor-inferred
-    // because it was historically stored on @MainActor AutoZoomManager. These annotations
-    // are compile-time only and have zero runtime performance impact.
-    private nonisolated(unsafe) var kalman: BallKalmanFilter?
-    private nonisolated(unsafe) var consecutiveMisses: Int = 0
+    // BallDetector is owned exclusively by SkynetProcessor (a Swift actor).
+    // Actor isolation guarantees thread safety — no nonisolated(unsafe) needed.
+    private var kalman: BallKalmanFilter?
+    private var consecutiveMisses: Int = 0
     private let maxMissesBeforeReset = 15
 
     // MARK: - Trajectory History
 
-    private nonisolated(unsafe) var trajectoryHistory: [TrajectoryPoint] = []
+    private var trajectoryHistory: [TrajectoryPoint] = []
     private let maxTrajectoryHistory = 20
-    private nonisolated(unsafe) var lastProcessedTime: Double = 0
+    private var lastProcessedTime: Double = 0
 
     // MARK: - Color Thresholds (HSV)
 
-    private nonisolated(unsafe) var hueMin: CGFloat = 5
-    private nonisolated(unsafe) var hueMax: CGFloat = 25
-    private nonisolated(unsafe) var satMin: CGFloat = 0.4
-    private nonisolated(unsafe) var satMax: CGFloat = 1.0
-    private nonisolated(unsafe) var valMin: CGFloat = 0.3
-    private nonisolated(unsafe) var valMax: CGFloat = 1.0
+    private var hueMin: CGFloat = 5
+    private var hueMax: CGFloat = 25
+    private var satMin: CGFloat = 0.4
+    private var satMax: CGFloat = 1.0
+    private var valMin: CGFloat = 0.3
+    private var valMax: CGFloat = 1.0
 
-    private nonisolated(unsafe) var colorSamples: [(h: CGFloat, s: CGFloat, v: CGFloat)] = []
+    private var colorSamples: [(h: CGFloat, s: CGFloat, v: CGFloat)] = []
     private let maxColorSamples = 50
-    private nonisolated(unsafe) var isCalibrated: Bool = false
+    private var isCalibrated: Bool = false
 
     // MARK: - Size Constraints
 
@@ -78,7 +77,7 @@ class BallDetector {
 
     private let hoopZoneMaxY: CGFloat = 0.25
 
-    private nonisolated(unsafe) var recentDetectionPositions: [CGPoint] = []
+    private var recentDetectionPositions: [CGPoint] = []
     private let motionHistorySize = 10
 
     // MARK: - Physics Constants (normalized to frame coordinates)
@@ -87,7 +86,7 @@ class BallDetector {
     private let gravity: CGFloat = 0.5  // ~0.5 frame heights per second^2
     private let maxReasonableSpeed: CGFloat = 2.0  // Max 2x frame width per second
 
-    nonisolated init() {}
+    init() {}
 
     // MARK: - Detection
 
@@ -96,7 +95,7 @@ class BallDetector {
     ///   - pixelBuffer: The video frame
     ///   - dt: Time since last frame (for Kalman prediction)
     /// - Returns: Ball detection if found, nil otherwise
-    nonisolated func detectBall(in pixelBuffer: CVPixelBuffer, dt: Double = 1.0/30.0) -> BallDetection? {
+    func detectBall(in pixelBuffer: CVPixelBuffer, dt: Double = 1.0/30.0) -> BallDetection? {
         let currentTime = lastProcessedTime + dt
         lastProcessedTime = currentTime
 
@@ -201,7 +200,7 @@ class BallDetector {
     // MARK: - Trajectory Validation
 
     /// Add confirmed detection to trajectory history
-    nonisolated private func addToTrajectoryHistory(position: CGPoint, radius: CGFloat, confidence: Float, timestamp: Double) {
+    private func addToTrajectoryHistory(position: CGPoint, radius: CGFloat, confidence: Float, timestamp: Double) {
         let point = TrajectoryPoint(position: position, timestamp: timestamp, radius: radius, confidence: confidence)
         trajectoryHistory.append(point)
 
@@ -213,7 +212,7 @@ class BallDetector {
 
     /// Filter candidates based on trajectory consistency
     /// Uses motion history to reject impossible ball positions
-    nonisolated private func filterCandidatesByTrajectory(_ candidates: [(center: CGPoint, radius: CGFloat, confidence: Float)], currentTime: Double) -> [(center: CGPoint, radius: CGFloat, confidence: Float)] {
+    private func filterCandidatesByTrajectory(_ candidates: [(center: CGPoint, radius: CGFloat, confidence: Float)], currentTime: Double) -> [(center: CGPoint, radius: CGFloat, confidence: Float)] {
         guard trajectoryHistory.count >= 3 else {
             // Not enough history - accept all candidates
             return candidates
@@ -285,7 +284,7 @@ class BallDetector {
 
     // MARK: - Color Segmentation
 
-    nonisolated private func findBallCandidates(in pixelBuffer: CVPixelBuffer) -> [(center: CGPoint, radius: CGFloat, confidence: Float)] {
+    private func findBallCandidates(in pixelBuffer: CVPixelBuffer) -> [(center: CGPoint, radius: CGFloat, confidence: Float)] {
         var candidates: [(center: CGPoint, radius: CGFloat, confidence: Float)] = []
 
         CVPixelBufferLockBaseAddress(pixelBuffer, .readOnly)
@@ -416,7 +415,7 @@ class BallDetector {
         return candidates
     }
 
-    nonisolated private func isOrangePixel(baseAddress: UnsafeMutableRawPointer, x: Int, y: Int,
+    private func isOrangePixel(baseAddress: UnsafeMutableRawPointer, x: Int, y: Int,
                                bytesPerRow: Int, pixelFormat: OSType) -> Bool {
         // Handle different pixel formats
         let offset: Int
@@ -452,7 +451,7 @@ class BallDetector {
                v >= valMin && v <= valMax
     }
 
-    nonisolated private func rgbToHSV(r: CGFloat, g: CGFloat, b: CGFloat) -> (h: CGFloat, s: CGFloat, v: CGFloat) {
+    private func rgbToHSV(r: CGFloat, g: CGFloat, b: CGFloat) -> (h: CGFloat, s: CGFloat, v: CGFloat) {
         let maxC = max(r, g, b)
         let minC = min(r, g, b)
         let delta = maxC - minC
@@ -480,7 +479,7 @@ class BallDetector {
 
     // MARK: - Online Color Learning
 
-    nonisolated private func learnColorFromRegion(_ pixelBuffer: CVPixelBuffer, center: CGPoint, radius: CGFloat) {
+    private func learnColorFromRegion(_ pixelBuffer: CVPixelBuffer, center: CGPoint, radius: CGFloat) {
         guard !isCalibrated || colorSamples.count < maxColorSamples else { return }
 
         // Sample the center region of the detected ball
@@ -546,7 +545,7 @@ class BallDetector {
         }
     }
 
-    nonisolated private func updateColorThresholds() {
+    private func updateColorThresholds() {
         guard colorSamples.count >= 10 else { return }
 
         let hues = colorSamples.map { $0.h }.sorted()
@@ -598,9 +597,9 @@ class BallDetector {
 /// - Horizontal motion is mostly constant (minimal air resistance)
 class BallKalmanFilter {
 
-    private nonisolated(unsafe) var state: [Double]  // [x, y, vx, vy]
-    private nonisolated(unsafe) var P: [[Double]]    // Covariance matrix
-    private nonisolated(unsafe) var Q: [[Double]]
+    private var state: [Double]  // [x, y, vx, vy]
+    private var P: [[Double]]    // Covariance matrix
+    private var Q: [[Double]]
 
     private let R: [[Double]] = [
         [0.003, 0],
@@ -608,10 +607,10 @@ class BallKalmanFilter {
     ]
 
     private let gravity: Double = 0.5
-    private nonisolated(unsafe) var isInFlight: Bool = false
-    private nonisolated(unsafe) var flightStartTime: Double = 0
+    private var isInFlight: Bool = false
+    private var flightStartTime: Double = 0
 
-    nonisolated init(initialPosition: CGPoint) {
+    init(initialPosition: CGPoint) {
         state = [Double(initialPosition.x), Double(initialPosition.y), 0, 0]
 
         // Initial covariance - moderate position uncertainty, high velocity uncertainty
@@ -634,16 +633,16 @@ class BallKalmanFilter {
         ]
     }
 
-    nonisolated var position: CGPoint {
+    var position: CGPoint {
         CGPoint(x: state[0], y: state[1])
     }
 
-    nonisolated var velocity: CGPoint {
+    var velocity: CGPoint {
         CGPoint(x: state[2], y: state[3])
     }
 
     /// Predict next state with optional gravity compensation
-    nonisolated func predict(dt: Double) {
+    func predict(dt: Double) {
         // Horizontal motion: constant velocity (air resistance negligible)
         state[0] += state[2] * dt
 
@@ -685,7 +684,7 @@ class BallKalmanFilter {
         P[3][3] = min(P[3][3], 5.0)
     }
 
-    nonisolated func update(measurement: CGPoint) {
+    func update(measurement: CGPoint) {
         let z = [Double(measurement.x), Double(measurement.y)]
 
         // Innovation (measurement residual)
@@ -724,7 +723,7 @@ class BallKalmanFilter {
     }
 
     /// Reset flight state (call when ball is caught or dribbled)
-    nonisolated func resetFlightState() {
+    func resetFlightState() {
         isInFlight = false
     }
 }

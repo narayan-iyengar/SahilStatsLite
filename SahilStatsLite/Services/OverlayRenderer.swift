@@ -15,22 +15,29 @@ import CoreImage
 import CoreGraphics
 import UIKit
 
+/// Atomic snapshot of overlay state. Written from main thread, read from processing queue.
+/// Single struct assignment is atomic for value types, eliminating the cross-thread tearing
+/// that was possible when 8 individual properties were written separately.
+struct OverlayState: Sendable {
+    var homeTeam: String = "Home"
+    var awayTeam: String = "Away"
+    var homeScore: Int = 0
+    var awayScore: Int = 0
+    var period: String = "1st"
+    var clockTime: String = "20:00"
+    var isClockRunning: Bool = true
+    var eventName: String = ""
+}
+
 class OverlayRenderer: @unchecked Sendable {
 
-    // MARK: - Overlay State (updated from UI)
+    // MARK: - Overlay State (atomic snapshot)
 
-    nonisolated(unsafe) var homeTeam: String = "Home"
-    nonisolated(unsafe) var awayTeam: String = "Away"
-    nonisolated(unsafe) var homeScore: Int = 0
-    nonisolated(unsafe) var awayScore: Int = 0
-    nonisolated(unsafe) var period: String = "1st"
-    nonisolated(unsafe) var clockTime: String = "20:00"
-    nonisolated(unsafe) var isClockRunning: Bool = true
-    nonisolated(unsafe) var eventName: String = ""
+    nonisolated(unsafe) var state = OverlayState()
 
-    // Team colors (can be customized later)
-    nonisolated(unsafe) var homeColor: UIColor = UIColor(red: 1.0, green: 0.5, blue: 0.0, alpha: 1.0)  // Orange
-    nonisolated(unsafe) var awayColor: UIColor = UIColor(red: 0.2, green: 0.5, blue: 0.9, alpha: 1.0)  // Blue
+    // Team colors (constant after init, safe to read from any thread)
+    let homeColor: UIColor = UIColor(red: 1.0, green: 0.5, blue: 0.0, alpha: 1.0)  // Orange
+    let awayColor: UIColor = UIColor(red: 0.2, green: 0.5, blue: 0.9, alpha: 1.0)  // Blue
 
     // MARK: - Rendering
 
@@ -73,6 +80,8 @@ class OverlayRenderer: @unchecked Sendable {
     /// │ [▮] OPP    18 │ 12:34  │
     /// └─────────────────────────┘
     private nonisolated func drawNBAStyleScoreboard(in context: CGContext, width: CGFloat, height: CGFloat) {
+        // Snapshot state once at frame start for consistency
+        let s = state
         let isLandscape = width > height
         let referenceWidth: CGFloat = isLandscape ? 1920.0 : 1080.0
         // Increase scale by 1.5x for better visibility on 4K/high-res outputs
@@ -116,12 +125,12 @@ class OverlayRenderer: @unchecked Sendable {
 
         // Home team name (4 chars)
         let homeNameRect = CGRect(x: bugX + colorBarWidth + 10 * scale, y: homeRowY, width: teamWidth, height: rowHeight)
-        drawText(String(homeTeam.prefix(4)).uppercased(), in: homeNameRect, context: context,
+        drawText(String(s.homeTeam.prefix(4)).uppercased(), in: homeNameRect, context: context,
                  fontSize: 16 * scale, color: .white, bold: true, alignment: .left)
 
         // Home score
         let homeScoreRect = CGRect(x: bugX + colorBarWidth + teamWidth + 4 * scale, y: homeRowY, width: scoreWidth, height: rowHeight)
-        drawText("\(homeScore)", in: homeScoreRect, context: context,
+        drawText("\(s.homeScore)", in: homeScoreRect, context: context,
                  fontSize: 28 * scale, color: .white, bold: true, alignment: .right)
 
         // Vertical divider
@@ -131,7 +140,7 @@ class OverlayRenderer: @unchecked Sendable {
 
         // Period (top right section)
         let periodRect = CGRect(x: dividerX + 6 * scale, y: homeRowY, width: timeWidth - 12 * scale, height: rowHeight)
-        drawText(period, in: periodRect, context: context,
+        drawText(s.period, in: periodRect, context: context,
                  fontSize: 12 * scale, color: UIColor(white: 0.7, alpha: 1.0), bold: true, alignment: .center)
 
         // === AWAY TEAM ROW (BOTTOM) ===
@@ -143,18 +152,18 @@ class OverlayRenderer: @unchecked Sendable {
 
         // Away team name (4 chars)
         let awayNameRect = CGRect(x: bugX + colorBarWidth + 10 * scale, y: awayRowY, width: teamWidth, height: rowHeight)
-        drawText(String(awayTeam.prefix(4)).uppercased(), in: awayNameRect, context: context,
+        drawText(String(s.awayTeam.prefix(4)).uppercased(), in: awayNameRect, context: context,
                  fontSize: 16 * scale, color: .white, bold: true, alignment: .left)
 
         // Away score
         let awayScoreRect = CGRect(x: bugX + colorBarWidth + teamWidth + 4 * scale, y: awayRowY, width: scoreWidth, height: rowHeight)
-        drawText("\(awayScore)", in: awayScoreRect, context: context,
+        drawText("\(s.awayScore)", in: awayScoreRect, context: context,
                  fontSize: 28 * scale, color: .white, bold: true, alignment: .right)
 
         // Clock (bottom right section)
-        let clockColor = isClockRunning ? UIColor.white : UIColor(red: 1.0, green: 0.6, blue: 0.2, alpha: 1.0)
+        let clockColor = s.isClockRunning ? UIColor.white : UIColor(red: 1.0, green: 0.6, blue: 0.2, alpha: 1.0)
         let clockRect = CGRect(x: dividerX + 6 * scale, y: awayRowY, width: timeWidth - 12 * scale, height: rowHeight)
-        drawText(clockTime, in: clockRect, context: context,
+        drawText(s.clockTime, in: clockRect, context: context,
                  fontSize: 20 * scale, color: clockColor, bold: true, alignment: .center, monospaced: true)
 
         // === SUBTLE BORDER ===
