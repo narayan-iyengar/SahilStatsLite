@@ -14,6 +14,7 @@
 
 import Foundation
 import Network
+import Combine
 import SystemConfiguration.CaptiveNetwork
 
 @MainActor
