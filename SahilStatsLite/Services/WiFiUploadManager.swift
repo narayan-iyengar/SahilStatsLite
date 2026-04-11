@@ -15,7 +15,6 @@
 import Foundation
 import Network
 import Combine
-import SystemConfiguration.CaptiveNetwork
 
 @MainActor
 class WiFiUploadManager: ObservableObject {
@@ -24,8 +23,7 @@ class WiFiUploadManager: ObservableObject {
     @Published var isUploading: Bool = false
     @Published var pendingCount: Int = 0
 
-    private let homeSSID = "IyengarHomeWifi"
-    private let monitor = NWPathMonitor(requiredInterfaceType: .wifi)
+    private let monitor = NWPathMonitor()
     private let monitorQueue = DispatchQueue(label: "com.sahilstats.wifimonitor")
     private var isMonitoring = false
     private var lastCheckTime: Date = .distantPast
@@ -38,7 +36,7 @@ class WiFiUploadManager: ObservableObject {
         isMonitoring = true
 
         monitor.pathUpdateHandler = { [weak self] path in
-            guard path.status == .satisfied else { return }
+            guard path.status == .satisfied, path.usesInterfaceType(.wifi) else { return }
             Task { @MainActor in
                 self?.checkAndUpload()
             }
@@ -53,7 +51,7 @@ class WiFiUploadManager: ObservableObject {
         guard Date().timeIntervalSince(lastCheckTime) > 30 else { return }
         lastCheckTime = Date()
 
-        guard isOnHomeWiFi() else { return }
+        guard isOnWiFi() else { return }
         guard !isUploading else { return }
         guard YouTubeService.shared.isAuthorized else { return }
 
@@ -61,7 +59,7 @@ class WiFiUploadManager: ObservableObject {
         pendingCount = pending.count
         guard !pending.isEmpty else { return }
 
-        debugPrint("[WiFiUpload] Home WiFi detected, \(pending.count) games to upload")
+        debugPrint("[WiFiUpload] WiFi detected, \(pending.count) games to upload")
         isUploading = true
 
         Task {
@@ -124,23 +122,9 @@ class WiFiUploadManager: ObservableObject {
 
     // MARK: - WiFi Detection
 
-    private func isOnHomeWiFi() -> Bool {
-        // iOS 14+: Use NEHotspotNetwork if available
-        var ssid: String?
-
-        // CNCopyCurrentNetworkInfo is deprecated but still works and doesn't require
-        // the NEHotspotConfiguration entitlement that NEHotspotNetwork needs.
-        if let interfaces = CNCopySupportedInterfaces() as? [String],
-           let first = interfaces.first,
-           let info = CNCopyCurrentNetworkInfo(first as CFString) as? [String: Any] {
-            ssid = info[kCNNetworkInfoKeySSID as String] as? String
-        }
-
-        let isHome = ssid == homeSSID
-        if isHome {
-            debugPrint("[WiFiUpload] Connected to \(homeSSID)")
-        }
-        return isHome
+    private func isOnWiFi() -> Bool {
+        let path = monitor.currentPath
+        return path.status == .satisfied && path.usesInterfaceType(.wifi)
     }
 
     private func resolveVideoURL(for game: Game) -> URL? {
