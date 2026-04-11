@@ -308,14 +308,18 @@ struct GameSetupView: View {
         StreamingService.shared.liveStreamURL = ""
         StreamingService.shared.currentBroadcastId = nil
         let title = opponent.isEmpty ? "Sahil's Basketball Game" : "Sahil vs \(opponent)"
+        debugPrint("[GameSetup] Creating broadcast: \(title)")
         Task {
-            if let (id, url) = try? await YouTubeService.shared.createBroadcast(title: title) {
+            do {
+                let (id, url) = try await YouTubeService.shared.createBroadcast(title: title)
+                debugPrint("[GameSetup] Broadcast created: \(id) -> \(url)")
                 await MainActor.run {
                     StreamingService.shared.currentBroadcastId = id
                     StreamingService.shared.liveStreamURL = url
                     isCreatingBroadcast = false
                 }
-            } else {
+            } catch {
+                debugPrint("[GameSetup] Broadcast creation FAILED: \(error)")
                 await MainActor.run { isCreatingBroadcast = false }
             }
         }
