@@ -28,6 +28,7 @@ struct SettingsView: View {
 
     @State private var newTeamName: String = ""
     @State private var showAddTeam: Bool = false
+    @State private var showStreamKey: Bool = false
 
     var body: some View {
         NavigationView {
@@ -327,27 +328,32 @@ struct SettingsView: View {
                         Image(systemName: "key.fill")
                             .foregroundColor(.secondary)
                             .font(.caption)
-                        SecureField("Stream Key", text: Binding(
-                            get: { StreamingService.shared.savedStreamKey },
-                            set: { StreamingService.shared.savedStreamKey = $0 }
-                        ))
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
+                        if showStreamKey {
+                            TextField("Stream Key", text: Binding(
+                                get: { StreamingService.shared.savedStreamKey },
+                                set: { StreamingService.shared.savedStreamKey = $0 }
+                            ))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .font(.caption.monospaced())
+                        } else {
+                            SecureField("Stream Key", text: Binding(
+                                get: { StreamingService.shared.savedStreamKey },
+                                set: { StreamingService.shared.savedStreamKey = $0 }
+                            ))
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                        }
+                        Button {
+                            showStreamKey.toggle()
+                        } label: {
+                            Image(systemName: showStreamKey ? "eye.slash" : "eye")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
                     }
-                    HStack {
-                        Image(systemName: "link")
-                            .foregroundColor(.secondary)
-                            .font(.caption)
-                        TextField("Watch link (youtube.com/@you/live)", text: Binding(
-                            get: { StreamingService.shared.liveStreamURL },
-                            set: { StreamingService.shared.liveStreamURL = $0 }
-                        ))
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .keyboardType(.URL)
-                        .font(.caption)
-                    }
-                    Text("YouTube Studio > Go Live > copy the watch URL. Set Latency=Ultra-low, Privacy=Unlisted. The link appears in Game Setup when you turn streaming on.")
+                    Text("YouTube Studio > Go Live > copy the Stream Key. Watch link is auto-generated per game when you toggle Stream Live in Game Setup.")
                         .font(.caption)
                         .foregroundColor(.secondary)
                 }

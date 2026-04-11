@@ -158,22 +158,7 @@ struct GameSetupView: View {
                                     .tint(.red)
                                     .onChange(of: streamLive) { _, on in
                                         guard on, YouTubeService.shared.isAuthorized else { return }
-                                        // Create broadcast NOW — URL ready to share before mounting on gimbal
-                                        isCreatingBroadcast = true
-                                        StreamingService.shared.liveStreamURL = ""
-                                        StreamingService.shared.currentBroadcastId = nil
-                                        let title = opponent.isEmpty ? "Sahil's Basketball Game" : "Sahil vs \(opponent)"
-                                        Task {
-                                            if let (id, url) = try? await YouTubeService.shared.createBroadcast(title: title) {
-                                                await MainActor.run {
-                                                    StreamingService.shared.currentBroadcastId = id
-                                                    StreamingService.shared.liveStreamURL = url
-                                                    isCreatingBroadcast = false
-                                                }
-                                            } else {
-                                                await MainActor.run { isCreatingBroadcast = false }
-                                            }
-                                        }
+                                        createBroadcast()
                                     }
                             }
                             .padding()
@@ -283,6 +268,12 @@ struct GameSetupView: View {
             if opponent.isEmpty {
                 isOpponentFocused = true
             }
+
+            // If streaming was already enabled from last game, create broadcast now.
+            // onChange(of: streamLive) doesn't fire when the initial value is already true.
+            if streamLive && !StreamingService.shared.savedStreamKey.isEmpty && YouTubeService.shared.isAuthorized {
+                createBroadcast()
+            }
         }
     }
 
@@ -311,6 +302,24 @@ struct GameSetupView: View {
     }
 
     // MARK: - Actions
+
+    private func createBroadcast() {
+        isCreatingBroadcast = true
+        StreamingService.shared.liveStreamURL = ""
+        StreamingService.shared.currentBroadcastId = nil
+        let title = opponent.isEmpty ? "Sahil's Basketball Game" : "Sahil vs \(opponent)"
+        Task {
+            if let (id, url) = try? await YouTubeService.shared.createBroadcast(title: title) {
+                await MainActor.run {
+                    StreamingService.shared.currentBroadcastId = id
+                    StreamingService.shared.liveStreamURL = url
+                    isCreatingBroadcast = false
+                }
+            } else {
+                await MainActor.run { isCreatingBroadcast = false }
+            }
+        }
+    }
 
     private func loadTeams() {
         if let data = UserDefaults.standard.data(forKey: teamsKey),
