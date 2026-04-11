@@ -178,7 +178,7 @@ struct GameSetupView: View {
                                     Button {
                                         let url = StreamingService.shared.liveStreamURL
                                         let av = UIActivityViewController(
-                                            activityItems: ["Watch Sahil's game live: \(url)"],
+                                            activityItems: [URL(string: url) ?? url],
                                             applicationActivities: nil)
                                         if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
                                            let root = scene.windows.first?.rootViewController {

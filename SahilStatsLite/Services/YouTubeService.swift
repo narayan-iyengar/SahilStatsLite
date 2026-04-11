@@ -200,18 +200,18 @@ class YouTubeService: NSObject, ObservableObject {
         }
 
         // Set category to Sports (17) via video update
-        try? await setCategoryAndBindStream(broadcastId: id, token: token)
+        try? await setCategoryAndBindStream(broadcastId: id, title: title, token: token)
 
         let watchURL = "https://youtube.com/live/\(id)"
         debugPrint("📡 Broadcast created: \(id) → \(watchURL)")
         return (id, watchURL)
     }
 
-    private func setCategoryAndBindStream(broadcastId: String, token: String) async throws {
+    private func setCategoryAndBindStream(broadcastId: String, title: String, token: String) async throws {
         // Update the broadcast video's category to Sports (17)
         let body: [String: Any] = ["id": broadcastId,
                                     "snippet": ["categoryId": "17",
-                                                "title": "x"]] // title required but ignored
+                                                "title": title]]
         var req = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/videos?part=snippet")!)
         req.httpMethod = "PUT"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
@@ -249,8 +249,10 @@ class YouTubeService: NSObject, ObservableObject {
         var req = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveBroadcasts/transition?broadcastStatus=complete&id=\(broadcastId)&part=id")!)
         req.httpMethod = "POST"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        _ = try? await URLSession.shared.data(for: req)
-        debugPrint("📡 Broadcast \(broadcastId) ended")
+        let (data, response) = (try? await URLSession.shared.data(for: req)) ?? (Data(), nil)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let body = String(data: data, encoding: .utf8) ?? ""
+        debugPrint("[YouTube] endBroadcast \(broadcastId): \(status) \(body.prefix(200))")
     }
 
     private func initializeUpload(title: String, description: String, accessToken: String, fileSize: Int) async throws -> URL {
