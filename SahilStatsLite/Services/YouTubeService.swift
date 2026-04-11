@@ -262,6 +262,18 @@ class YouTubeService: NSObject, ObservableObject {
         debugPrint("[YouTube] endBroadcast \(broadcastId): \(status) \(body.prefix(200))")
     }
 
+    /// Delete a video from YouTube (used to remove inferior stream recording after 4K upload).
+    func deleteVideo(videoId: String) async {
+        guard let token = try? await getFreshAccessToken() else { return }
+        var req = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/videos?id=\(videoId)")!)
+        req.httpMethod = "DELETE"
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        let (_, response) = (try? await URLSession.shared.data(for: req)) ?? (Data(), nil)
+        let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+        // 204 = success, 404 = already deleted
+        debugPrint("[YouTube] deleteVideo \(videoId): \(status)")
+    }
+
     private func initializeUpload(title: String, description: String, accessToken: String, fileSize: Int) async throws -> URL {
         let metadata: [String: Any] = [
             "snippet": [

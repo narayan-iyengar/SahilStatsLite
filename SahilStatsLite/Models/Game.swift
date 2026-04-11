@@ -57,6 +57,10 @@ struct Game: Identifiable, Codable {
     var youtubeStatus: YouTubeStatus = .local
     var youtubeVideoId: String?
 
+    // Stream recording ID (same as broadcastId on YouTube; used to delete the
+    // inferior 1080p stream copy after the 4K upload succeeds)
+    var broadcastVideoId: String?
+
     init(opponent: String, teamName: String = "Wildcats", location: String? = nil) {
         self.id = UUID().uuidString
         self.opponent = opponent

@@ -863,6 +863,8 @@ struct UltraMinimalRecordingView: View {
             // Start live stream if enabled and key is configured
             if StreamingService.shared.streamingEnabled && !StreamingService.shared.savedStreamKey.isEmpty {
                 recordingManager.isStreamingActive = true
+                // Store broadcast ID on game so we can delete the stream recording after 4K upload
+                appState.currentGame?.broadcastVideoId = StreamingService.shared.currentBroadcastId
                 Task { await StreamingService.shared.startStream(opponent: appState.currentGame?.opponent ?? "") }
             }
         }
@@ -1093,18 +1095,25 @@ struct UltraMinimalRecordingView: View {
     private func discardGame() {
         isFinishingRecording = true
         timer?.cancel()
-        
+
         // Notify Watch to reset
         watchService.sendEndGame()
-        
+
+        // Delete stream recording from YouTube so nothing stays on the channel
+        if let broadcastId = appState.currentGame?.broadcastVideoId {
+            Task {
+                await YouTubeService.shared.deleteVideo(videoId: broadcastId)
+            }
+        }
+
         if !appState.isStatsOnly {
             gimbalManager.stopTracking()
             stopAutoZoom()
-            
+
             Task {
                 // Just stop, don't use the URL
                 _ = await recordingManager.stopRecordingAndWait()
-                
+
                 await MainActor.run {
                     isFinishingRecording = false
                     appState.goHome()

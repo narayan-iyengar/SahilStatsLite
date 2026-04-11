@@ -46,6 +46,11 @@ class AppDelegate: NSObject, UIApplicationDelegate {
         _ = WatchConnectivityService.shared
         debugPrint("[AppDelegate] WatchConnectivity service initialized")
 
+        // Start WiFi auto-upload monitor
+        Task { @MainActor in
+            WiFiUploadManager.shared.startMonitoring()
+        }
+
         return true
     }
 }
