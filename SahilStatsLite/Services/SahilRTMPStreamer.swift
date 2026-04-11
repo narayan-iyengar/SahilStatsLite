@@ -447,29 +447,77 @@ final class SahilRTMPStreamer: @unchecked Sendable {
 
     private func encodeAudio(_ sb: CMSampleBuffer) {
         guard let c = conn,
-              let inputFmt = sb.formatDescription.flatMap({ AVAudioFormat(cmAudioFormatDescription: $0) }) else { return }
+              let fmtDesc = sb.formatDescription else { return }
+
+        // Build a standard interleaved PCM format for the converter input.
+        // The CMSampleBuffer's format description may report non-standard layout
+        // (iOS 26+), causing CMSampleBufferCopyPCMDataIntoAudioBufferList to fail.
+        // Instead, read raw PCM bytes from the block buffer and wrap them manually.
+        let asbd = CMAudioFormatDescriptionGetStreamBasicDescription(fmtDesc)?.pointee
+        guard let desc = asbd, desc.mFormatID == kAudioFormatLinearPCM else { return }
+
+        let sampleRate = desc.mSampleRate
+        let channels = desc.mChannelsPerFrame
+
         if audioConverter == nil {
-            // Match input channel count — iPhone mic is mono, forcing stereo causes converter failure
-            let inChannels = inputFmt.channelCount
-            guard let aacFmt = AVAudioFormat(settings: [AVFormatIDKey: kAudioFormatMPEG4AAC,
-                                                         AVSampleRateKey: inputFmt.sampleRate,
-                                                         AVNumberOfChannelsKey: inChannels,
+            // Create a clean interleaved float32 format for the converter
+            guard let pcmFmt = AVAudioFormat(commonFormat: .pcmFormatFloat32,
+                                              sampleRate: sampleRate,
+                                              channels: AVAudioChannelCount(channels),
+                                              interleaved: true),
+                  let aacFmt = AVAudioFormat(settings: [AVFormatIDKey: kAudioFormatMPEG4AAC,
+                                                         AVSampleRateKey: sampleRate,
+                                                         AVNumberOfChannelsKey: channels,
                                                          AVEncoderBitRateKey: 128_000]),
-                  let conv = AVAudioConverter(from: inputFmt, to: aacFmt) else {
-                debugPrint("[SahilRTMP] ⚠️ AAC converter init failed — staying on silent audio")
+                  let conv = AVAudioConverter(from: pcmFmt, to: aacFmt) else {
+                debugPrint("[SahilRTMP] AAC converter init failed")
                 return
             }
             audioConverter = conv
-            debugPrint("[SahilRTMP] 🎤 AAC converter ready: \(inChannels)ch @\(Int(inputFmt.sampleRate))Hz")
+            debugPrint("[SahilRTMP] AAC converter ready: \(channels)ch @\(Int(sampleRate))Hz")
         }
         guard let conv = audioConverter else { return }
         if audioStart == .invalid { audioStart = sb.presentationTimeStamp }
 
-        let n = CMSampleBufferGetNumSamples(sb)
-        guard let inBuf = AVAudioPCMBuffer(pcmFormat: inputFmt, frameCapacity: AVAudioFrameCount(n)) else { return }
-        guard CMSampleBufferCopyPCMDataIntoAudioBufferList(
-            sb, at: 0, frameCount: Int32(n), into: inBuf.mutableAudioBufferList) == noErr else { return }
-        inBuf.frameLength = AVAudioFrameCount(n)
+        // Extract raw PCM bytes from the sample buffer's block buffer
+        guard let block = sb.dataBuffer else { return }
+        var dataLen = 0
+        var dataPtr: UnsafeMutablePointer<Int8>?
+        guard CMBlockBufferGetDataPointer(block, atOffset: 0, lengthAtOffsetOut: nil,
+                                           totalLengthOut: &dataLen, dataPointerOut: &dataPtr) == noErr,
+              let ptr = dataPtr, dataLen > 0 else { return }
+
+        let bytesPerFrame = Int(desc.mBytesPerFrame)
+        guard bytesPerFrame > 0 else { return }
+        let frameCount = dataLen / bytesPerFrame
+
+        // Create PCM buffer and copy raw data
+        guard let inBuf = AVAudioPCMBuffer(pcmFormat: conv.inputFormat,
+                                            frameCapacity: AVAudioFrameCount(frameCount)) else { return }
+        inBuf.frameLength = AVAudioFrameCount(frameCount)
+
+        // Copy bytes into the AVAudioPCMBuffer's internal storage
+        let destPtr = inBuf.mutableAudioBufferList.pointee.mBuffers.mData
+        if let dest = destPtr {
+            // Source may be int16/int32, converter input is float32.
+            // If formats match (both float32), direct copy works.
+            // If source is int16 (common for mic), we need to convert.
+            if desc.mBitsPerChannel == 32 && (desc.mFormatFlags & kAudioFormatFlagIsFloat) != 0 {
+                // Float32 source, direct copy
+                memcpy(dest, ptr, min(dataLen, Int(inBuf.mutableAudioBufferList.pointee.mBuffers.mDataByteSize)))
+            } else if desc.mBitsPerChannel == 16 {
+                // Int16 to Float32 conversion
+                let srcI16 = UnsafeRawPointer(ptr).assumingMemoryBound(to: Int16.self)
+                let dstF32 = dest.assumingMemoryBound(to: Float32.self)
+                let sampleCount = dataLen / 2
+                for i in 0..<sampleCount {
+                    dstF32[i] = Float32(srcI16[i]) / 32768.0
+                }
+            } else {
+                // Unknown format, skip
+                return
+            }
+        }
 
         let maxPkt = max(768, Int(conv.outputFormat.streamDescription.pointee.mBytesPerPacket))
         let outBuf = AVAudioCompressedBuffer(format: conv.outputFormat, packetCapacity: 1, maximumPacketSize: maxPkt)
@@ -480,7 +528,7 @@ final class SahilRTMPStreamer: @unchecked Sendable {
         let ts = msSince(sb.presentationTimeStamp, start: audioStart)
         c.send(content: aacFrame(Data(bytes: outBuf.data, count: Int(outBuf.byteLength)), ts: ts, sid: streamId),
                completion: .idempotent)
-        realAudioActive = true  // mic audio confirmed working — silent loop backs off
+        realAudioActive = true  // mic audio confirmed working, silent loop backs off
     }
 
     // MARK: - VTCompressionSession
