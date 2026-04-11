@@ -224,14 +224,18 @@ class YouTubeService: NSObject, ObservableObject {
     func startBroadcast(broadcastId: String, streamKey: String) async throws {
         let token = try await getFreshAccessToken()
 
-        // Find the liveStream ID on Sahil Hoops channel
+        // Find the liveStream ID for this channel
         var listReq = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveStreams?part=id,cdn&mine=true&maxResults=10")!)
         listReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        let (listData, _) = try await URLSession.shared.data(for: listReq)
+        let (listData, listResp) = try await URLSession.shared.data(for: listReq)
+        let listStatus = (listResp as? HTTPURLResponse)?.statusCode ?? 0
+        let listBody = String(data: listData, encoding: .utf8) ?? ""
+        debugPrint("[YouTube] liveStreams list \(listStatus): \(listBody.prefix(500))")
+
         guard let listJson = try? JSONSerialization.jsonObject(with: listData) as? [String: Any],
               let items = listJson["items"] as? [[String: Any]],
               let streamId = items.first.flatMap({ ($0["id"] as? String) }) else {
-            debugPrint("📡 No liveStream found — broadcast may auto-bind")
+            debugPrint("[YouTube] No liveStream found, cannot bind")
             return
         }
 
@@ -239,8 +243,11 @@ class YouTubeService: NSObject, ObservableObject {
         var bindReq = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveBroadcasts/bind?id=\(broadcastId)&streamId=\(streamId)&part=id")!)
         bindReq.httpMethod = "POST"
         bindReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        _ = try? await URLSession.shared.data(for: bindReq)
-        debugPrint("📡 Broadcast \(broadcastId) bound to stream \(streamId)")
+        let (bindData, bindResp) = try await URLSession.shared.data(for: bindReq)
+        let bindStatus = (bindResp as? HTTPURLResponse)?.statusCode ?? 0
+        let bindBody = String(data: bindData, encoding: .utf8) ?? ""
+        debugPrint("[YouTube] bind \(bindStatus): \(bindBody.prefix(300))")
+        debugPrint("[YouTube] Broadcast \(broadcastId) bound to stream \(streamId)")
     }
 
     /// End the broadcast cleanly.

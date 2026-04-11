@@ -104,6 +104,16 @@ final class StreamingService: ObservableObject {
             }
         }
 
+        // Bind the stream key to the broadcast so YouTube knows which broadcast receives the RTMP data
+        if let broadcastId = currentBroadcastId {
+            do {
+                try await YouTubeService.shared.startBroadcast(broadcastId: broadcastId, streamKey: savedStreamKey)
+                debugLog("📡 Stream bound to broadcast \(broadcastId)")
+            } catch {
+                debugLog("⚠️ Stream binding failed: \(error.localizedDescription) — YouTube may not show video")
+            }
+        }
+
         debugLog("Starting stream with key \(savedStreamKey.prefix(8))...")
         rtmp.start(streamKey: savedStreamKey)
     }
