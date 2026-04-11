@@ -182,18 +182,21 @@ class YouTubeService: NSObject, ObservableObject {
             ]
         ]
 
-        // onBehalfOfContentOwnerChannel targets Sahil Hoops specifically
-        let urlStr = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails&onBehalfOfContentOwnerChannel=UCUMg4lDQC7cxgpHc5xrOH4w"
+        let urlStr = "https://www.googleapis.com/youtube/v3/liveBroadcasts?part=id,snippet,status,contentDetails"
         var req = URLRequest(url: URL(string: urlStr)!)
         req.httpMethod = "POST"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try JSONSerialization.data(withJSONObject: body)
 
-        let (data, _) = try await URLSession.shared.data(for: req)
+        let (data, response) = try await URLSession.shared.data(for: req)
+        let httpStatus = (response as? HTTPURLResponse)?.statusCode ?? 0
+        let responseBody = String(data: data, encoding: .utf8) ?? "no body"
+        debugPrint("[YouTube] createBroadcast response \(httpStatus): \(responseBody)")
+
         guard let json = try JSONSerialization.jsonObject(with: data) as? [String: Any],
               let id = json["id"] as? String else {
-            throw YouTubeError.uploadFailed("Broadcast creation failed")
+            throw YouTubeError.uploadFailed("Broadcast failed (\(httpStatus)): \(responseBody.prefix(200))")
         }
 
         // Set category to Sports (17) via video update
@@ -222,7 +225,7 @@ class YouTubeService: NSObject, ObservableObject {
         let token = try await getFreshAccessToken()
 
         // Find the liveStream ID on Sahil Hoops channel
-        var listReq = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveStreams?part=id,cdn&mine=true&maxResults=10&onBehalfOfContentOwnerChannel=UCUMg4lDQC7cxgpHc5xrOH4w")!)
+        var listReq = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveStreams?part=id,cdn&mine=true&maxResults=10")!)
         listReq.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let (listData, _) = try await URLSession.shared.data(for: listReq)
         guard let listJson = try? JSONSerialization.jsonObject(with: listData) as? [String: Any],
@@ -243,7 +246,7 @@ class YouTubeService: NSObject, ObservableObject {
     /// End the broadcast cleanly.
     func endBroadcast(broadcastId: String) async {
         guard let token = try? await getFreshAccessToken() else { return }
-        var req = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveBroadcasts/transition?broadcastStatus=complete&id=\(broadcastId)&part=id&onBehalfOfContentOwnerChannel=UCUMg4lDQC7cxgpHc5xrOH4w")!)
+        var req = URLRequest(url: URL(string: "https://www.googleapis.com/youtube/v3/liveBroadcasts/transition?broadcastStatus=complete&id=\(broadcastId)&part=id")!)
         req.httpMethod = "POST"
         req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         _ = try? await URLSession.shared.data(for: req)
@@ -265,7 +268,7 @@ class YouTubeService: NSObject, ObservableObject {
         let metadataJSON = try JSONSerialization.data(withJSONObject: metadata)
 
         // Upload to Sahil Hoops channel so recordings + live streams are in one place
-        var request = URLRequest(url: URL(string: "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status&onBehalfOfContentOwnerChannel=UCUMg4lDQC7cxgpHc5xrOH4w")!)
+        var request = URLRequest(url: URL(string: "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet,status")!)
         request.httpMethod = "POST"
         request.setValue("Bearer \(accessToken)", forHTTPHeaderField: "Authorization")
         request.setValue("application/json; charset=UTF-8", forHTTPHeaderField: "Content-Type")
