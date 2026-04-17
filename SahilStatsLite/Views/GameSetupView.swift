@@ -25,7 +25,7 @@ struct GameSetupView: View {
     @State private var location: String = ""
     @State private var halfLength: Int = 18  // AAU: 18 or 20 minute halves
     @State private var recordVideo: Bool = true
-    @State private var streamLive: Bool = StreamingService.shared.streamingEnabled
+    @State private var streamLive: Bool = false  // default OFF — enable per-game when signal is good
     @State private var isCreatingBroadcast: Bool = false
 
     @FocusState private var isOpponentFocused: Bool
