@@ -168,6 +168,8 @@ struct UltraMinimalRecordingView: View {
                     recIndicator
                         .padding(.leading, 20)
 
+                    trackingStatus
+
                     Spacer()
 
                     // Stats button - frosted glass style for visibility against any background
@@ -579,6 +581,38 @@ struct UltraMinimalRecordingView: View {
                 Image(systemName: "pause.fill")
                     .font(.system(size: 12, weight: .bold))
                     .foregroundColor(.orange)
+            }
+        }
+    }
+
+    // MARK: - Tracking Status (visible during warmup so you know before mounting)
+
+    private var trackingStatus: some View {
+        Group {
+            if hasCameraStarted && !hasGameStarted {
+                HStack(spacing: 8) {
+                    // Gimbal status
+                    HStack(spacing: 3) {
+                        Image(systemName: gimbalManager.isDockKitAvailable ? "checkmark.circle.fill" : "xmark.circle")
+                            .font(.system(size: 9))
+                        Text("Gimbal")
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .foregroundColor(gimbalManager.isDockKitAvailable ? .green : .red)
+
+                    // Player detection count
+                    HStack(spacing: 3) {
+                        Image(systemName: "person.fill")
+                            .font(.system(size: 9))
+                        Text("\(autoZoomManager.detectedPlayerCount)")
+                            .font(.system(size: 9, weight: .bold))
+                    }
+                    .foregroundColor(autoZoomManager.detectedPlayerCount > 0 ? .cyan : .gray)
+                }
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .background(Color.black.opacity(0.6))
+                .cornerRadius(8)
             }
         }
     }
