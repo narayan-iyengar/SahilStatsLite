@@ -67,20 +67,21 @@ final class GimbalTrackingManager: ObservableObject {
     private var trackingTask: Task<Void, Never>?
     private var roiUpdateTask: Task<Void, Never>?
 
-    // MARK: - PID Controller State (pan-only)
+    // MARK: - PID Controller State (pan + tilt)
 
-    // Proportional gain: how aggressively the gimbal responds to subject offset.
-    // error = actionCenter.x - 0.5 (range ±0.5). At max error, gimbal pans at maxPanVelocity.
-    // Tune Kp up if tracking feels sluggish, down if it overshoots.
-    private let Kp: Double = 0.8   // tuned from real game footage via analyze.py
+    // Pan (yaw) — proportional gain tuned from real game footage via analyze.py
+    private let Kp: Double = 0.8
+    private let maxPanVelocity: Double = 0.8     // rad/s ≈ 46°/s
+    private let panDeadband: CGFloat = 0.03      // 3% of frame center
 
-    // Maximum pan velocity in radians/second sent to DockKit.
-    // 0.8 rad/s ≈ 46°/s — fast enough for fast breaks, smooth enough for broadcast feel.
-    private let maxPanVelocity: Double = 0.8
+    // Tilt (pitch) — gentler than pan to avoid vertical hunting
+    private let KpTilt: Double = 0.4             // half of pan Kp — tilt is more sensitive
+    private let maxTiltVelocity: Double = 0.3    // rad/s — slower than pan for stability
+    private let tiltDeadband: CGFloat = 0.08     // 8% — wider deadband to avoid jitter
 
-    // Deadband: don't command any velocity if subject is within 3% of frame center.
-    // Prevents the gimbal from nervously hunting around dead center.
-    private let panDeadband: CGFloat = 0.03
+    // Gravity drift: if no players detected for 5s, slowly tilt down (court is below camera)
+    private let gravityTiltVelocity: Double = -0.05  // gentle downward drift rad/s
+    private var lastDetectionTime: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
 
     private var lastActionCenterX: CGFloat = 0.5
 
@@ -219,6 +220,7 @@ final class GimbalTrackingManager: ObservableObject {
         guard gimbalMode == .track, isDockKitAvailable, isTrackingActive else { return }
 
         lastActionCenterX = center.x
+        lastDetectionTime = CFAbsoluteTimeGetCurrent()
 
         roiUpdateTask?.cancel()
         roiUpdateTask = Task {
@@ -226,23 +228,37 @@ final class GimbalTrackingManager: ObservableObject {
             if #available(iOS 18.0, *) {
                 guard let accessory = dockAccessory else { return }
 
-                // Error: how far the subject is from the frame center (range ±0.5)
-                let error = Double(center.x) - 0.5
+                // Pan error: how far subject is from horizontal center
+                let panError = Double(center.x) - 0.5
 
-                // Within deadband — stop the gimbal so it doesn't hunt around center
-                guard abs(error) > Double(panDeadband) else {
+                // Tilt error: how far subject is from vertical center
+                // Vision coords: y=0 bottom, y=1 top. center.y < 0.5 = players in lower frame = tilt down
+                let tiltError = Double(center.y) - 0.5
+
+                // Pan velocity (Y axis = yaw)
+                let panVelocity: Double
+                if abs(panError) > Double(panDeadband) {
+                    panVelocity = max(-maxPanVelocity, min(maxPanVelocity, -Kp * panError))
+                } else {
+                    panVelocity = 0
+                }
+
+                // Tilt velocity (X axis = pitch)
+                // Positive X = tilt up (towards y=1), negative X = tilt down (towards y=0)
+                // May need sign flip — verify at first game, same as we did for pan
+                let tiltVelocity: Double
+                if abs(tiltError) > Double(tiltDeadband) {
+                    tiltVelocity = max(-maxTiltVelocity, min(maxTiltVelocity, KpTilt * tiltError))
+                } else {
+                    tiltVelocity = 0
+                }
+
+                guard panVelocity != 0 || tiltVelocity != 0 else {
                     try? await accessory.setAngularVelocity(Vector3D(x: 0, y: 0, z: 0))
                     return
                 }
 
-                // Proportional pan velocity — clamped to safe max
-                let rawVelocity = -Kp * error  // negated — gimbal was panning opposite to subject
-                let panVelocity = max(-maxPanVelocity, min(maxPanVelocity, rawVelocity))
-
-                // Y axis = yaw (pan). X/Z locked to 0.
-                // NOTE: axis may need flipping to X if gimbal tilts instead of pans —
-                // verify at warmup and swap Vector3D(x: panVelocity, y: 0, z: 0) if needed.
-                let velocity = Vector3D(x: 0, y: panVelocity, z: 0)
+                let velocity = Vector3D(x: tiltVelocity, y: panVelocity, z: 0)
                 do {
                     try await accessory.setAngularVelocity(velocity)
                     #if DEBUG
@@ -259,6 +275,24 @@ final class GimbalTrackingManager: ObservableObject {
                     )
                     try? await accessory.setRegionOfInterest(roi)
                 }
+            }
+            #endif
+        }
+    }
+
+    /// Call when no players are detected — after 5s of no detections, slowly tilt down
+    /// (gravity heuristic: the court is always below the camera, never above)
+    func applyGravityDrift() {
+        guard gimbalMode == .track, isDockKitAvailable, isTrackingActive else { return }
+        let elapsed = CFAbsoluteTimeGetCurrent() - lastDetectionTime
+        guard elapsed > 5.0 else { return }
+
+        roiUpdateTask?.cancel()
+        roiUpdateTask = Task {
+            #if canImport(DockKit)
+            if #available(iOS 18.0, *) {
+                guard let accessory = dockAccessory else { return }
+                try? await accessory.setAngularVelocity(Vector3D(x: gravityTiltVelocity, y: 0, z: 0))
             }
             #endif
         }

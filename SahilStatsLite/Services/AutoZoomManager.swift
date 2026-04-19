@@ -367,6 +367,8 @@ final class AutoZoomManager: ObservableObject {
         debugActionZone = result.debugActionZone
 
         if result.noPlayers && !result.isTimeout {
+            // No players found — apply gravity drift (tilt down slowly after 5s)
+            GimbalTrackingManager.shared.applyGravityDrift()
             if recentZoomTargets.count > 3 {
                 updateTargetZoom(max(minZoom, currentZoom - 0.1))
             }
