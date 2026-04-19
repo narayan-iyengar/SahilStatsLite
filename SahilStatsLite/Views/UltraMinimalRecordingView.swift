@@ -1367,12 +1367,20 @@ struct UltraMinimalRecordingView: View {
                         .cornerRadius(10)
                     }
 
-                    // Add Time (Overtime)
-                    Button(action: { addOvertime() }) {
+                    // Smart time button: adds 1 minute when clock is running, adds OT when clock hits 0
+                    Button(action: {
+                        if remainingSeconds > 0 {
+                            remainingSeconds += 60  // clock drift fix: add 1 minute back
+                            updateOverlayState()
+                            sendClockToWatch()
+                        } else {
+                            addOvertime()
+                        }
+                    }) {
                         VStack(spacing: 4) {
-                            Image(systemName: "plus.circle.fill")
+                            Image(systemName: remainingSeconds > 0 ? "clock.arrow.circlepath" : "plus.circle.fill")
                                 .font(.system(size: 16))
-                            Text("+1:00 OT")
+                            Text(remainingSeconds > 0 ? "+1:00" : "Add OT")
                                 .font(.system(size: 10, weight: .medium))
                         }
                         .foregroundColor(.purple)
@@ -1556,14 +1564,14 @@ struct UltraMinimalRecordingView: View {
             VStack(spacing: 2) {
                 Text("\(value.wrappedValue)")
                     .font(.system(size: 20, weight: .bold))
-                    .foregroundColor(color)
+                    .foregroundColor(.white)
                 Text(label)
                     .font(.system(size: 9, weight: .semibold))
-                    .foregroundColor(.secondary)
+                    .foregroundColor(.white.opacity(0.8))
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
-            .background(Color.gray.opacity(0.08))
+            .background(color.opacity(0.85))
             .cornerRadius(8)
         }
         .buttonStyle(.plain)
