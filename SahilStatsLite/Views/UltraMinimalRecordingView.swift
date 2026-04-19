@@ -1390,10 +1390,14 @@ struct UltraMinimalRecordingView: View {
                         .cornerRadius(10)
                     }
 
-                    // End Game
+                    // End Game — skip dialog if no recording started (warmup only)
                     Button(action: {
                         showSahilStats = false
-                        showEndConfirmation = true
+                        if hasGameStarted {
+                            showEndConfirmation = true
+                        } else {
+                            discardGame()
+                        }
                     }) {
                         VStack(spacing: 4) {
                             Image(systemName: "stop.fill")
