@@ -13,6 +13,8 @@
 			</array>
 		</dict>
 	</array>
+	<key>CFBundleDisplayName</key>
+	<string>Rebound</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Record basketball games with score overlay</string>
 	<key>NSMicrophoneUsageDescription</key>
