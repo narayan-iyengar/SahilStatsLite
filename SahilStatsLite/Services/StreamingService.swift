@@ -93,7 +93,7 @@ final class StreamingService: ObservableObject {
             debugLog("📡 Using existing broadcast: \(existingId)")
         } else if YouTubeService.shared.isAuthorized {
             // Fallback: create broadcast here if GameSetup didn't (e.g. no API access earlier)
-            let title = opponent.isEmpty ? "Sahil's Basketball Game" : "Sahil vs \(opponent)"
+            let title = opponent.isEmpty ? "Basketball Game" : "vs \(opponent)"
             do {
                 let (id, watchURL) = try await YouTubeService.shared.createBroadcast(title: title)
                 currentBroadcastId = id

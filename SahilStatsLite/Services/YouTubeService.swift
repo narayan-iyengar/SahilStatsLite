@@ -168,7 +168,7 @@ class YouTubeService: NSObject, ObservableObject {
             "snippet": [
                 "title": title,
                 "scheduledStartTime": now,
-                "description": "Sahil's basketball game streamed live."
+                "description": "Live basketball game streamed with Rebound."
             ],
             "status": [
                 "privacyStatus": "unlisted",
