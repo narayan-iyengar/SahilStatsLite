@@ -236,7 +236,7 @@ final class GimbalTrackingManager: ObservableObject {
                 }
 
                 // Proportional pan velocity — clamped to safe max
-                let rawVelocity = Kp * error
+                let rawVelocity = -Kp * error  // negated — gimbal was panning opposite to subject
                 let panVelocity = max(-maxPanVelocity, min(maxPanVelocity, rawVelocity))
 
                 // Y axis = yaw (pan). X/Z locked to 0.

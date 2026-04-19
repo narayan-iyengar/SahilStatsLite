@@ -231,9 +231,13 @@ class PersonClassifier {
         let ciImage = CIImage(cvPixelBuffer: pixelBuffer)
         guard let cgImage = ciContext.createCGImage(ciImage, from: ciImage.extent) else { return [] }
 
-        // YOLO disabled — coordinate mapping produces 0 detections. Using Vision until debugged.
-        // TODO: debug YOLO with recorded game footage (letterbox coords, confidence threshold)
-        return classifyPeople(in: cgImage)
+        if yoloDetector.isAvailable {
+            let detections = yoloDetector.detect(in: pixelBuffer)
+            return classifyFromBoxes(detections.map { ($0.boundingBox, $0.confidence) },
+                                     image: cgImage)
+        } else {
+            return classifyPeople(in: cgImage)
+        }
     }
 
     /// Fallback classification using VNDetectHumanRectanglesRequest.

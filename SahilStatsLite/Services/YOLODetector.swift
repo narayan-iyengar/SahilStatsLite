@@ -199,11 +199,12 @@ final class YOLODetector {
             let personScore = ptr[4 * featureStride + a * anchorStride]
             guard personScore >= confidenceThreshold else { continue }
 
-            // Box coords in normalized 640×640 space, y=0 at TOP (YOLO convention)
-            let cx_640 = CGFloat(ptr[0 * featureStride + a * anchorStride])
-            let cy_640 = CGFloat(ptr[1 * featureStride + a * anchorStride])
-            let w_640  = CGFloat(ptr[2 * featureStride + a * anchorStride])
-            let h_640  = CGFloat(ptr[3 * featureStride + a * anchorStride])
+            // Box coords in PIXEL space (0-640), y=0 at TOP (YOLO convention)
+            // Normalize to 0-1 range by dividing by input dimensions
+            let cx_640 = CGFloat(ptr[0 * featureStride + a * anchorStride]) / inputW
+            let cy_640 = CGFloat(ptr[1 * featureStride + a * anchorStride]) / inputH
+            let w_640  = CGFloat(ptr[2 * featureStride + a * anchorStride]) / inputW
+            let h_640  = CGFloat(ptr[3 * featureStride + a * anchorStride]) / inputH
 
             // Reverse letterbox: recover 640×360 normalized coords (still y=0 top)
             // cx unchanged — no horizontal padding
