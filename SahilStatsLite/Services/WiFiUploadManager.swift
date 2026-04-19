@@ -85,7 +85,7 @@ class WiFiUploadManager: ObservableObject {
         }
 
         let title = "\(game.teamName) vs \(game.opponent) - \(game.date.formatted(date: .abbreviated, time: .omitted))"
-        let description = "\(game.teamName) \(game.myScore) - \(game.opponentScore) \(game.opponent)\n\nRecorded with Sahil Stats"
+        let description = "\(game.teamName) \(game.myScore) - \(game.opponentScore) \(game.opponent)\n\nRecorded with Rebound"
 
         debugPrint("[WiFiUpload] Uploading: \(title)")
 

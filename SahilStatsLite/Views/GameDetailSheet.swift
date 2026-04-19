@@ -271,7 +271,7 @@ struct GameDetailSheet: View {
         let description = """
         \(game.teamName) \(game.myScore) - \(game.opponentScore) \(game.opponent)
 
-        Recorded with Sahil Stats
+        Recorded with Rebound
         """
 
         var updatedGame = game

@@ -80,7 +80,7 @@ final class StreamingService: ObservableObject {
 
     // MARK: - Lifecycle
 
-    func startStream(opponent: String = "") async {
+    func startStream(teamName: String = "", opponent: String = "") async {
         guard !savedStreamKey.isEmpty else {
             health = .failed("No stream key — add one in Settings")
             return
@@ -93,7 +93,9 @@ final class StreamingService: ObservableObject {
             debugLog("📡 Using existing broadcast: \(existingId)")
         } else if YouTubeService.shared.isAuthorized {
             // Fallback: create broadcast here if GameSetup didn't (e.g. no API access earlier)
-            let title = opponent.isEmpty ? "Basketball Game" : "vs \(opponent)"
+            let team = teamName.isEmpty ? "Home" : teamName
+            let opp = opponent.isEmpty ? "Away" : opponent
+            let title = "\(team) vs \(opp)"
             do {
                 let (id, watchURL) = try await YouTubeService.shared.createBroadcast(title: title)
                 currentBroadcastId = id

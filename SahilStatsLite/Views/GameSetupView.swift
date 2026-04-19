@@ -307,7 +307,9 @@ struct GameSetupView: View {
         isCreatingBroadcast = true
         StreamingService.shared.liveStreamURL = ""
         StreamingService.shared.currentBroadcastId = nil
-        let title = opponent.isEmpty ? "Basketball Game" : "vs \(opponent)"
+        let team = selectedTeam.isEmpty ? "Home" : selectedTeam
+        let opp = opponent.isEmpty ? "Away" : opponent
+        let title = "\(team) vs \(opp)"
         debugPrint("[GameSetup] Creating broadcast: \(title)")
         Task {
             do {

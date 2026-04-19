@@ -899,7 +899,7 @@ struct UltraMinimalRecordingView: View {
                 recordingManager.isStreamingActive = true
                 // Store broadcast ID on game so we can delete the stream recording after 4K upload
                 appState.currentGame?.broadcastVideoId = StreamingService.shared.currentBroadcastId
-                Task { await StreamingService.shared.startStream(opponent: appState.currentGame?.opponent ?? "") }
+                Task { await StreamingService.shared.startStream(teamName: appState.currentGame?.teamName ?? "", opponent: appState.currentGame?.opponent ?? "") }
             }
         }
 
