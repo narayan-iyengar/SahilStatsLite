@@ -162,7 +162,7 @@ struct GameDetailSheet: View {
 
                     // Player Stats
                     VStack(spacing: 16) {
-                        Text("Sahil's Stats")
+                        Text("Player Stats")
                             .font(.headline)
 
                         HStack(spacing: 0) {

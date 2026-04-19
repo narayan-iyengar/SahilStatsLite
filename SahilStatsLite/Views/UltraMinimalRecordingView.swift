@@ -1308,7 +1308,7 @@ struct UltraMinimalRecordingView: View {
                     HStack(spacing: 8) {
                         Image(systemName: "person.fill")
                             .foregroundColor(.orange)
-                        Text("Sahil")
+                        Text("Player Stats")
                             .font(.system(size: 18, weight: .bold))
                     }
 

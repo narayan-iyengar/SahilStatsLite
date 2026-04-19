@@ -143,7 +143,7 @@ struct HomeView: View {
             Spacer()
 
             VStack(spacing: 4) {
-                Text("Sahil Stats")
+                Text("Rebound")
                     .font(.largeTitle)
                     .fontWeight(.bold)
 

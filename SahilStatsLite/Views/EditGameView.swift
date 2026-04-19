@@ -138,7 +138,7 @@ struct EditGameView: View {
     
     private var playerStatsEditor: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Text("Sahil's Stats")
+            Text("Player Stats")
                 .font(.headline)
                 .foregroundColor(.secondary)
             

@@ -57,7 +57,7 @@ struct ManualGameEntryView: View {
                     // Score Entry
                     scoreSection
 
-                    // Sahil's Stats
+                    // Player Stats
                     statsSection
 
                     Spacer(minLength: 20)
@@ -172,7 +172,7 @@ struct ManualGameEntryView: View {
     private var statsSection: some View {
         VStack(spacing: 16) {
             HStack {
-                Text("Sahil's Stats")
+                Text("Player Stats")
                     .font(.headline)
                     .foregroundColor(.secondary)
 
