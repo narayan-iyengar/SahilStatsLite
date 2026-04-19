@@ -46,7 +46,7 @@ final class YOLODetector {
 
     // MARK: - Config
 
-    private let confidenceThreshold: Float = 0.35
+    private let confidenceThreshold: Float = 0.15  // lowered from 0.35 — was missing most frames
     private let iouThreshold: Float = 0.45
     private let personClassCOCO = 0   // COCO class 0 = person
 

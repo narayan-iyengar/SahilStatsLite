@@ -233,6 +233,10 @@ class PersonClassifier {
 
         if yoloDetector.isAvailable {
             let detections = yoloDetector.detect(in: pixelBuffer)
+            if !detections.isEmpty {
+                let maxConf = detections.max(by: { $0.confidence < $1.confidence })?.confidence ?? 0
+                debugPrint("[YOLO] raw:\(detections.count) maxConf:\(String(format:"%.2f",maxConf))")
+            }
             return classifyFromBoxes(detections.map { ($0.boundingBox, $0.confidence) },
                                      image: cgImage)
         } else {
