@@ -233,10 +233,6 @@ class PersonClassifier {
 
         if yoloDetector.isAvailable {
             let detections = yoloDetector.detect(in: pixelBuffer)
-            if !detections.isEmpty {
-                let maxConf = detections.max(by: { $0.confidence < $1.confidence })?.confidence ?? 0
-                debugPrint("[YOLO] raw:\(detections.count) maxConf:\(String(format:"%.2f",maxConf))")
-            }
             return classifyFromBoxes(detections.map { ($0.boundingBox, $0.confidence) },
                                      image: cgImage)
         } else {
@@ -290,9 +286,6 @@ class PersonClassifier {
 
         // Foreground rejection: person taller than 50% of frame is too close to be on court.
         let isMassiveForegroundObject = box.height > 0.50
-        if isMassiveForegroundObject {
-            debugPrint("[Classify] ❌ foreground reject h=\(String(format:"%.2f",box.height))")
-        }
 
         // Court masking via pose (preferred) or bounding box bottom (fallback).
         // Pose ankle positions are actual foot contact points — much more accurate than box.minY,
@@ -306,9 +299,6 @@ class PersonClassifier {
             let feetOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.minY))
             let centerOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.midY))
             isOnCourt = (feetOnCourt || centerOnCourt) && !isMassiveForegroundObject
-            if !isOnCourt && !isMassiveForegroundObject {
-                debugPrint("[Classify] ❌ off-court mid=(\(String(format:"%.2f",box.midX)),\(String(format:"%.2f",box.minY))) bounds=\(courtBounds)")
-            }
         }
 
         // Extract appearance histogram for Re-ID continuity
