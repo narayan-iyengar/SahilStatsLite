@@ -1,154 +1,95 @@
-# SahilStatsLite — Handoff Notes (2026-04-05)
+# Rebound — Handoff Notes (2026-04-25)
 
-Full two-day session (2026-04-04 + 2026-04-05). Current build: **v186 Release**.
+Current build: **v290 Release**. App rebranded from SahilStatsLite to **Rebound**.
 
 ---
 
 ## Current State
 
-All sync fixed, zero warnings, Release builds, fully wireless deploy, YouTube streaming framework in place.
+Feature-complete. All core systems working: recording, tracking, streaming, Watch scoring, auto-upload.
 
 ---
 
-## What Was Built (2026-04-05)
-
-### Wireless Deploy Pipeline (fully working, no USB)
-```
-Work Mac → git push → SSH to personal Mac → bash ~/SahilStats/deploy.sh
-    → xcodebuild Release, generic/platform=iOS
-    → xcrun devicectl → Narayans-iPhone.coredevice.local
-    → xcrun devicectl → Narayans-AppleWatch-8.coredevice.local (Series 8)
-    → xcrun devicectl → Narayans-AppleWatch.coredevice.local (Ultra 2)
-```
-- Keychain unlocked via `~/.sahil_deploy_pass`
-- Retry logic in `install_device()` — 3 attempts, 5s apart, never fatal
-- Watch apps use embedded `iPhone.app/Watch/WatchApp.app` (same binary)
-- Release builds: faster, smaller, no .debug.dylib signing issues
-- Per-frame gimbal debugPrint guarded with `#if DEBUG`
-
-### Build Number Verification
-- iOS Settings → About: "1.0 (186)"
-- Watch pre-game header: "build 186" (small text under SahilStats)
-
-### Watch Sync (Fixed)
-- `transferUserInfo` for all Watch→Phone scoring (guaranteed delivery)
-- Wall clock timestamps — zero drift for full game
-- `sendFullSnapshot()` — no merge, complete state snapshot
-
-### Stats Improvements
-- "Last 5" time period added to trend chart
-- Recent form card: last 5 PPG vs season avg + best game callout
-- Scrollable horizontal chart (no cramped x-axis labels)
-- Team name shown in game log row (orange text)
-
-### Watch Ultra 2 Text Sizing
-- Score: 56pt, Clock: 28pt, Feedback: 26pt, TeamName: 13pt
-- Series 8 also bumped: Score 40pt (was 38)
-
-### YouTube Streaming Framework (HaishinKit v3)
-**Status: Framework installed and compiling. Stream key pending (YouTube 24hr approval).**
-
-Architecture:
-```
-OverlayRenderer composites frame once
-    ↓ same CVPixelBuffer
-AVAssetWriter (HEVC 15Mbps local)    StreamingService (H.264 6Mbps → YouTube)
-```
-
-Files:
-- `StreamingService.swift` — RTMPConnection + RTMPStream (actor), setVideoSettings/setAudioSettings via await, frame injection via Task { await stream.append(sb) }
-- `RecordingManager.swift` — `isStreamingActive` flag, forks composited frame after OverlayRenderer
-- `UltraMinimalRecordingView.swift` — stream starts/stops with game clock, YT indicator in REC area
-- `HomeView.swift` — Settings: "YouTube Live" section with SecureField for stream key
-
-How it works:
-- Set stream key once in Settings (YouTube Studio → Go Live → Stream → persistent key)
-- Stream auto-starts when game clock starts, auto-stops at game end
-- Same scoreboard overlay as local recording — parents see identical view
-- Video auto-saves to YouTube when stream ends
-- Rename video in YouTube Studio after each game
-
-Stream key sharing: Share ONE YouTube watch link at season start. Parents bookmark it. Never changes.
-
----
-
-## BLOAT AUDIT (COMPLETED)
-
-All stale files deleted in prior session (AILabView, VideoAnalysisPipeline, TestVideoProcessor,
-SkynetTestView, CourtDetector, ActionProbabilityField, GameStateDetector, ExperimentalFilters,
-HomographyUtils, CourtCalibrationView, MissingComponents). Zero bloat remains.
-
-## FILE SPLITTING (COMPLETED 2026-04-10)
-
-HomeView.swift split from 2,320 lines into 6 files:
-- HomeView.swift (396 lines) — main home screen only
-- UpcomingGamesViews.swift — NextGameHeroCard, LaterTodaySection, UpcomingGamesSheet
-- GameRow.swift — game log row component
-- CareerStatsSheet.swift — trend charts, shooting stats, career averages
-- GameDetailSheet.swift — YouTube upload, video import, player stats
-- AllGamesView.swift — game log with filter/search/pagination
-- SettingsView.swift — all settings sections
-
-UltraMinimalRecordingView.swift split:
-- CameraPreviewView.swift — BlinkingColon, CameraPreviewView, CameraPreviewUIView
-
-## CONCURRENCY HARDENING (COMPLETED 2026-04-10)
-
-BallDetector: removed all 19 nonisolated(unsafe) annotations. Actor isolation via SkynetProcessor.
-OverlayRenderer: atomic OverlayState snapshot pattern (8 individual vars -> 1 struct). 
-nonisolated(unsafe) count reduced from 68 to 49 across codebase.
-
----
-
-## TODO — Next Session
-
-### Do Now (when stream key arrives)
-1. **Test streaming end-to-end** — enter stream key in Settings, start a game, verify YouTube shows live feed with overlay
-2. **Verify stream health reconnects** — test RTMP drop/reconnect behavior
-3. **Battery test** — streaming + YOLO + gimbal = ~90 min. Get USB-C power bank.
-
-### Still Pending
-4. **Gimbal axis verify** — Y=yaw assumed. If gimbal tilts instead of pans: swap to X in GimbalTrackingManager.swift line ~242
-5. **Kp tuning** — after first real game recording
-6. **Watch end-game long press** — raise 0.5s→1.0s (one line WatchScoringView.swift)
-7. **Ultra 2 deploy fix** — timed out intermittently, iOS auto-sync covers it
-
-### YouTube Streaming Setup (user action needed)
-- studio.youtube.com → Create → Go Live → Stream
-- Set Latency: Low latency, Visibility: Unlisted, Stream type: Persistent
-- Copy stream key → paste into app Settings
-
----
-
-## Architecture Quick Reference
+## Architecture
 
 ```
-iPhone Camera (4K)
-    ↓ 15fps AI frames (640x360)
-SkynetProcessor (Swift actor)
-    ├─ YOLOv8n CoreML (CONFIRMED LOADING)
-    ├─ VNDetectHumanBodyPoseRequest
-    ├─ BallDetector (fast-break early warning only)
-    ├─ DeepTracker (Kalman + Hungarian)
-    └─ PersonClassifier (player cluster = primary camera)
-           ↓
-    GimbalTrackingManager → PID setAngularVelocity (Y=yaw, Kp=1.6)
-    RecordingManager → OverlayRenderer → CVPixelBuffer
-           ↓                    ↓
-    AVAssetWriter          StreamingService
-    HEVC 15Mbps            H.264 6Mbps → YouTube RTMP
-    local file             rtmps://a.rtmp.youtube.com/live2
+Watch (Source of Truth when connected)
+    → scores, clock, period, stats
+    → sends to Phone via transferUserInfo
+    → runs independently when Phone unavailable
+
+iPhone (Camera + Recording + Streaming)
+    ← follows Watch state when connected
+    → becomes source of truth if Watch disconnected
+    → 4K recording with burned-in score overlay
+    → 1080p YouTube live stream (custom RTMP)
+    → YOLOv8n auto-tracking via DockKit gimbal
 ```
 
-## Devices
-- iPhone: Narayans-iPhone.coredevice.local
-- Watch Series 8 (scoring): Narayans-AppleWatch-8.coredevice.local
-- Watch Ultra 2 (daily): Narayans-AppleWatch.coredevice.local
-- Personal Mac SSH: narayan@Narayans-MacBook-Pro.local
-- Deploy: `ssh narayan@Narayans-MacBook-Pro.local "bash ~/SahilStats/deploy.sh"`
+### Streaming Pipeline (Custom RTMP, no HaishinKit)
+```
+Camera 4K → CIContext scale 1080p → VTCompressionSession H.264 → FLV → NWConnection TCP:1935
+                                                                  + Silent AAC loop (A/V sync)
+                                                                  → YouTube (a.rtmp.youtube.com)
+```
 
-## Key Constants to Tune
-- Gimbal Kp: GimbalTrackingManager.swift (Kp = 1.6, maxPanVelocity = 0.8)
-- Gimbal axis: Vector3D(x: 0, y: panVelocity, z: 0) — swap x/y if tilts instead of pans
-- Stream bitrate: StreamingService.swift (6_000_000 = 6 Mbps)
-- AI frame rate: SkynetProcessor.processInterval = 0.067 (15fps, raise to 0.1 if thermal issues)
+### Tracking Pipeline (Skynet v5.1)
+```
+Camera → Downscale 640x360 → YOLOv8n (0.15 conf) → PersonClassifier → DeepTracker
+                                                         ↓
+                                               GimbalTrackingManager
+                                               ├─ Pan PID (Kp=0.8, negated)
+                                               ├─ Tilt PID (Kp=0.4)
+                                               └─ Gravity drift (-0.05 rad/s after 5s no detect)
+```
+
+## Key Files
+
+| File | Purpose |
+|------|---------|
+| `SahilRTMPStreamer.swift` | Custom RTMP (~350 lines, zero dependencies) |
+| `StreamingService.swift` | Streaming lifecycle, YouTube broadcast API |
+| `YouTubeService.swift` | OAuth, upload, broadcast management → Sahil Hoops channel |
+| `AutoZoomManager.swift` | Skynet orchestrator |
+| `YOLODetector.swift` | YOLOv8n CoreML, letterbox, NMS |
+| `GimbalTrackingManager.swift` | DockKit PID (pan + tilt + gravity) |
+| `WatchConnectivityClient.swift` | Watch-side: standalone clock, period, stats |
+| `WatchConnectivityService.swift` | Phone-side: receives Watch state |
+| `RecordingManager.swift` | 4K capture, overlay, frame fork to streaming |
+
+## Recent Changes
+
+### Apr 25 — Watch Standalone Mode
+- Watch clock counts down independently (was frozen without phone)
+- Watch advances periods locally with clock reset
+- Personal fouls wired (was placeholder)
+- New game fully resets all stats
+
+### Apr 18-19 — Tracking + Rebrand
+- YOLO coordinates fixed (pixel→normalized, was causing 0 detections)
+- Gimbal pan direction negated (was opposite)
+- Tilt PID added (Kp=0.4) + gravity drift
+- App rebranded to "Rebound"
+- Repo renamed to github.com/narayan-iyengar/rebound
+
+### Apr 7-8 — Streaming
+- Custom RTMP implementation (replaced HaishinKit entirely)
+- Silent AAC for A/V sync
+- Auto-broadcast via YouTube API (unlisted, Sports, ultra-low latency)
+- Per-game streaming toggle in GameSetupView
+
+## YouTube
+- Channel: Sahil Hoops (@RealDeadlSahil, UCUMg4lDQC7cxgpHc5xrOH4w)
+- All uploads + broadcasts target this channel
+- Titles: "Team vs Opponent", descriptions: "Recorded with Rebound"
+
+## Known Issues
+- Free dev cert expires unpredictably (considering $99/yr program)
+- Ultra 2 often times out on wireless deploy
+- YOLO foreground filter blocks home testing (works at game distance)
+- Tilt direction confirmed at home, untested at game (may need sign flip)
+
+## Deploy
+```bash
+ssh narayan@Narayans-MacBook-Pro.local "bash ~/SahilStats/deploy.sh"
+```
