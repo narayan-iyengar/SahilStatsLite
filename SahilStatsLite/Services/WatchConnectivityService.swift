@@ -106,7 +106,9 @@ class WatchConnectivityService: NSObject, ObservableObject {
     // Callbacks for when watch sends updates
     var onScoreUpdate: ((_ team: String, _ points: Int, _ isSubtract: Bool) -> Void)?
     var onClockToggle: (() -> Void)?
+    var onClockSync: ((_ remainingSeconds: Int, _ isRunning: Bool) -> Void)?
     var onPeriodAdvance: (() -> Void)?
+    var onPeriodSync: ((_ period: String, _ remainingSeconds: Int) -> Void)?
     var onStatUpdate: ((_ statType: String, _ value: Int) -> Void)?
     var onEndGame: (() -> Void)?
     var onStartGame: ((_ game: WatchGame) -> Void)?
@@ -402,13 +404,20 @@ extension WatchConnectivityService: WCSessionDelegate {
             onScoreUpdate?(team, points, isSubtract)
         }
 
-        // Clock toggle from watch
+        // Clock update from watch (Watch is source of truth when scoring from wrist)
         if message[WatchMessage.clockUpdate] != nil {
+            if let remaining = message[WatchMessage.remainingSeconds] as? Int {
+                onClockSync?(remaining, message["isClockRunning"] as? Bool ?? false)
+            }
             onClockToggle?()
         }
 
-        // Period advance from watch
+        // Period advance from watch (Watch runs periods independently)
         if message[WatchMessage.periodUpdate] != nil {
+            if let per = message[WatchMessage.period] as? String,
+               let remaining = message[WatchMessage.remainingSeconds] as? Int {
+                onPeriodSync?(per, remaining)
+            }
             onPeriodAdvance?()
         }
 

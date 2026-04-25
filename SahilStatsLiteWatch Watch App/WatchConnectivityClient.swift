@@ -142,6 +142,7 @@ class WatchConnectivityClient: NSObject, ObservableObject {
     @Published var steals: Int = 0
     @Published var blocks: Int = 0
     @Published var turnovers: Int = 0
+    @Published var fouls: Int = 0
 
     private var session: WCSession?
     private var extendedSession: WKExtendedRuntimeSession?
@@ -277,10 +278,16 @@ class WatchConnectivityClient: NSObject, ObservableObject {
         halfLength = game.halfLength
         remainingSeconds = game.halfLength * 60
         isClockRunning = false
+        clockStartedAt = 0
+        secondsAtClockStart = 0
         period = "1st Half"
         periodIndex = 0
         self.opponent = game.opponent
         self.teamName = game.teamName
+        // Reset ALL player stats
+        fg2Made = 0; fg2Att = 0; fg3Made = 0; fg3Att = 0
+        ftMade = 0; ftAtt = 0; assists = 0; rebounds = 0
+        steals = 0; blocks = 0; turnovers = 0; fouls = 0
 
         let message: [String: Any] = [
             WatchMessage.startGame: true,
@@ -310,13 +317,46 @@ class WatchConnectivityClient: NSObject, ObservableObject {
     /// Toggle clock (pause/play)
     func toggleClock() {
         isClockRunning.toggle()
-        // Clock toggle: use sendUserInfo so it's delivered even if phone backgrounded
-        sendUserInfo([WatchMessage.clockUpdate: true])
+
+        // Run clock locally (Watch is source of truth when scoring from wrist)
+        if isClockRunning {
+            clockStartedAt = Date().timeIntervalSince1970
+            secondsAtClockStart = remainingSeconds
+        } else {
+            // Paused — snapshot remaining time and clear wall clock
+            remainingSeconds = computedRemainingSeconds
+            clockStartedAt = 0
+            secondsAtClockStart = 0
+        }
+
+        // Sync to phone (delivered even if phone backgrounded)
+        sendUserInfo([
+            WatchMessage.clockUpdate: true,
+            "clockStartedAt": clockStartedAt,
+            "secondsAtClockStart": secondsAtClockStart,
+            WatchMessage.remainingSeconds: remainingSeconds,
+            "isClockRunning": isClockRunning
+        ])
     }
 
-    /// Advance period
+    private let periodLabels = ["1st Half", "2nd Half", "OT1", "OT2", "OT3"]
+
+    /// Advance period — works standalone, syncs to phone when available
     func advancePeriod() {
-        sendUserInfo([WatchMessage.periodUpdate: true])
+        if periodIndex < periodLabels.count - 1 {
+            periodIndex += 1
+            period = periodLabels[periodIndex]
+            // Reset clock for new period
+            remainingSeconds = periodIndex >= 2 ? 4 * 60 : halfLength * 60  // OT = 4 min
+            isClockRunning = false
+            clockStartedAt = 0
+        }
+        sendUserInfo([
+            WatchMessage.periodUpdate: true,
+            WatchMessage.period: period,
+            WatchMessage.periodIndex: periodIndex,
+            WatchMessage.remainingSeconds: remainingSeconds
+        ])
     }
 
     /// Update a stat (sent to phone)
@@ -333,6 +373,7 @@ class WatchConnectivityClient: NSObject, ObservableObject {
         case "steals": steals += value
         case "blocks": blocks += value
         case "turnovers": turnovers += value
+        case "fouls": fouls += value
         default: break
         }
         sendUserInfo([

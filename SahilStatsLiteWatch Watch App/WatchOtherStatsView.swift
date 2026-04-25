@@ -48,8 +48,8 @@ struct WatchOtherStatsView: View {
                 statTile("TO", connectivity.turnovers, .red) {
                     connectivity.updateStat("turnovers", value: 1)
                 }
-                statTile("PF", 0, .gray) {
-                    // Fouls - placeholder
+                statTile("PF", connectivity.fouls, .gray) {
+                    connectivity.updateStat("fouls", value: 1)
                 }
             }
             .padding(.horizontal, 8)
