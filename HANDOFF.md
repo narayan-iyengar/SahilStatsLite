@@ -101,20 +101,16 @@ Camera → Downscale 640x360 → YOLOv8n (0.15 conf) → PersonClassifier → De
 - Ultra 2 often times out on wireless deploy
 - YOLO foreground filter blocks home testing (works at game distance 10+ feet)
 - Tilt direction confirmed at home, untested at game (may need sign flip)
-- Scoreboard style picker binding broken (styles render correctly, switching doesn't work — low priority)
+## Completed Optimizations (Apr 25, Opus session)
+- CVPixelBuffer pool reuse for streaming (was allocating per frame, now pooled)
+- Removed 3 unused scoreboard styles (Full Bar, Broadcast, Pill) — 309 lines deleted
+- Removed dead film icon from GameRow (videoURL always nil after upload)
+- Silent audio fallback already fixed (iOS 26 PCM rewrite in earlier session)
 
-## Optimization Plan (Tier 3+4 — not yet implemented)
-
-### Tier 3 — Medium Risk (touches existing logic)
-- CVPixelBuffer pool reuse for streaming (performance — replaces per-frame allocation)
-- RTMP auto-reconnect on WiFi drop (streaming resilience)
-- Silent audio fallback when AVAudioConverter fails explicitly
-- YouTube broadcast API retry on network blip
-
-### Tier 4 — Higher Risk (architecture changes)
-- `nonisolated(unsafe)` audit and reduction (~49 across codebase, potential data races)
-- Game persistence conflict resolution hardening (Firebase merge edge cases)
-- Explicit AI frame pipeline replacing fragile callback pattern
+## Remaining (Tier 4 — not urgent)
+- `nonisolated(unsafe)` audit (~49 across codebase)
+- Consider removing BallDetector (~730 lines, minimal tracking impact)
+- RTMP auto-reconnect, YouTube API retry — evaluated, not worth the complexity
 
 ## Deploy
 ```bash
