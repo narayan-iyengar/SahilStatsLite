@@ -52,7 +52,7 @@ struct GameRow: View {
                     .monospacedDigit()
 
                 HStack(spacing: 4) {
-                    // YouTube status icon
+                    // Video status: local → cloud → uploaded
                     if game.youtubeStatus == .uploading {
                         ProgressView()
                             .scaleEffect(0.6)
@@ -64,6 +64,10 @@ struct GameRow: View {
                         Image(systemName: "exclamationmark.icloud.fill")
                             .font(.caption2)
                             .foregroundColor(.red)
+                    } else if game.videoURL != nil {
+                        Image(systemName: "film")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
                     }
 
                     Text("\(game.playerStats.points) pts")

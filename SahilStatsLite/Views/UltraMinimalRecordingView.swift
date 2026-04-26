@@ -386,6 +386,7 @@ struct UltraMinimalRecordingView: View {
                 } else {
                     opponentScore += points
                 }
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
             }
             updateOverlayState()
             sendScoreToWatch()
@@ -1576,7 +1577,7 @@ struct UltraMinimalRecordingView: View {
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
             .background(color.opacity(0.85))
-            .cornerRadius(8)
+            .clipShape(Capsule())
         }
         .buttonStyle(.plain)
         .contextMenu {
