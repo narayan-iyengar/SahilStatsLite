@@ -1,12 +1,13 @@
 # Rebound — Handoff Notes (2026-04-25)
 
-Current build: **v290 Release**. App rebranded from SahilStatsLite to **Rebound**.
+Current build: **v297 Release**. App rebranded from SahilStatsLite to **Rebound**.
 
 ---
 
 ## Current State
 
 Feature-complete. All core systems working: recording, tracking, streaming, Watch scoring, auto-upload.
+HaishinKit removed from SPM. UX polished (Tier 1+2 complete).
 
 ---
 
@@ -56,8 +57,20 @@ Camera → Downscale 640x360 → YOLOv8n (0.15 conf) → PersonClassifier → De
 | `WatchConnectivityClient.swift` | Watch-side: standalone clock, period, stats |
 | `WatchConnectivityService.swift` | Phone-side: receives Watch state |
 | `RecordingManager.swift` | 4K capture, overlay, frame fork to streaming |
+| `OverlayRenderer.swift` | Score overlay — 4 styles built (classic active, others ready) |
 
 ## Recent Changes
+
+### Apr 25 — UX Polish (Tier 1+2)
+- HaishinKit removed from SPM (was unused, slowed builds)
+- Game log film icon for games with local video
+- Haptic feedback on phone score taps
+- Stat tiles capsule-shaped with white-on-color (AST, REB, STL, BLK, TO, PF)
+- Tracking indicator visible during recording (player count + gimbal status)
+- Smart clock +1:00 undo via long-press (warning haptic)
+- 4 scoreboard overlay styles built in OverlayRenderer (Classic, Full Bar, Broadcast, Pill)
+  - Picker removed (style switching had a binding bug, classic works, not worth debugging)
+  - Code preserved for future use
 
 ### Apr 25 — Watch Standalone Mode
 - Watch clock counts down independently (was frozen without phone)
@@ -84,10 +97,24 @@ Camera → Downscale 640x360 → YOLOv8n (0.15 conf) → PersonClassifier → De
 - Titles: "Team vs Opponent", descriptions: "Recorded with Rebound"
 
 ## Known Issues
-- Free dev cert expires unpredictably (considering $99/yr program)
+- Free dev cert expires unpredictably (considering $99/yr Apple Developer Program)
 - Ultra 2 often times out on wireless deploy
-- YOLO foreground filter blocks home testing (works at game distance)
+- YOLO foreground filter blocks home testing (works at game distance 10+ feet)
 - Tilt direction confirmed at home, untested at game (may need sign flip)
+- Scoreboard style picker binding broken (styles render correctly, switching doesn't work — low priority)
+
+## Optimization Plan (Tier 3+4 — not yet implemented)
+
+### Tier 3 — Medium Risk (touches existing logic)
+- CVPixelBuffer pool reuse for streaming (performance — replaces per-frame allocation)
+- RTMP auto-reconnect on WiFi drop (streaming resilience)
+- Silent audio fallback when AVAudioConverter fails explicitly
+- YouTube broadcast API retry on network blip
+
+### Tier 4 — Higher Risk (architecture changes)
+- `nonisolated(unsafe)` audit and reduction (~49 across codebase, potential data races)
+- Game persistence conflict resolution hardening (Firebase merge edge cases)
+- Explicit AI frame pipeline replacing fragile callback pattern
 
 ## Deploy
 ```bash
