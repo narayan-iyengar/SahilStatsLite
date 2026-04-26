@@ -16,11 +16,6 @@
 		8B4AE4A02F2057DF005F206B /* SahilStatsLiteWatch Watch App.app in Embed Watch Content */ = {isa = PBXBuildFile; fileRef = 8B4AE4962F2057DD005F206B /* SahilStatsLiteWatch Watch App.app */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		8B4AE4A72F20581C005F206B /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B4AE4A62F20581C005F206B /* WatchConnectivity.framework */; };
 		8B4AE4B32F205878005F206B /* WatchConnectivity.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 8B4AE4B22F205878005F206B /* WatchConnectivity.framework */; };
-		8BD819232F82D84600F640EB /* HaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8BD819222F82D84600F640EB /* HaishinKit */; };
-		8BD819252F82D84600F640EB /* MoQTHaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8BD819242F82D84600F640EB /* MoQTHaishinKit */; };
-		8BD819272F82D84600F640EB /* RTCHaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8BD819262F82D84600F640EB /* RTCHaishinKit */; };
-		8BD819292F82D84600F640EB /* RTMPHaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8BD819282F82D84600F640EB /* RTMPHaishinKit */; };
-		8BD8192B2F82D84600F640EB /* SRTHaishinKit in Frameworks */ = {isa = PBXBuildFile; productRef = 8BD8192A2F82D84600F640EB /* SRTHaishinKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -95,17 +90,12 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				8BD819252F82D84600F640EB /* MoQTHaishinKit in Frameworks */,
 				8B4AE4872F1F3D58005F206B /* GoogleSignIn in Frameworks */,
-				8BD8192B2F82D84600F640EB /* SRTHaishinKit in Frameworks */,
 				8B4AE43D2F142002005F206B /* FirebaseDatabase in Frameworks */,
 				8B4AE43F2F142002005F206B /* FirebaseFirestore in Frameworks */,
 				8B4AE4892F1F3D58005F206B /* GoogleSignInSwift in Frameworks */,
 				8B4AE4A72F20581C005F206B /* WatchConnectivity.framework in Frameworks */,
-				8BD819292F82D84600F640EB /* RTMPHaishinKit in Frameworks */,
-				8BD819272F82D84600F640EB /* RTCHaishinKit in Frameworks */,
 				8B4AE43B2F142002005F206B /* FirebaseCore in Frameworks */,
-				8BD819232F82D84600F640EB /* HaishinKit in Frameworks */,
 				8B4AE4392F142002005F206B /* FirebaseAuth in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -178,11 +168,6 @@
 				8B4AE43E2F142002005F206B /* FirebaseFirestore */,
 				8B4AE4862F1F3D58005F206B /* GoogleSignIn */,
 				8B4AE4882F1F3D58005F206B /* GoogleSignInSwift */,
-				8BD819222F82D84600F640EB /* HaishinKit */,
-				8BD819242F82D84600F640EB /* MoQTHaishinKit */,
-				8BD819262F82D84600F640EB /* RTCHaishinKit */,
-				8BD819282F82D84600F640EB /* RTMPHaishinKit */,
-				8BD8192A2F82D84600F640EB /* SRTHaishinKit */,
 			);
 			productName = SahilStatsLite;
 			productReference = 8B4AE4292F141E81005F206B /* SahilStatsLite.app */;
@@ -240,7 +225,6 @@
 			packageReferences = (
 				8B4AE4372F142002005F206B /* XCRemoteSwiftPackageReference "firebase-ios-sdk" */,
 				8B4AE4852F1F3D58005F206B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */,
-				8BD819212F82D84600F640EB /* XCRemoteSwiftPackageReference "HaishinKit" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 8B4AE42A2F141E81005F206B /* Products */;
@@ -620,14 +604,6 @@
 				minimumVersion = 9.1.0;
 			};
 		};
-		8BD819212F82D84600F640EB /* XCRemoteSwiftPackageReference "HaishinKit" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/shogo4405/HaishinKit.swift";
-			requirement = {
-				kind = upToNextMajorVersion;
-				minimumVersion = 2.2.5;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -660,31 +636,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 8B4AE4852F1F3D58005F206B /* XCRemoteSwiftPackageReference "GoogleSignIn-iOS" */;
 			productName = GoogleSignInSwift;
-		};
-		8BD819222F82D84600F640EB /* HaishinKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 8BD819212F82D84600F640EB /* XCRemoteSwiftPackageReference "HaishinKit" */;
-			productName = HaishinKit;
-		};
-		8BD819242F82D84600F640EB /* MoQTHaishinKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 8BD819212F82D84600F640EB /* XCRemoteSwiftPackageReference "HaishinKit" */;
-			productName = MoQTHaishinKit;
-		};
-		8BD819262F82D84600F640EB /* RTCHaishinKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 8BD819212F82D84600F640EB /* XCRemoteSwiftPackageReference "HaishinKit" */;
-			productName = RTCHaishinKit;
-		};
-		8BD819282F82D84600F640EB /* RTMPHaishinKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 8BD819212F82D84600F640EB /* XCRemoteSwiftPackageReference "HaishinKit" */;
-			productName = RTMPHaishinKit;
-		};
-		8BD8192A2F82D84600F640EB /* SRTHaishinKit */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 8BD819212F82D84600F640EB /* XCRemoteSwiftPackageReference "HaishinKit" */;
-			productName = SRTHaishinKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
