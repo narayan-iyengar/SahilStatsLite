@@ -31,12 +31,16 @@ struct OverlayState: Sendable {
 
 enum ScoreboardStyle: String, CaseIterable {
     case classic = "Classic"
+    case fullBar = "Full Bar"
     case broadcast = "Broadcast"
+    case pill = "Pill"
 
     var description: String {
         switch self {
-        case .classic: return "Corner scorebug (current)"
-        case .broadcast: return "NBA-style centered bar"
+        case .classic:   return "Corner scorebug"
+        case .fullBar:   return "Full-width bottom bar"
+        case .broadcast: return "NBA centered bar"
+        case .pill:      return "Minimal floating pill"
         }
     }
 }
@@ -85,8 +89,12 @@ class OverlayRenderer: @unchecked Sendable {
         switch style {
         case .classic:
             drawNBAStyleScoreboard(in: context, width: CGFloat(width), height: CGFloat(height))
+        case .fullBar:
+            drawFullBarScoreboard(in: context, width: CGFloat(width), height: CGFloat(height))
         case .broadcast:
             drawBroadcastScoreboard(in: context, width: CGFloat(width), height: CGFloat(height))
+        case .pill:
+            drawPillScoreboard(in: context, width: CGFloat(width), height: CGFloat(height))
         }
 
         return pixelBuffer
@@ -312,6 +320,157 @@ class OverlayRenderer: @unchecked Sendable {
         context.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.08))
         context.setLineWidth(1 * scale)
         context.addPath(bgPath)
+        context.strokePath()
+    }
+
+    /// Full-width bar across bottom of frame
+    /// ┌──────────────────────────────────────────────────────────────────────┐
+    /// │  🟨 LAVA  12  │  🟦 JDRJ  8  │  1st  │  14:23                     │
+    /// └──────────────────────────────────────────────────────────────────────┘
+    private nonisolated func drawFullBarScoreboard(in context: CGContext, width: CGFloat, height: CGFloat) {
+        let s = state
+        let isLandscape = width > height
+        let referenceWidth: CGFloat = isLandscape ? 1920.0 : 1080.0
+        let scale = (width / referenceWidth) * 1.5
+
+        let barHeight: CGFloat = 44 * scale
+        let barY = height - barHeight
+
+        // Full-width background
+        context.setFillColor(CGColor(red: 0.05, green: 0.05, blue: 0.07, alpha: 0.90))
+        context.fill(CGRect(x: 0, y: barY, width: width, height: barHeight))
+
+        // Top edge line
+        context.setFillColor(CGColor(red: 0.3, green: 0.3, blue: 0.35, alpha: 0.5))
+        context.fill(CGRect(x: 0, y: barY, width: width, height: 1 * scale))
+
+        let sectionPad: CGFloat = 20 * scale
+        var curX: CGFloat = sectionPad
+
+        // Home color bar
+        context.setFillColor(homeColor.cgColor)
+        context.fill(CGRect(x: curX, y: barY + 8 * scale, width: 4 * scale, height: barHeight - 16 * scale))
+        curX += 12 * scale
+
+        // Home name
+        let homeNameRect = CGRect(x: curX, y: barY, width: 80 * scale, height: barHeight)
+        drawText(String(s.homeTeam.prefix(4)).uppercased(), in: homeNameRect, context: context,
+                 fontSize: 15 * scale, color: .white, bold: true, alignment: .left)
+        curX += 85 * scale
+
+        // Home score
+        let homeScoreRect = CGRect(x: curX, y: barY, width: 50 * scale, height: barHeight)
+        drawText("\(s.homeScore)", in: homeScoreRect, context: context,
+                 fontSize: 26 * scale, color: .white, bold: true, alignment: .right)
+        curX += 65 * scale
+
+        // Divider
+        context.setFillColor(CGColor(red: 0.4, green: 0.4, blue: 0.45, alpha: 0.5))
+        context.fill(CGRect(x: curX, y: barY + 8 * scale, width: 1 * scale, height: barHeight - 16 * scale))
+        curX += 15 * scale
+
+        // Away color bar
+        context.setFillColor(awayColor.cgColor)
+        context.fill(CGRect(x: curX, y: barY + 8 * scale, width: 4 * scale, height: barHeight - 16 * scale))
+        curX += 12 * scale
+
+        // Away name
+        let awayNameRect = CGRect(x: curX, y: barY, width: 80 * scale, height: barHeight)
+        drawText(String(s.awayTeam.prefix(4)).uppercased(), in: awayNameRect, context: context,
+                 fontSize: 15 * scale, color: .white, bold: true, alignment: .left)
+        curX += 85 * scale
+
+        // Away score
+        let awayScoreRect = CGRect(x: curX, y: barY, width: 50 * scale, height: barHeight)
+        drawText("\(s.awayScore)", in: awayScoreRect, context: context,
+                 fontSize: 26 * scale, color: .white, bold: true, alignment: .right)
+        curX += 65 * scale
+
+        // Divider
+        context.setFillColor(CGColor(red: 0.4, green: 0.4, blue: 0.45, alpha: 0.5))
+        context.fill(CGRect(x: curX, y: barY + 8 * scale, width: 1 * scale, height: barHeight - 16 * scale))
+        curX += 15 * scale
+
+        // Period
+        let periodRect = CGRect(x: curX, y: barY, width: 60 * scale, height: barHeight)
+        drawText(s.period, in: periodRect, context: context,
+                 fontSize: 12 * scale, color: UIColor(white: 0.6, alpha: 1.0), bold: true, alignment: .center)
+        curX += 65 * scale
+
+        // Clock
+        let clockColor = s.isClockRunning ? UIColor.white : UIColor(red: 1.0, green: 0.6, blue: 0.2, alpha: 1.0)
+        let clockRect = CGRect(x: curX, y: barY, width: 80 * scale, height: barHeight)
+        drawText(s.clockTime, in: clockRect, context: context,
+                 fontSize: 20 * scale, color: clockColor, bold: true, alignment: .left, monospaced: true)
+    }
+
+    /// Minimal floating pill — centered bottom
+    /// ┌───────────────────────┐
+    /// │ LAVA 12 - 8 JDRJ  Q1 │
+    /// │       14:23           │
+    /// └───────────────────────┘
+    private nonisolated func drawPillScoreboard(in context: CGContext, width: CGFloat, height: CGFloat) {
+        let s = state
+        let isLandscape = width > height
+        let referenceWidth: CGFloat = isLandscape ? 1920.0 : 1080.0
+        let scale = (width / referenceWidth) * 1.5
+
+        let pillWidth: CGFloat = 320 * scale
+        let pillHeight: CGFloat = 70 * scale
+        let cornerRadius: CGFloat = pillHeight / 2  // fully rounded ends
+
+        let pillX = (width - pillWidth) / 2
+        let pillY = height - 36 * scale - pillHeight
+
+        // Background pill
+        let pillRect = CGRect(x: pillX, y: pillY, width: pillWidth, height: pillHeight)
+        let pillPath = CGPath(roundedRect: pillRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        context.saveGState()
+        context.addPath(pillPath)
+        context.setFillColor(CGColor(red: 0.06, green: 0.06, blue: 0.08, alpha: 0.88))
+        context.fillPath()
+        context.restoreGState()
+
+        // Top row: LAVA 12 - 8 JDRJ  1st
+        let topY = pillY + 4 * scale
+        let topH: CGFloat = pillHeight * 0.48
+        let innerPad: CGFloat = 20 * scale
+
+        // Home name
+        drawText(String(s.homeTeam.prefix(4)).uppercased(), in: CGRect(x: pillX + innerPad, y: topY, width: 60 * scale, height: topH),
+                 context: context, fontSize: 13 * scale, color: homeColor, bold: true, alignment: .left)
+
+        // Home score
+        drawText("\(s.homeScore)", in: CGRect(x: pillX + 80 * scale, y: topY, width: 40 * scale, height: topH),
+                 context: context, fontSize: 20 * scale, color: .white, bold: true, alignment: .right)
+
+        // Dash
+        drawText("-", in: CGRect(x: pillX + 125 * scale, y: topY, width: 20 * scale, height: topH),
+                 context: context, fontSize: 16 * scale, color: UIColor(white: 0.5, alpha: 1.0), bold: false, alignment: .center)
+
+        // Away score
+        drawText("\(s.awayScore)", in: CGRect(x: pillX + 150 * scale, y: topY, width: 40 * scale, height: topH),
+                 context: context, fontSize: 20 * scale, color: .white, bold: true, alignment: .left)
+
+        // Away name
+        drawText(String(s.awayTeam.prefix(4)).uppercased(), in: CGRect(x: pillX + 190 * scale, y: topY, width: 60 * scale, height: topH),
+                 context: context, fontSize: 13 * scale, color: awayColor, bold: true, alignment: .right)
+
+        // Period
+        drawText(s.period, in: CGRect(x: pillX + 255 * scale, y: topY, width: 50 * scale, height: topH),
+                 context: context, fontSize: 10 * scale, color: UIColor(white: 0.5, alpha: 1.0), bold: true, alignment: .center)
+
+        // Bottom row: clock centered
+        let botY = pillY + pillHeight * 0.48
+        let botH: CGFloat = pillHeight * 0.48
+        let clockColor = s.isClockRunning ? UIColor.white : UIColor(red: 1.0, green: 0.6, blue: 0.2, alpha: 1.0)
+        drawText(s.clockTime, in: CGRect(x: pillX, y: botY, width: pillWidth, height: botH),
+                 context: context, fontSize: 18 * scale, color: clockColor, bold: true, alignment: .center, monospaced: true)
+
+        // Subtle border
+        context.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.06))
+        context.setLineWidth(1 * scale)
+        context.addPath(pillPath)
         context.strokePath()
     }
 
