@@ -88,25 +88,6 @@ struct SettingsView: View {
                     Text("Skynet uses AI to track players and adjust zoom automatically. These settings apply to all recordings.")
                 }
 
-                // Scoreboard Style
-                Section {
-                    Picker("Overlay Style", selection: Binding(
-                        get: { RecordingManager.shared.overlayRenderer.style },
-                        set: { newStyle in
-                            RecordingManager.shared.overlayRenderer.style = newStyle
-                            UserDefaults.standard.set(newStyle.rawValue, forKey: "scoreboardStyle")
-                            debugPrint("[Settings] Scoreboard style → \(newStyle.rawValue)")
-                        }
-                    )) {
-                        ForEach(ScoreboardStyle.allCases, id: \.self) { style in
-                            Text(style.description).tag(style)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                } header: {
-                    Text("Scoreboard")
-                }
-
                 // YouTube Section
                 Section {
                     if youtubeService.isAuthorized {
