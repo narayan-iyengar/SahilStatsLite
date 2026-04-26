@@ -590,7 +590,7 @@ struct UltraMinimalRecordingView: View {
 
     private var trackingStatus: some View {
         Group {
-            if hasCameraStarted && !hasGameStarted {
+            if hasCameraStarted {
                 HStack(spacing: 8) {
                     // Gimbal status
                     HStack(spacing: 3) {
@@ -1368,10 +1368,11 @@ struct UltraMinimalRecordingView: View {
                         .cornerRadius(10)
                     }
 
-                    // Smart time button: adds 1 minute when clock is running, adds OT when clock hits 0
+                    // Smart time button: tap +1:00, long-press -1:00, Add OT when clock=0
                     Button(action: {
                         if remainingSeconds > 0 {
-                            remainingSeconds += 60  // clock drift fix: add 1 minute back
+                            remainingSeconds += 60
+                            UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             updateOverlayState()
                             sendClockToWatch()
                         } else {
@@ -1390,6 +1391,14 @@ struct UltraMinimalRecordingView: View {
                         .background(Color.purple.opacity(0.1))
                         .cornerRadius(10)
                     }
+                    .simultaneousGesture(LongPressGesture(minimumDuration: 0.5).onEnded { _ in
+                        if remainingSeconds >= 60 {
+                            remainingSeconds -= 60
+                            UINotificationFeedbackGenerator().notificationOccurred(.warning)
+                            updateOverlayState()
+                            sendClockToWatch()
+                        }
+                    })
 
                     // End Game — skip dialog if no recording started (warmup only)
                     Button(action: {

@@ -29,11 +29,26 @@ struct OverlayState: Sendable {
     var eventName: String = ""
 }
 
+enum ScoreboardStyle: String, CaseIterable {
+    case classic = "Classic"
+    case broadcast = "Broadcast"
+
+    var description: String {
+        switch self {
+        case .classic: return "Corner scorebug (current)"
+        case .broadcast: return "NBA-style centered bar"
+        }
+    }
+}
+
 class OverlayRenderer: @unchecked Sendable {
 
     // MARK: - Overlay State (atomic snapshot)
 
     nonisolated(unsafe) var state = OverlayState()
+    nonisolated(unsafe) var style: ScoreboardStyle = {
+        ScoreboardStyle(rawValue: UserDefaults.standard.string(forKey: "scoreboardStyle") ?? "") ?? .classic
+    }()
 
     // Team colors (constant after init, safe to read from any thread)
     let homeColor: UIColor = UIColor(red: 1.0, green: 0.5, blue: 0.0, alpha: 1.0)  // Orange
@@ -67,8 +82,12 @@ class OverlayRenderer: @unchecked Sendable {
         context.translateBy(x: 0, y: CGFloat(height))
         context.scaleBy(x: 1, y: -1)
 
-        // Draw NBA-style corner scorebug
-        drawNBAStyleScoreboard(in: context, width: CGFloat(width), height: CGFloat(height))
+        switch style {
+        case .classic:
+            drawNBAStyleScoreboard(in: context, width: CGFloat(width), height: CGFloat(height))
+        case .broadcast:
+            drawBroadcastScoreboard(in: context, width: CGFloat(width), height: CGFloat(height))
+        }
 
         return pixelBuffer
     }
@@ -177,6 +196,122 @@ class OverlayRenderer: @unchecked Sendable {
         context.setLineWidth(1 * scale)
         context.move(to: CGPoint(x: bugX + colorBarWidth, y: bugY + rowHeight))
         context.addLine(to: CGPoint(x: bugX + bugWidth - cornerRadius, y: bugY + rowHeight))
+        context.strokePath()
+    }
+
+    /// NBA broadcast-style centered scoreboard
+    /// Layout: ┌────────────────────────────────┐
+    ///         │ LAVA  12 │ 1st 14:23 │ 8  JDRJ│
+    ///         └────────────────────────────────┘
+    private nonisolated func drawBroadcastScoreboard(in context: CGContext, width: CGFloat, height: CGFloat) {
+        let s = state
+        let isLandscape = width > height
+        let referenceWidth: CGFloat = isLandscape ? 1920.0 : 1080.0
+        let scale = (width / referenceWidth) * 1.5
+
+        // Bar dimensions
+        let barHeight: CGFloat = 48 * scale
+        let barWidth: CGFloat = 460 * scale
+        let cornerRadius: CGFloat = 6 * scale
+
+        // Position: bottom center with padding
+        let barX = (width - barWidth) / 2
+        let barY = height - 40 * scale - barHeight
+
+        // Section widths
+        let teamSectionWidth: CGFloat = 160 * scale  // each team
+        let centerWidth = barWidth - teamSectionWidth * 2  // period + clock
+
+        // === BACKGROUND ===
+        let bgRect = CGRect(x: barX, y: barY, width: barWidth, height: barHeight)
+        let bgPath = CGPath(roundedRect: bgRect, cornerWidth: cornerRadius, cornerHeight: cornerRadius, transform: nil)
+        context.saveGState()
+        context.addPath(bgPath)
+        context.setFillColor(CGColor(red: 0.06, green: 0.06, blue: 0.08, alpha: 0.92))
+        context.fillPath()
+        context.restoreGState()
+
+        // === HOME TEAM (left) ===
+        // Color accent bar
+        let homeAccentRect = CGRect(x: barX, y: barY, width: 5 * scale, height: barHeight)
+        context.saveGState()
+        let homeClip = CGMutablePath()
+        homeClip.move(to: CGPoint(x: barX, y: barY + cornerRadius))
+        homeClip.addArc(center: CGPoint(x: barX + cornerRadius, y: barY + cornerRadius), radius: cornerRadius, startAngle: .pi, endAngle: .pi * 1.5, clockwise: false)
+        homeClip.addLine(to: CGPoint(x: barX + 5 * scale, y: barY))
+        homeClip.addLine(to: CGPoint(x: barX + 5 * scale, y: barY + barHeight))
+        homeClip.addLine(to: CGPoint(x: barX + cornerRadius, y: barY + barHeight))
+        homeClip.addArc(center: CGPoint(x: barX + cornerRadius, y: barY + barHeight - cornerRadius), radius: cornerRadius, startAngle: .pi / 2, endAngle: .pi, clockwise: false)
+        homeClip.closeSubpath()
+        context.addPath(homeClip)
+        context.setFillColor(homeColor.cgColor)
+        context.fillPath()
+        context.restoreGState()
+
+        // Home team name
+        let homeNameRect = CGRect(x: barX + 14 * scale, y: barY, width: 80 * scale, height: barHeight)
+        drawText(String(s.homeTeam.prefix(4)).uppercased(), in: homeNameRect, context: context,
+                 fontSize: 16 * scale, color: .white, bold: true, alignment: .left)
+
+        // Home score
+        let homeScoreRect = CGRect(x: barX + 90 * scale, y: barY, width: 60 * scale, height: barHeight)
+        drawText("\(s.homeScore)", in: homeScoreRect, context: context,
+                 fontSize: 28 * scale, color: .white, bold: true, alignment: .right)
+
+        // === CENTER (period + clock) ===
+        let centerX = barX + teamSectionWidth
+
+        // Left divider
+        context.setFillColor(CGColor(red: 0.3, green: 0.3, blue: 0.35, alpha: 0.6))
+        context.fill(CGRect(x: centerX, y: barY + 8 * scale, width: 1 * scale, height: barHeight - 16 * scale))
+
+        // Period
+        let periodRect = CGRect(x: centerX + 8 * scale, y: barY, width: centerWidth / 2 - 12 * scale, height: barHeight)
+        drawText(s.period, in: periodRect, context: context,
+                 fontSize: 12 * scale, color: UIColor(white: 0.6, alpha: 1.0), bold: true, alignment: .center)
+
+        // Clock
+        let clockColor = s.isClockRunning ? UIColor.white : UIColor(red: 1.0, green: 0.6, blue: 0.2, alpha: 1.0)
+        let clockRect = CGRect(x: centerX + centerWidth / 2, y: barY, width: centerWidth / 2 - 8 * scale, height: barHeight)
+        drawText(s.clockTime, in: clockRect, context: context,
+                 fontSize: 20 * scale, color: clockColor, bold: true, alignment: .center, monospaced: true)
+
+        // Right divider
+        let rightDivX = barX + teamSectionWidth + centerWidth
+        context.setFillColor(CGColor(red: 0.3, green: 0.3, blue: 0.35, alpha: 0.6))
+        context.fill(CGRect(x: rightDivX, y: barY + 8 * scale, width: 1 * scale, height: barHeight - 16 * scale))
+
+        // === AWAY TEAM (right) ===
+        // Away score
+        let awayScoreRect = CGRect(x: rightDivX + 10 * scale, y: barY, width: 60 * scale, height: barHeight)
+        drawText("\(s.awayScore)", in: awayScoreRect, context: context,
+                 fontSize: 28 * scale, color: .white, bold: true, alignment: .left)
+
+        // Away team name
+        let awayNameRect = CGRect(x: rightDivX + 70 * scale, y: barY, width: 80 * scale, height: barHeight)
+        drawText(String(s.awayTeam.prefix(4)).uppercased(), in: awayNameRect, context: context,
+                 fontSize: 16 * scale, color: .white, bold: true, alignment: .right)
+
+        // Away color accent bar (right edge)
+        let awayAccentRect = CGRect(x: barX + barWidth - 5 * scale, y: barY, width: 5 * scale, height: barHeight)
+        context.saveGState()
+        let awayClip = CGMutablePath()
+        awayClip.move(to: CGPoint(x: barX + barWidth - 5 * scale, y: barY))
+        awayClip.addLine(to: CGPoint(x: barX + barWidth - cornerRadius, y: barY))
+        awayClip.addArc(center: CGPoint(x: barX + barWidth - cornerRadius, y: barY + cornerRadius), radius: cornerRadius, startAngle: -.pi / 2, endAngle: 0, clockwise: false)
+        awayClip.addLine(to: CGPoint(x: barX + barWidth, y: barY + barHeight - cornerRadius))
+        awayClip.addArc(center: CGPoint(x: barX + barWidth - cornerRadius, y: barY + barHeight - cornerRadius), radius: cornerRadius, startAngle: 0, endAngle: .pi / 2, clockwise: false)
+        awayClip.addLine(to: CGPoint(x: barX + barWidth - 5 * scale, y: barY + barHeight))
+        awayClip.closeSubpath()
+        context.addPath(awayClip)
+        context.setFillColor(awayColor.cgColor)
+        context.fillPath()
+        context.restoreGState()
+
+        // === SUBTLE BORDER ===
+        context.setStrokeColor(CGColor(red: 1, green: 1, blue: 1, alpha: 0.08))
+        context.setLineWidth(1 * scale)
+        context.addPath(bgPath)
         context.strokePath()
     }
 
