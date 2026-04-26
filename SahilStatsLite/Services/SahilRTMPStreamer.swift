@@ -337,17 +337,12 @@ final class SahilRTMPStreamer: @unchecked Sendable {
         let inW = CVPixelBufferGetWidth(pixelBuffer)
         let inH = CVPixelBufferGetHeight(pixelBuffer)
         if inW > 1920 || inH > 1080 {
-            // Create clean BGRA 1920×1080 buffer and render scaled camera frame into it
+            // Reuse pooled buffer instead of allocating per frame
             var scaled: CVPixelBuffer?
-            let attrs: NSDictionary = [
-                kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_32BGRA,
-                kCVPixelBufferWidthKey: 1920,
-                kCVPixelBufferHeightKey: 1080,
-                kCVPixelBufferIOSurfacePropertiesKey: NSDictionary()
-            ]
-            if CVPixelBufferCreate(kCFAllocatorDefault, 1920, 1080,
-                                   kCVPixelFormatType_32BGRA, attrs, &scaled) == kCVReturnSuccess,
-               let out = scaled {
+            if let pool = scaledPool {
+                CVPixelBufferPoolCreatePixelBuffer(kCFAllocatorDefault, pool, &scaled)
+            }
+            if let out = scaled {
                 let scaleX = 1920.0 / Double(inW)
                 let scaleY = 1080.0 / Double(inH)
                 // Use sRGB colorspace to avoid HDR/wide-color issues with YouTube decoder
