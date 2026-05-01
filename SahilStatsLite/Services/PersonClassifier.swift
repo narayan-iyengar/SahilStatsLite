@@ -60,9 +60,6 @@ class PersonClassifier {
     // Falls back to rectRequest if model absent (no code changes needed).
     private let yoloDetector = YOLODetector()
 
-    /// True when YOLOv8n CoreML model is loaded; false means Vision fallback is active.
-    var isUsingYOLO: Bool { yoloDetector.isAvailable }
-
     // Reuse Vision request objects — avoids allocation overhead at 15fps.
     // rectRequest is fallback only when YOLO model is not present.
     private let rectRequest: VNDetectHumanRectanglesRequest = {

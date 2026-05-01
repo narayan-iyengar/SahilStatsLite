@@ -291,7 +291,7 @@ final class AutoZoomManager: ObservableObject {
     @Published var showDebugOverlay: Bool = false
 
     /// Whether Skynet is using YOLOv8n (true) or Vision fallback (false).
-    var isUsingYOLO: Bool { personClassifier.isUsingYOLO }
+    var isUsingYOLO: Bool { YOLODetector.isAvailableInBundle }
 
     // MARK: - Zoom Limits
 

@@ -74,6 +74,12 @@ final class YOLODetector {
 
     var isAvailable: Bool { model != nil }
 
+    /// True if the model file is present in the bundle — usable without instantiating a detector.
+    static var isAvailableInBundle: Bool {
+        Bundle.main.url(forResource: "yolov8n", withExtension: "mlmodelc") != nil
+            || Bundle.main.url(forResource: "yolov8n", withExtension: "mlpackage") != nil
+    }
+
     // MARK: - Init
 
     init() {
