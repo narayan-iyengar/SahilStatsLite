@@ -37,5 +37,11 @@ GoogleService-Info.plist
 # macOS
 .DS_Store
 
+# Xcode workspace settings (local, machine-specific)
+*.xcsettings
+
+# Local AI/IDE tooling configs
+.gemini/
+
 # Xcode shared schemes (optional)
 # SahilStatsLite.xcodeproj/xcshareddata/
