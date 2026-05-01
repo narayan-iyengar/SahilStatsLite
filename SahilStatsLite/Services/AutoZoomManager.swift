@@ -290,6 +290,9 @@ final class AutoZoomManager: ObservableObject {
     @Published var debugActionZone: CGRect = .zero
     @Published var showDebugOverlay: Bool = false
 
+    /// Whether Skynet is using YOLOv8n (true) or Vision fallback (false).
+    var isUsingYOLO: Bool { personClassifier.isUsingYOLO }
+
     // MARK: - Zoom Limits
 
     private let minZoom: CGFloat = 1.0

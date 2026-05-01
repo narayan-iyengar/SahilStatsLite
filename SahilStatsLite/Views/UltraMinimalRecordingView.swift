@@ -609,6 +609,11 @@ struct UltraMinimalRecordingView: View {
                             .font(.system(size: 9, weight: .bold))
                     }
                     .foregroundColor(autoZoomManager.detectedPlayerCount > 0 ? .cyan : .gray)
+
+                    // YOLO vs Vision fallback indicator
+                    Text(autoZoomManager.isUsingYOLO ? "YOLO" : "Vision")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(autoZoomManager.isUsingYOLO ? .green : .orange)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)
