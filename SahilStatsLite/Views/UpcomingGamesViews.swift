@@ -112,6 +112,13 @@ struct NextGameHeroCard: View {
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
 
+                // Which of Sahil's teams is playing
+                if let team = game.detectedTeam {
+                    Text(team)
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
+
                 // Location
                 if !game.location.isEmpty {
                     HStack(spacing: 4) {
