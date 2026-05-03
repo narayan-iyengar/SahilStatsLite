@@ -141,6 +141,11 @@ private actor SkynetProcessor {
     private let smoothZoomController = UltraSmoothZoomController(minZoom: 1.0, maxZoom: 1.3)
     private let ballDetector = BallDetector()
 
+    /// Auto court calibration — accumulates IMU-compensated ankle points during warmup.
+    private let heatmapAccumulator = CourtHeatmapAccumulator()
+    /// True once the clock is tapped and the game starts — stops accumulating heatmap data.
+    private var isGameStarted: Bool = false
+
     /// Match RecordingManager's aiFrameInterval (0.067 = 15fps).
     /// Raise to 0.1 (10fps) if thermals are an issue during a full game.
     private let processInterval: CFAbsoluteTime = 0.067
@@ -165,6 +170,11 @@ private actor SkynetProcessor {
     /// Finalizes team colors and resets tracking state (called at game start).
     func prepareForGameStart() {
         personClassifier.finalizeTeamColors()
+        // Lock the court quad so warmup accumulation stops
+        isGameStarted = true
+        if let lockedQuad = heatmapAccumulator.lockedQuad {
+            personClassifier.updateCourtQuad(lockedQuad)
+        }
         resetState()
     }
 
@@ -194,6 +204,22 @@ private actor SkynetProcessor {
         let players = classifiedPeople.filter { if case .player = $0.classification { return true }; return false }
         let ballDetection = ballDetector.detectBall(in: pixelBuffer, dt: dt)
         let activeTracks = deepTracker.update(detections: classifiedPeople, dt: dt)
+
+        // Court auto-calibration: accumulate standing player ankle positions during warmup.
+        // Uses IMU yaw to compensate for gimbal pan so heatmap isn't smeared.
+        if !isGameStarted && !heatmapAccumulator.isLocked {
+            let currentYaw = GimbalTrackingManager.shared.currentYaw
+            for person in classifiedPeople {
+                guard case .player = person.classification, person.isOnCourt else { continue }
+                // Ankle = bottom center of bounding box (Vision coords, y=0 at bottom)
+                let anklePoint = CGPoint(x: person.boundingBox.midX, y: person.boundingBox.minY)
+                heatmapAccumulator.accumulate(anklePoint: anklePoint, currentYaw: currentYaw)
+            }
+            // Re-derive quad every 30 frames (~2s)
+            if frameCount % 30 == 0, let newQuad = heatmapAccumulator.computeCourtQuad() {
+                personClassifier.updateCourtQuad(newQuad)
+            }
+        }
 
         // Player cluster is always the primary tracking signal.
         // YOLO + DeepTracker over 5-10 players is orders of magnitude more reliable than
@@ -241,6 +267,7 @@ private actor SkynetProcessor {
             debugPrint("🤖 [Skynet] \(status) | Players: \(players.count) | Reliability: \(String(format: "%.0f%%", reliability * 100)) | Zoom: \(String(format: "%.2f", smoothedZoom))x")
         }
 
+        let calibrationProgress = min(1.0, Float(heatmapAccumulator.totalSamples) / Float(heatmapAccumulator.minSamples))
         return SkynetResult(
             newActionCenter: newActionCenter,
             newTargetZoom: CGFloat(smoothedZoom),
@@ -249,7 +276,9 @@ private actor SkynetProcessor {
             confirmedTracks: deepTracker.confirmedTrackCount,
             isTimeout: isTimeout,
             debugActionZone: deepTracker.getGroupBoundingBox(filterPlayers: true),
-            noPlayers: players.isEmpty
+            noPlayers: players.isEmpty,
+            courtCalibrationProgress: calibrationProgress,
+            courtIsCalibrated: heatmapAccumulator.isLocked
         )
     }
 }
@@ -268,6 +297,8 @@ private struct SkynetResult: Sendable {
     let isTimeout: Bool
     let debugActionZone: CGRect
     let noPlayers: Bool
+    let courtCalibrationProgress: Float
+    let courtIsCalibrated: Bool
 }
 
 // MARK: - Auto Zoom Manager
@@ -292,6 +323,11 @@ final class AutoZoomManager: ObservableObject {
 
     /// Whether Skynet is using YOLOv8n (true) or Vision fallback (false).
     var isUsingYOLO: Bool { YOLODetector.isAvailableInBundle }
+
+    /// Court calibration progress 0→1. Drives the status bar indicator.
+    @Published var courtCalibrationProgress: Float = 0
+    /// True once the court quad is locked and calibrated.
+    @Published var courtIsCalibrated: Bool = false
 
     // MARK: - Zoom Limits
 
@@ -368,6 +404,8 @@ final class AutoZoomManager: ObservableObject {
         confirmedTracks = result.confirmedTracks
         detectedPlayerCount = result.playerCount
         debugActionZone = result.debugActionZone
+        courtCalibrationProgress = result.courtCalibrationProgress
+        if result.courtIsCalibrated { courtIsCalibrated = true }
 
         if result.noPlayers && !result.isTimeout {
             // No players found — apply gravity drift (tilt down slowly after 5s)

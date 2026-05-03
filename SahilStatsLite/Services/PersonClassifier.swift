@@ -50,10 +50,12 @@ class PersonClassifier {
     /// Minimum stripe transitions to classify as ref
     private let minStripeTransitions = 3
 
-    /// Court bounds (learned from heat map, updated dynamically)
-    // Tighter default: exclude ~15% on each side to cut out bench/sideline players.
-    // AR calibration overwrites this with exact court corners at game time.
-    var courtBounds: CGRect = CGRect(x: 0.15, y: 0.10, width: 0.70, height: 0.55)
+    /// Perspective-correct court quadrilateral — learned automatically during warmup.
+    /// Replaces the old axis-aligned CGRect which failed from bleachers/corners.
+    nonisolated(unsafe) var courtQuad: CourtQuad = .defaultBounds()
+
+    /// Legacy shim for any callers that still expect CGRect.
+    var courtBounds: CGRect { courtQuad.boundingRect }
 
     // Reuse CIContext across frames — creating one per frame costs GPU allocations at 15fps.
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
@@ -295,13 +297,11 @@ class PersonClassifier {
         // which can be the bottom of a bleacher or a bag on the floor.
         let isOnCourt: Bool
         if let pose = pose, let anklePoint = pose.floorContactPoint {
-            // Pose-based: actual ankle touches court AND person is standing (not seated in stands)
-            isOnCourt = courtBounds.contains(anklePoint) && pose.isStanding && !isMassiveForegroundObject
+            // Pose-based: actual ankle inside court polygon AND person is standing
+            isOnCourt = courtQuad.contains(anklePoint) && pose.isStanding && !isMassiveForegroundObject
         } else {
-            // Fallback: feet only (box.minY in Vision = bottom of box = floor contact).
-            // Was: feetOnCourt || centerOnCourt — centerOnCourt was pulling in bench/sideline
-            // players whose midpoint drifted inside courtBounds at low gimbal angles.
-            let feetOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.minY))
+            // Fallback: feet-only check against the court polygon
+            let feetOnCourt = courtQuad.contains(CGPoint(x: box.midX, y: box.minY))
             isOnCourt = feetOnCourt && !isMassiveForegroundObject
         }
 
@@ -595,42 +595,12 @@ class PersonClassifier {
         return pixelData
     }
 
-    // MARK: - Court Bounds Update
+    // MARK: - Court Quad Update
 
-    func updateCourtBounds(from heatMap: [[Int]], threshold: Double = 0.40) {
-        let gridSize = heatMap.count
-        guard gridSize > 0 else { return }
-
-        let maxVal = heatMap.flatMap { $0 }.max() ?? 1
-        let cutoff = Int(Double(maxVal) * threshold)
-
-        // Skip top 30% (ceiling) and bottom 5% (camera operator feet)
-        let minYSearch = Int(Double(gridSize) * 0.05)
-        let maxYSearch = Int(Double(gridSize) * 0.70)
-
-        var minX = gridSize, maxX = 0
-        var minY = gridSize, maxY = 0
-
-        for y in minYSearch..<maxYSearch {
-            for x in 0..<gridSize {
-                if heatMap[y][x] > cutoff {
-                    minX = min(minX, x)
-                    maxX = max(maxX, x)
-                    minY = min(minY, y)
-                    maxY = max(maxY, y)
-                }
-            }
-        }
-
-        guard minX < gridSize else { return }
-
-        let padding: CGFloat = 0.05
-        courtBounds = CGRect(
-            x: max(0, CGFloat(minX) / CGFloat(gridSize) - padding),
-            y: max(0, CGFloat(minY) / CGFloat(gridSize) - padding),
-            width: min(1, CGFloat(maxX - minX + 1) / CGFloat(gridSize) + padding * 2),
-            height: min(1, CGFloat(maxY - minY + 1) / CGFloat(gridSize) + padding * 2)
-        )
+    /// Called by SkynetProcessor when the heatmap produces a refined quad.
+    /// nonisolated: called from inside the SkynetProcessor actor (serial access guaranteed).
+    nonisolated func updateCourtQuad(_ quad: CourtQuad) {
+        courtQuad = quad
     }
 }
 

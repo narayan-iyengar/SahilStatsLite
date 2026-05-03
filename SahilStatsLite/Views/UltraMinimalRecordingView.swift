@@ -614,6 +614,15 @@ struct UltraMinimalRecordingView: View {
                     Text(autoZoomManager.isUsingYOLO ? "YOLO" : "Vision")
                         .font(.system(size: 9, weight: .bold))
                         .foregroundColor(autoZoomManager.isUsingYOLO ? .green : .orange)
+
+                    // Court auto-calibration indicator
+                    HStack(spacing: 3) {
+                        Image(systemName: autoZoomManager.courtIsCalibrated ? "square.fill" : "square.dotted")
+                            .font(.system(size: 9))
+                        Text(autoZoomManager.courtIsCalibrated ? "Court ✓" : "Court \(Int(autoZoomManager.courtCalibrationProgress * 100))%")
+                            .font(.system(size: 9, weight: .medium))
+                    }
+                    .foregroundColor(autoZoomManager.courtIsCalibrated ? .green : .yellow)
                 }
                 .padding(.horizontal, 8)
                 .padding(.vertical, 4)

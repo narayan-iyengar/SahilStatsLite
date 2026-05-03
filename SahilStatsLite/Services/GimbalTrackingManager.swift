@@ -15,6 +15,7 @@
 import Foundation
 import AVFoundation
 import Combine
+import CoreMotion
 import SwiftUI
 import Spatial
 #if canImport(DockKit)
@@ -84,6 +85,15 @@ final class GimbalTrackingManager: ObservableObject {
     private var lastDetectionTime: CFAbsoluteTime = CFAbsoluteTimeGetCurrent()
 
     private var lastActionCenterX: CGFloat = 0.5
+
+    // MARK: - IMU (Court Calibration)
+
+    /// Phone yaw from CMMotionManager (radians, world frame).
+    /// Used by CourtHeatmapAccumulator to compensate for gimbal pan.
+    /// Updated at 30Hz; safe to read from any thread (nonisolated(unsafe)).
+    nonisolated(unsafe) private(set) var currentYaw: Double = 0
+    private let motionManager = CMMotionManager()
+    private let motionQueue = OperationQueue()
 
     // MARK: - Initialization
 
@@ -161,6 +171,7 @@ final class GimbalTrackingManager: ObservableObject {
             isTrackingActive = true
             lastError = nil
             lastActionCenterX = 0.5
+            startIMU()
 
             Task {
                 do {
@@ -192,6 +203,7 @@ final class GimbalTrackingManager: ObservableObject {
 
         isTrackingActive = false
         trackedSubjectCount = 0
+        stopIMU()
 
         // Send zero velocity so the gimbal doesn't continue panning after tracking stops
         #if canImport(DockKit)
@@ -199,6 +211,22 @@ final class GimbalTrackingManager: ObservableObject {
             Task { try? await accessory.setAngularVelocity(Vector3D(x: 0, y: 0, z: 0)) }
         }
         #endif
+    }
+
+    // MARK: - IMU (Court Calibration)
+
+    private func startIMU() {
+        guard motionManager.isDeviceMotionAvailable else { return }
+        motionQueue.maxConcurrentOperationCount = 1
+        motionManager.deviceMotionUpdateInterval = 1.0 / 30.0
+        motionManager.startDeviceMotionUpdates(to: motionQueue) { [weak self] motion, _ in
+            guard let self, let motion else { return }
+            self.currentYaw = motion.attitude.yaw
+        }
+    }
+
+    private func stopIMU() {
+        motionManager.stopDeviceMotionUpdates()
     }
 
     // MARK: - Skynet-Driven Physical Gimbal Steering (PID velocity control)
