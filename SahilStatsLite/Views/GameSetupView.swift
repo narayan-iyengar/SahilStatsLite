@@ -185,7 +185,7 @@ struct GameSetupView: View {
                                             root.present(av, animated: true)
                                         }
                                     } label: {
-                                        Label("Share with Parents", systemImage: "square.and.arrow.up")
+                                        Label("Share Link (copied ✓)", systemImage: "square.and.arrow.up")
                                             .font(.subheadline.weight(.semibold))
                                             .foregroundColor(.white)
                                             .frame(maxWidth: .infinity)
@@ -319,6 +319,8 @@ struct GameSetupView: View {
                     StreamingService.shared.currentBroadcastId = id
                     StreamingService.shared.liveStreamURL = url
                     isCreatingBroadcast = false
+                    // Auto-copy link so parents can get it immediately via Messages etc.
+                    UIPasteboard.general.string = url
                 }
             } catch {
                 debugPrint("[GameSetup] Broadcast creation FAILED: \(error)")

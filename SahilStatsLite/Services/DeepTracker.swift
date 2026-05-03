@@ -257,16 +257,16 @@ class KalmanFilter2D {
 class TrackedObject: @unchecked Sendable {
     let id: Int
     let kalman: KalmanFilter2D
-    var classification: ClassifiedPerson.PersonType
-    var boundingBox: CGRect
-    var lastSeen: Date
-    var hitStreak: Int = 0      // Consecutive frames with detection
-    var missStreak: Int = 0     // Consecutive frames without detection
-    var reliabilityScore: Float = 1.0
+    nonisolated(unsafe) var classification: ClassifiedPerson.PersonType
+    nonisolated(unsafe) var boundingBox: CGRect
+    nonisolated(unsafe) var lastSeen: Date
+    var hitStreak: Int = 0
+    var missStreak: Int = 0
+    nonisolated(unsafe) var reliabilityScore: Float = 1.0
     var occlusionScore: Float = 0.0
 
     // Visual Re-ID: Color histogram for appearance matching
-    var colorHistogram: [Float]?
+    nonisolated(unsafe) var colorHistogram: [Float]?
 
     // OC-SORT: Observation-Centric Momentum (OCM)
     // Store last observed positions instead of relying solely on Kalman predictions

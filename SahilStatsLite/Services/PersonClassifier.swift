@@ -245,7 +245,7 @@ class PersonClassifier {
 
     /// Fallback classification using VNDetectHumanRectanglesRequest.
     /// Used when yolov8n.mlpackage is not in the bundle.
-    func classifyPeople(in image: CGImage) -> [ClassifiedPerson] {
+    nonisolated func classifyPeople(in image: CGImage) -> [ClassifiedPerson] {
         let handler = VNImageRequestHandler(cgImage: image, options: [:])
         try? handler.perform([rectRequest, poseRequest])
 
@@ -262,7 +262,7 @@ class PersonClassifier {
 
     /// Shared classification engine for both YOLO and Vision-detected boxes.
     /// Runs body pose once, gets pixel data once, then classifies each box.
-    private func classifyFromBoxes(_ boxes: [(CGRect, Float)], image: CGImage) -> [ClassifiedPerson] {
+    nonisolated private func classifyFromBoxes(_ boxes: [(CGRect, Float)], image: CGImage) -> [ClassifiedPerson] {
         guard !boxes.isEmpty else { return [] }
 
         // Body pose runs alongside YOLO — gives ankle positions for accurate court contact

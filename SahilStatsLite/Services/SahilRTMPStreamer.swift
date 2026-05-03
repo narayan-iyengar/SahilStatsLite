@@ -234,7 +234,7 @@ final class SahilRTMPStreamer: @unchecked Sendable {
 
     // Scale 4K input → 1080p before VT encode
     // VTCompressionSession does NOT auto-scale — mismatched input produces corrupt H.264
-    nonisolated(unsafe) private let ciCtx = CIContext(options: [.useSoftwareRenderer: false])
+    private let ciCtx = CIContext(options: [.useSoftwareRenderer: false])
     nonisolated(unsafe) private var scaledPool: CVPixelBufferPool? = {
         var pool: CVPixelBufferPool?
         CVPixelBufferPoolCreate(nil, nil, [

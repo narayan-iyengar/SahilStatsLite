@@ -86,7 +86,7 @@ class BallDetector {
     private let gravity: CGFloat = 0.5  // ~0.5 frame heights per second^2
     private let maxReasonableSpeed: CGFloat = 2.0  // Max 2x frame width per second
 
-    init() {}
+    nonisolated init() {}
 
     // MARK: - Detection
 
