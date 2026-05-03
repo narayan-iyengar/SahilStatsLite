@@ -67,12 +67,12 @@ final class YOLODetector {
 
     // MARK: - State
 
-    private var model: MLModel?
+    nonisolated(unsafe) private var model: MLModel?
     // Reuse CIContext and pixel buffer pool across frames.
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
-    private var letterboxPool: CVPixelBufferPool?
+    nonisolated(unsafe) private var letterboxPool: CVPixelBufferPool?
 
-    var isAvailable: Bool { model != nil }
+    nonisolated var isAvailable: Bool { model != nil }
 
     /// True if the model file is present in the bundle — usable without instantiating a detector.
     static var isAvailableInBundle: Bool {
@@ -125,7 +125,7 @@ final class YOLODetector {
 
     /// Detect people in a 640×360 CVPixelBuffer (RecordingManager's AI frame size).
     /// Returns bounding boxes in Vision coords (normalized, y=0 at bottom).
-    func detect(in pixelBuffer: CVPixelBuffer) -> [Detection] {
+    nonisolated func detect(in pixelBuffer: CVPixelBuffer) -> [Detection] {
         guard let model = model else { return [] }
         guard let letterboxed = createLetterboxBuffer(from: pixelBuffer) else { return [] }
         guard let output = runInference(model: model, pixelBuffer: letterboxed) else { return [] }

@@ -37,8 +37,9 @@ class WiFiUploadManager: ObservableObject {
 
         monitor.pathUpdateHandler = { [weak self] path in
             guard path.status == .satisfied, path.usesInterfaceType(.wifi) else { return }
-            Task { @MainActor in
-                self?.checkAndUpload()
+            guard let self else { return }
+            Task { @MainActor [self] in
+                self.checkAndUpload()
             }
         }
         monitor.start(queue: monitorQueue)

@@ -23,16 +23,16 @@ import CoreImage
 
 // MARK: - Classification Result
 
-struct ClassifiedPerson {
+struct ClassifiedPerson: Sendable {
     let boundingBox: CGRect  // Normalized 0-1
     let classification: PersonType
     let confidence: Float    // 0-1
     let isOnCourt: Bool
-    
+
     // Visual Re-ID: Hue-Saturation histogram (16 hue bins + 4 saturation bins = 20 float vector)
     let colorHistogram: [Float]?
 
-    enum PersonType {
+    enum PersonType: Sendable {
         case player      // Kid on court (TRACK)
         case referee     // Striped jersey (TRACK but filter from action center)
         case coach       // Adult on sideline (IGNORE)
@@ -75,14 +75,15 @@ class PersonClassifier {
     // MARK: - Team Jersey Color Learning
 
     // Histograms accumulated during warmup (before game clock starts)
-    private var warmupHistograms: [[Float]] = []
+    // nonisolated(unsafe): only accessed from SkynetProcessor actor — serial access guaranteed.
+    nonisolated(unsafe) private var warmupHistograms: [[Float]] = []
     // Two learned team color profiles (home + away). Empty until finalizeTeamColors() is called.
-    private(set) var teamColorProfiles: [[Float]] = []
+    nonisolated(unsafe) private(set) var teamColorProfiles: [[Float]] = []
 
     // MARK: - Broadcast-Quality Centroid Smoothing (v3)
 
     /// Rolling centroid history for jitter elimination
-    private var centroidHistory: [CGPoint] = []
+    nonisolated(unsafe) private var centroidHistory: [CGPoint] = []
     private let centroidHistorySize = 8  // Average over ~8 detection cycles
 
     /// Current focus hint for proximity weighting (set by AutoZoomManager)

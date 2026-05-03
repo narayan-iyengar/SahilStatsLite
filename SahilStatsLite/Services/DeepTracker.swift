@@ -254,7 +254,7 @@ class KalmanFilter2D {
 // MARK: - Tracked Object
 
 /// A single tracked object with Kalman filter and OC-SORT enhancements
-class TrackedObject {
+class TrackedObject: @unchecked Sendable {
     let id: Int
     let kalman: KalmanFilter2D
     var classification: ClassifiedPerson.PersonType
