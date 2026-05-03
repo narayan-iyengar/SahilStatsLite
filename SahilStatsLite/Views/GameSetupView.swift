@@ -27,6 +27,8 @@ struct GameSetupView: View {
     @State private var recordVideo: Bool = true
     @State private var streamLive: Bool = false  // default OFF — enable per-game when signal is good
     @State private var isCreatingBroadcast: Bool = false
+    @State private var broadcastURL: String = ""   // local state so SwiftUI re-renders on change
+    @State private var broadcastError: String? = nil
 
     @FocusState private var isOpponentFocused: Bool
 
@@ -157,8 +159,17 @@ struct GameSetupView: View {
                                 Toggle("", isOn: $streamLive)
                                     .tint(.red)
                                     .onChange(of: streamLive) { _, on in
-                                        guard on, YouTubeService.shared.isAuthorized else { return }
-                                        createBroadcast()
+                                        if on {
+                                            if YouTubeService.shared.isAuthorized {
+                                                createBroadcast()
+                                            } else {
+                                                broadcastError = "Sign in to YouTube in Settings first"
+                                                streamLive = false
+                                            }
+                                        } else {
+                                            broadcastURL = ""
+                                            broadcastError = nil
+                                        }
                                     }
                             }
                             .padding()
@@ -174,27 +185,45 @@ struct GameSetupView: View {
                                             .foregroundColor(.secondary)
                                     }
                                     .padding()
-                                } else if !StreamingService.shared.liveStreamURL.isEmpty {
-                                    Button {
-                                        let url = StreamingService.shared.liveStreamURL
-                                        let av = UIActivityViewController(
-                                            activityItems: [URL(string: url) ?? url],
-                                            applicationActivities: nil)
-                                        if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
-                                           let root = scene.windows.first?.rootViewController {
-                                            root.present(av, animated: true)
-                                        }
-                                    } label: {
-                                        Label("Share Link (copied ✓)", systemImage: "square.and.arrow.up")
-                                            .font(.subheadline.weight(.semibold))
-                                            .foregroundColor(.white)
-                                            .frame(maxWidth: .infinity)
-                                            .padding(.vertical, 12)
-                                            .background(Color.red)
-                                            .cornerRadius(10)
+                                } else if let err = broadcastError {
+                                    HStack(spacing: 6) {
+                                        Image(systemName: "exclamationmark.triangle.fill")
+                                            .foregroundColor(.orange)
+                                        Text(err)
+                                            .font(.caption)
+                                            .foregroundColor(.secondary)
                                     }
-                                    .padding(.horizontal)
-                                    .padding(.vertical, 8)
+                                    .padding()
+                                } else if !broadcastURL.isEmpty {
+                                    VStack(spacing: 8) {
+                                        // Link preview
+                                        Text(broadcastURL)
+                                            .font(.caption2)
+                                            .foregroundColor(.secondary)
+                                            .lineLimit(1)
+                                            .truncationMode(.middle)
+                                            .padding(.horizontal)
+                                        // Share button
+                                        Button {
+                                            let av = UIActivityViewController(
+                                                activityItems: [URL(string: broadcastURL) ?? broadcastURL],
+                                                applicationActivities: nil)
+                                            if let scene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+                                               let root = scene.windows.first?.rootViewController {
+                                                root.present(av, animated: true)
+                                            }
+                                        } label: {
+                                            Label("Share Link (copied ✓)", systemImage: "square.and.arrow.up")
+                                                .font(.subheadline.weight(.semibold))
+                                                .foregroundColor(.white)
+                                                .frame(maxWidth: .infinity)
+                                                .padding(.vertical, 12)
+                                                .background(Color.red)
+                                                .cornerRadius(10)
+                                        }
+                                        .padding(.horizontal)
+                                        .padding(.bottom, 8)
+                                    }
                                 }
                             }
                         }
@@ -305,6 +334,8 @@ struct GameSetupView: View {
 
     private func createBroadcast() {
         isCreatingBroadcast = true
+        broadcastURL = ""
+        broadcastError = nil
         StreamingService.shared.liveStreamURL = ""
         StreamingService.shared.currentBroadcastId = nil
         let team = selectedTeam.isEmpty ? "Home" : selectedTeam
@@ -318,13 +349,16 @@ struct GameSetupView: View {
                 await MainActor.run {
                     StreamingService.shared.currentBroadcastId = id
                     StreamingService.shared.liveStreamURL = url
+                    broadcastURL = url          // drives the UI re-render
                     isCreatingBroadcast = false
-                    // Auto-copy link so parents can get it immediately via Messages etc.
-                    UIPasteboard.general.string = url
+                    UIPasteboard.general.string = url  // auto-copy to clipboard
                 }
             } catch {
                 debugPrint("[GameSetup] Broadcast creation FAILED: \(error)")
-                await MainActor.run { isCreatingBroadcast = false }
+                await MainActor.run {
+                    isCreatingBroadcast = false
+                    broadcastError = "Couldn't create broadcast: \(error.localizedDescription)"
+                }
             }
         }
     }
