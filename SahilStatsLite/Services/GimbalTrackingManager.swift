@@ -69,13 +69,13 @@ final class GimbalTrackingManager: ObservableObject {
 
     // MARK: - PID Controller State (pan + tilt)
 
-    // Pan (yaw) — proportional gain tuned from real game footage via analyze.py
-    private let Kp: Double = 0.8
-    private let maxPanVelocity: Double = 0.8     // rad/s ≈ 46°/s
+    // Pan (yaw) — analyze.py on real game footage recommended 1.6; was 0.8 (too slow for fast breaks)
+    private let Kp: Double = 1.6
+    private let maxPanVelocity: Double = 1.5     // rad/s ≈ 86°/s — fast enough for full-court fast breaks
     private let panDeadband: CGFloat = 0.03      // 3% of frame center
 
     // Tilt (pitch) — gentler than pan to avoid vertical hunting
-    private let KpTilt: Double = 0.4             // half of pan Kp — tilt is more sensitive
+    private let KpTilt: Double = 0.4             // keep conservative — tilt misbehavior is more jarring
     private let maxTiltVelocity: Double = 0.3    // rad/s — slower than pan for stability
     private let tiltDeadband: CGFloat = 0.08     // 8% — wider deadband to avoid jitter
 

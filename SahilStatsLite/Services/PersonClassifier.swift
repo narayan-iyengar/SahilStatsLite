@@ -51,7 +51,9 @@ class PersonClassifier {
     private let minStripeTransitions = 3
 
     /// Court bounds (learned from heat map, updated dynamically)
-    var courtBounds: CGRect = CGRect(x: 0.05, y: 0.10, width: 0.90, height: 0.60)
+    // Tighter default: exclude ~15% on each side to cut out bench/sideline players.
+    // AR calibration overwrites this with exact court corners at game time.
+    var courtBounds: CGRect = CGRect(x: 0.15, y: 0.10, width: 0.70, height: 0.55)
 
     // Reuse CIContext across frames — creating one per frame costs GPU allocations at 15fps.
     private let ciContext = CIContext(options: [.useSoftwareRenderer: false])
@@ -295,10 +297,11 @@ class PersonClassifier {
             // Pose-based: actual ankle touches court AND person is standing (not seated in stands)
             isOnCourt = courtBounds.contains(anklePoint) && pose.isStanding && !isMassiveForegroundObject
         } else {
-            // Fallback: bounding box bottom as approximate floor contact
+            // Fallback: feet only (box.minY in Vision = bottom of box = floor contact).
+            // Was: feetOnCourt || centerOnCourt — centerOnCourt was pulling in bench/sideline
+            // players whose midpoint drifted inside courtBounds at low gimbal angles.
             let feetOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.minY))
-            let centerOnCourt = courtBounds.contains(CGPoint(x: box.midX, y: box.midY))
-            isOnCourt = (feetOnCourt || centerOnCourt) && !isMassiveForegroundObject
+            isOnCourt = feetOnCourt && !isMassiveForegroundObject
         }
 
         // Extract appearance histogram for Re-ID continuity
