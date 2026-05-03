@@ -151,6 +151,7 @@
 				8B4AE4272F141E81005F206B /* Resources */,
 				8B4AE4A42F2057DF005F206B /* Embed Watch Content */,
 				8BD424E82F2F589E004B02F3 /* Embed ExtensionKit Extensions */,
+				C842A9645A8341ADAD03583E /* Set Build Number from Git */,
 			);
 			buildRules = (
 			);
@@ -236,6 +237,27 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		C842A9645A8341ADAD03583E /* Set Build Number from Git */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Set Build Number from Git";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "BUILD=$(git -C \"$SRCROOT\" rev-list --count HEAD 2>/dev/null || echo 1)\n/usr/libexec/PlistBuddy -c \"Set :CFBundleVersion $BUILD\" \"$INFOPLIST_OUTPUT_FILE\" 2>/dev/null || true\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXResourcesBuildPhase section */
 		8B4AE4272F141E81005F206B /* Resources */ = {
