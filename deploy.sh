@@ -41,7 +41,7 @@ result=$(xcodebuild \
   CURRENT_PROJECT_VERSION="$BUILD_VER" \
   2>&1) || true
 
-if echo "$result" | grep -q "Build succeeded"; then
+if echo "$result" | grep -qi "BUILD SUCCEEDED"; then
   echo "$result" | grep -E 'error:' | grep -v SourcePackages | head -5
   echo "==> iPhone + active Watch: done ✅ (v$BUILD_VER)"
 else
