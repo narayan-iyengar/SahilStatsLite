@@ -1,6 +1,6 @@
-# Rebound — Handoff Notes (2026-04-25)
+# Rebound — Handoff Notes (2026-05-03)
 
-Current build: **v297 Release**. App rebranded from SahilStatsLite to **Rebound**.
+Current build: **v314 Release**. App rebranded from SahilStatsLite to **Rebound**.
 
 ---
 
@@ -34,12 +34,16 @@ Camera 4K → CIContext scale 1080p → VTCompressionSession H.264 → FLV → N
                                                                   → YouTube (a.rtmp.youtube.com)
 ```
 
-### Tracking Pipeline (Skynet v5.1)
+### Tracking Pipeline (Skynet v5.2)
 ```
 Camera → Downscale 640x360 → YOLOv8n (0.15 conf) → PersonClassifier → DeepTracker
                                                          ↓
+                                               CourtHeatmapAccumulator (warmup)
+                                               └─ IMU yaw compensation → CourtQuad (auto-calibrated)
+                                                         ↓
                                                GimbalTrackingManager
-                                               ├─ Pan PID (Kp=0.8, negated)
+                                               ├─ Pan PID (Kp=1.6, negated) ← was 0.8
+                                               ├─ maxPanVelocity 1.5 rad/s  ← was 0.8
                                                ├─ Tilt PID (Kp=0.4)
                                                └─ Gravity drift (-0.05 rad/s after 5s no detect)
 ```
@@ -60,6 +64,18 @@ Camera → Downscale 640x360 → YOLOv8n (0.15 conf) → PersonClassifier → De
 | `OverlayRenderer.swift` | Score overlay — 4 styles built (classic active, others ready) |
 
 ## Recent Changes
+
+### May 3 — Skynet v5.2 + Infra
+- **Auto court calibration (zero manual input)**: CourtHeatmapAccumulator accumulates ankle positions during warmup with IMU yaw compensation (CMMotionManager reads gimbal pan directly). Convex hull → quadrilateral fit → locks after 10 stable re-computes. Works from bleachers, corners, any angle. Status bar shows "Court 0%→✓".
+- **CourtQuad replaces CGRect**: Perspective-correct polygon containment check. `courtBounds` kept as legacy shim.
+- **Faster gimbal**: Kp 0.8→1.6 (analyze.py recommended), maxPanVelocity 0.8→1.5 rad/s (46→86°/s). Fast breaks no longer lag 1.5s.
+- **Tighter default court filter**: x: 0.05→0.15, width: 0.90→0.70. Feet-only fallback (was feet||center).
+- **YOLO active**: yolov8n.mlmodelc committed to repo (recovered from device cache). Tracking status bar shows YOLO/Vision + Court calibration %.
+- **Stream link fixed**: Share button now actually appears (was @Published bug). Auto-copies to clipboard on generation. Shows error if YouTube not authorized.
+- **Build number**: Run Script phase re-added — Xcode GUI builds now get correct build number from git.
+- **Zero warnings**: All Swift concurrency warnings cleared (Sendable, nonisolated, actor isolation).
+- **Paid Apple Developer account**: Signed up, devices registered. Free cert expiry no longer an issue.
+- **Deploy infra**: deploy.sh in git, SSH over port 443 (port 22 blocked on some networks), remote fixed to SSH.
 
 ### Apr 25 — UX Polish (Tier 1+2)
 - HaishinKit removed from SPM (was unused, slowed builds)
@@ -97,20 +113,22 @@ Camera → Downscale 640x360 → YOLOv8n (0.15 conf) → PersonClassifier → De
 - Titles: "Team vs Opponent", descriptions: "Recorded with Rebound"
 
 ## Known Issues
-- Free dev cert expires unpredictably (considering $99/yr Apple Developer Program)
+- **Watch app won't open at games** — Watch 8 recurring. `deploy.sh --watch-only` times out even on same WiFi. Workaround: deploy via Xcode directly (Run button, watch destination).
 - Ultra 2 often times out on wireless deploy
 - YOLO foreground filter blocks home testing (works at game distance 10+ feet)
 - Tilt direction confirmed at home, untested at game (may need sign flip)
+- Court auto-calibration not yet field-tested
 ## Completed Optimizations (Apr 25, Opus session)
 - CVPixelBuffer pool reuse for streaming (was allocating per frame, now pooled)
 - Removed 3 unused scoreboard styles (Full Bar, Broadcast, Pill) — 309 lines deleted
 - Removed dead film icon from GameRow (videoURL always nil after upload)
 - Silent audio fallback already fixed (iOS 26 PCM rewrite in earlier session)
 
-## Remaining (Tier 4 — not urgent)
-- `nonisolated(unsafe)` audit (~49 across codebase)
+## Remaining
+- **Watch deploy via deploy.sh broken** — investigate why devicectl times out on WiFi even though devices show as "available (paired)". May be a CoreDevice pairing/provisioning issue with the new paid account.
 - Consider removing BallDetector (~730 lines, minimal tracking impact)
 - RTMP auto-reconnect, YouTube API retry — evaluated, not worth the complexity
+- Field-test court auto-calibration at next game
 
 ## Deploy
 ```bash
