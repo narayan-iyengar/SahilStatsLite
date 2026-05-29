@@ -1414,10 +1414,11 @@ struct UltraMinimalRecordingView: View {
                         }
                     })
 
-                    // End Game — skip dialog if no recording started (warmup only)
+                    // End Game — skip dialog if no recording started (warmup only).
+                    // Stats-only mode: always show confirmation (hasGameStarted is never set).
                     Button(action: {
                         showSahilStats = false
-                        if hasGameStarted {
+                        if hasGameStarted || appState.isStatsOnly {
                             showEndConfirmation = true
                         } else {
                             discardGame()
