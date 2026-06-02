@@ -776,6 +776,23 @@ struct UltraMinimalRecordingView: View {
             RoundedRectangle(cornerRadius: 10)
                 .stroke(Color.white.opacity(0.1), lineWidth: 1)
         )
+        // Stats-only: End button sits right below the scoreboard so it's always visible
+        .overlay(alignment: .bottom) {
+            if appState.isStatsOnly {
+                Button {
+                    showEndConfirmation = true
+                } label: {
+                    Text("END")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundColor(.red.opacity(0.8))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(Color.red.opacity(0.15))
+                        .cornerRadius(4)
+                }
+                .offset(y: 22)
+            }
+        }
     }
 
 
@@ -1169,7 +1186,17 @@ struct UltraMinimalRecordingView: View {
                 }
             }
         } else {
+            // Stats-only: always save even on "discard" — no data loss
+            syncPlayerStats()
+            appState.currentGame?.myScore = myScore
+            appState.currentGame?.opponentScore = opponentScore
+            appState.currentGame?.playerStats = playerStats
+            appState.currentGame?.completedAt = Date()
+            if let game = appState.currentGame {
+                persistenceManager.saveGame(game)
+            }
             isFinishingRecording = false
+            appState.isStatsOnly = false
             appState.goHome()
         }
     }
