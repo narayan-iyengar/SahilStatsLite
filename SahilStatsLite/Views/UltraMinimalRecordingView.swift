@@ -711,6 +711,8 @@ struct UltraMinimalRecordingView: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
                     .padding(.trailing, 6)
+                    .contentShape(Rectangle())
+                    .onTapGesture { advancePeriod() }  // Tap period to advance
             }
             .frame(height: 36)
 
